@@ -106,7 +106,8 @@ def main(argv: list[str] | None = None) -> int:
 
             days = int(argv[argv.index("--days") + 1]) if "--days" in argv else 365
             speed = int(argv[argv.index("--speed") + 1]) if "--speed" in argv else 300
-            view(argv[1], days=days, speed=speed)
+            log = Path(argv[argv.index("--log") + 1]) if "--log" in argv else None
+            view(argv[1], days=days, speed=speed, log=log)
             return 0
         if cmd == "export-manifest":
             from railhead.harbor_export import add_arch_manifests

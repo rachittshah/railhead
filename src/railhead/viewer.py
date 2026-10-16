@@ -69,14 +69,18 @@ def view(task_id: str, days: int = 365, speed: int = 300, log: Path | None = Non
         time.sleep(4)
         print("window placed" if _place_window(bounds) else "could not place the window (accessibility)")
         log = log or (tdir / "oracle.jsonl")
-        for rec in read_log(log):
+        w.set_speed(speed)
+        for rec in read_log(log):  # the recorded game, tick for tick (acts at their tick, waits by ticks)
             if rec.kind == "act":
                 try:
                     w.call(rec.raw["m"], **(rec.raw.get("a") or {}))
                 except BridgeError:
                     pass
-                time.sleep(0.15)  # let the spectator see each piece go down
-        w.set_speed(speed)
+                time.sleep(0.05)  # let the spectator see each piece go down
+            elif rec.kind == "wait":
+                st = w.step(ticks=int(rec.raw["end_ticks"]) - int(rec.raw["ticks"]))
+                c = w.call("company")
+                print(f"{st['ymd']}  money £{c.get('money'):,}  loan £{c.get('loan'):,}", flush=True)
         done = 0
         while done < days:  # 30-day chunks: the world runs continuously inside each step
             st = w.step(days=min(30, days - done))

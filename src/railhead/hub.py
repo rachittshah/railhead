@@ -67,28 +67,43 @@ def task_rows(tasks_dir: Path, harbor_dir: Path, image: str = DEFAULT_IMAGE) -> 
     return rows
 
 
-def trajectory_rows(tasks_dir: Path, credit: bool = False) -> list[dict]:
+def _trajectory_row(tdir: str, log: str, policy: str, credit: bool) -> dict:
     from railhead.actionlog import read_log
     from railhead.verify import turn_credit, verify
 
-    rows = []
-    for tdir in sorted(p for p in Path(tasks_dir).iterdir() if (p / "oracle.jsonl").exists()):
-        spec = TaskSpec.load(tdir)
-        log = tdir / "oracle.jsonl"
-        work = Path(tempfile.mkdtemp(prefix="rh-traj-"))
-        out = verify(tdir, tdir / "start.sav", log, work / "v")
-        credits = turn_credit(spec, tdir / "start.sav", log, work, out["reward"]) if credit else []
-        recs = [r.raw for r in read_log(log)]
-        rows.append({
-            "task_id": spec.task_id, "family": spec.family, "split": spec.split, "policy": "oracle",
-            "actions_jsonl": log.read_text(),
-            "n_acts": sum(1 for r in recs if r["kind"] == "act"),
-            "n_waits": sum(1 for r in recs if r["kind"] == "wait"),
-            "reward": float(out["reward"]),
-            "components": json.dumps(out),
-            "turn_credit": json.dumps(credits),
-        })
-    return rows
+    tdir_p, log_p = Path(tdir), Path(log)
+    spec = TaskSpec.load(tdir_p)
+    work = Path(tempfile.mkdtemp(prefix="rh-traj-"))
+    try:
+        out = verify(tdir_p, tdir_p / "start.sav", log_p, work / "v")
+        credits = turn_credit(spec, tdir_p / "start.sav", log_p, work, out["reward"]) if credit else []
+    finally:
+        import shutil
+
+        shutil.rmtree(work, ignore_errors=True)
+    recs = [r.raw for r in read_log(log_p)]
+    return {
+        "task_id": spec.task_id, "family": spec.family, "split": spec.split, "policy": policy,
+        "actions_jsonl": log_p.read_text(),
+        "n_acts": sum(1 for r in recs if r["kind"] == "act"),
+        "n_waits": sum(1 for r in recs if r["kind"] == "wait"),
+        "reward": float(out["reward"]),
+        "valid": int(out["valid"]),
+        "components": json.dumps(out),
+        "turn_credit": json.dumps(credits),
+    }
+
+
+def trajectory_rows(tasks_dir: Path, credit: bool = False, jobs: int = 8,
+                    extra: list[tuple[str, str, str]] | None = None) -> list[dict]:
+    """Oracle trajectories for every task plus ``extra`` (task_dir, log, policy) model games."""
+    from concurrent.futures import ProcessPoolExecutor
+
+    items = [(str(t), str(t / "oracle.jsonl"), "oracle") for t in sorted(Path(tasks_dir).iterdir())
+             if (t / "oracle.jsonl").exists()]
+    items += list(extra or [])
+    with ProcessPoolExecutor(max_workers=jobs) as ex:
+        return list(ex.map(_trajectory_row, *zip(*items), [credit] * len(items)))
 
 
 def write_parquet(rows: list[dict], path: Path) -> None:
@@ -99,22 +114,23 @@ def write_parquet(rows: list[dict], path: Path) -> None:
     pq.write_table(pa.Table.from_pylist(rows), path, compression="zstd")
 
 
-def build(tasks_dir: Path, harbor_dir: Path, out_dir: Path, credit: bool = False) -> dict:
+def build(tasks_dir: Path, harbor_dir: Path, out_dir: Path, credit: bool = False, jobs: int = 8,
+          extra: list[tuple[str, str, str]] | None = None, image: str = DEFAULT_IMAGE) -> dict:
     out_dir = Path(out_dir)
-    tasks = task_rows(tasks_dir, harbor_dir)
+    tasks = task_rows(tasks_dir, harbor_dir, image=image)
     by_split: dict[str, list[dict]] = {}
     for r in tasks:
         by_split.setdefault(r["split"], []).append(r)
     for split, rows in by_split.items():
         write_parquet(rows, out_dir / "tasks" / f"{split}.parquet")
-    trajs = trajectory_rows(tasks_dir, credit=credit)
+    trajs = trajectory_rows(tasks_dir, credit=credit, jobs=jobs, extra=extra)
     tsplit: dict[str, list[dict]] = {}
     for r in trajs:
         tsplit.setdefault(r["split"], []).append(r)
     for split, rows in tsplit.items():
         write_parquet(rows, out_dir / "trajectories" / f"{split}.parquet")
     counts = {"tasks": {k: len(v) for k, v in by_split.items()}, "trajectories": {k: len(v) for k, v in tsplit.items()}}
-    write_card(out_dir, counts)
+    write_card(out_dir, counts, image=image)
     return counts
 
 
