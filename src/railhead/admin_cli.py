@@ -11,6 +11,8 @@
     railhead view <task_id> [--days N] [--speed PCT]   watch a task live in the GUI (macOS)
     railhead export-manifest <out>  add this CPU architecture's sealed manifest to exported tasks
     railhead hub build <tasks> <harbor> <out> [--credit] | railhead hub push <out> [--repo R]
+    railhead otel serve|summary [--port 4318] [--dir traces]   zero-dependency OTLP/HTTP trace sink
+    railhead harden <tasks_dir>   apply leak fixes to an existing catalog (ids, scenario, targets)
     railhead recheck <tasks_dir> [ids]   re-verify oracle logs against certificates (cross-platform check)
 """
 
@@ -120,6 +122,15 @@ def main(argv: list[str] | None = None) -> int:
             elif argv[1] == "push":
                 repo = argv[argv.index("--repo") + 1] if "--repo" in argv else "rachittshah/railhead"
                 print(hub.push(Path(argv[2]), repo=repo))
+            return 0
+        if cmd == "otel":
+            from railhead.otel import main as otel_main
+
+            return otel_main(argv[1:])
+        if cmd == "harden":
+            from railhead.gen.build import harden_catalog
+
+            print(json.dumps(harden_catalog(Path(argv[1]))))
             return 0
         if cmd == "recheck":
             return recheck(Path(argv[1]), argv[2:] or None)

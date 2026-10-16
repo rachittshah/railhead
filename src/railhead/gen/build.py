@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import math
+import random
 import shutil
 import sys
 import tempfile
@@ -72,9 +73,28 @@ def _prepend_meta(log_path: Path, m: str, a: dict) -> None:
 
 
 # ---------------------------------------------------------------------- deliver family (+variants)
+IMPOSSIBLE_SEED_OFFSET = 9000  # impossible tasks hide among deliver ids: deliver-<split>-9xxx
+
+
+def public_scenario(sc: dict) -> dict:
+    """Scenario fields the agent may see (variant/family would reveal e.g. an impossible task)."""
+    return {k: v for k, v in sc.items() if k not in ("variant", "family")}
+
+
+def noisy_targets(task: str, d: int) -> tuple[int, int]:
+    """Contract quantity and bid cap from the oracle delivery d, with per-task noise so the agent
+    cannot back out d from the instruction (deterministic in the task id)."""
+    rng = random.Random(f"railhead-targets:{task}")
+    q = max(20, int(round(d * rng.uniform(0.5, 0.7), -1)))
+    return q, max(q + 10, int(round(q * rng.uniform(2.0, 3.0), -1)))
+
+
 def gen_deliver(seed: int, split: str, out: Path, variant: str = "deliver") -> TaskSpec:
     sc = sample_scenario(seed, split, variant)
-    tid = task_id(variant, split, seed)
+    if variant == "impossible":
+        tid = task_id("deliver", split, IMPOSSIBLE_SEED_OFFSET + seed)
+    else:
+        tid = task_id(variant, split, seed)
     tdir = out / tid
     work = Path(tempfile.mkdtemp(prefix=f"rh-gen-{tid}-"))
     try:
@@ -98,7 +118,7 @@ def gen_deliver(seed: int, split: str, out: Path, variant: str = "deliver") -> T
                      "quantity": 1}
         spec = TaskSpec(task_id=tid, family="deliver", horizon_days=DELIVER_HORIZON, runoff_days=0,
                         limits={"max_forks": 2, "max_fork_days": 180}, objective=objective,
-                        scenario=sc | {"variant": variant}, split=split)
+                        scenario=public_scenario(sc), split=split)
         _write(tdir, spec)
         oracle_log = tdir / "oracle.jsonl"
         if variant == "impossible":
@@ -106,7 +126,7 @@ def gen_deliver(seed: int, split: str, out: Path, variant: str = "deliver") -> T
             q = int(max(1000, 5 * max(total_prod, 1) * months))
             q = int(math.ceil(q / 1000.0) * 1000)
             objective.update(quantity=q)
-            spec.secret = {"feasible": False, "map_production_per_month": total_prod,
+            spec.secret = {"feasible": False, "variant": variant, "map_production_per_month": total_prod,
                            "upper_bound_basis": "5x total map production over the horizon"}
             _empty_log(oracle_log)
             _prepend_meta(oracle_log, "abstain", {"reason": f"total {label} production on the map is ~{total_prod}/month; "
@@ -120,13 +140,12 @@ def gen_deliver(seed: int, split: str, out: Path, variant: str = "deliver") -> T
             d = int(probe["delivered"])
             if probe["valid"] != 1 or d < 40:
                 raise Rejected(f"oracle delivered too little ({d}) or invalid replay")
-            q = max(20, int(round(0.6 * d, -1)))
+            q, scale = noisy_targets(tid, d)
             objective.update(quantity=q)
-            spec.secret = {"feasible": True, "oracle_delivered": d}
+            spec.secret = {"feasible": True, "variant": variant, "oracle_delivered": d}
             if variant == "deliver_bid":
-                scale = int(round(1.5 * d, -1))
                 objective.update(bid=True, bid_scale=scale, bid_deadline_days=30)
-                _prepend_meta(oracle_log, "promise", {"quantity": d})
+                _prepend_meta(oracle_log, "promise", {"quantity": min(d, scale)})
         spec.objective = objective
         spec.title, spec.briefing = deliver_text(spec)
         _write(tdir, spec)
@@ -281,3 +300,52 @@ if __name__ == "__main__":
     from railhead.gen import build as _pkg
 
     raise SystemExit(_pkg.main())
+
+
+def harden_catalog(tasks_dir: Path) -> dict:
+    """Apply the leak fixes to an existing catalog: rename impossible tasks into the deliver id space,
+    scrub public scenario fields, re-derive noisy targets, rewrite briefings, re-certify bid tasks."""
+    tasks_dir = Path(tasks_dir)
+    stats = {"renamed": 0, "retargeted": 0, "recertified": 0}
+    for tdir in sorted(p for p in tasks_dir.iterdir() if (p / "task.json").exists()):
+        spec = TaskSpec.load(tdir)
+        sc = spec.scenario
+        variant = sc.get("variant") or spec.secret.get("variant") or sc.get("family") or spec.family
+        if spec.family != "deliver":
+            spec.scenario = public_scenario(sc)
+            _write(tdir, spec)
+            continue
+        if variant == "impossible" and spec.task_id.startswith("impossible-"):
+            seed = int(spec.task_id.rsplit("-", 1)[1])
+            new_id = task_id("deliver", spec.split, IMPOSSIBLE_SEED_OFFSET + seed)
+            new_dir = tasks_dir / new_id
+            tdir.rename(new_dir)
+            tdir, spec.task_id = new_dir, new_id
+            stats["renamed"] += 1
+        spec.scenario = public_scenario(sc)
+        spec.secret = {**spec.secret, "variant": variant}
+        d = spec.secret.get("oracle_delivered")
+        if d and variant in ("deliver", "deliver_bid"):
+            q, scale = noisy_targets(spec.task_id, int(d))
+            spec.objective["quantity"] = q
+            stats["retargeted"] += 1
+            if variant == "deliver_bid":
+                spec.objective["bid_scale"] = scale
+                lines = (tdir / "oracle.jsonl").read_text().splitlines()
+                out = []
+                for line in lines:
+                    rec = json.loads(line)
+                    if rec.get("kind") == "meta" and rec.get("m") == "promise":
+                        rec["a"] = {"quantity": min(int(d), scale)}
+                    out.append(json.dumps(rec, separators=(",", ":"), sort_keys=True))
+                (tdir / "oracle.jsonl").write_text("\n".join(out) + "\n")
+        spec.title, spec.briefing = deliver_text(spec)
+        _write(tdir, spec)
+        if variant == "deliver_bid":
+            work = Path(tempfile.mkdtemp(prefix="rh-harden-"))
+            try:
+                certify(spec, tdir, work)
+                stats["recertified"] += 1
+            finally:
+                shutil.rmtree(work, ignore_errors=True)
+    return stats
