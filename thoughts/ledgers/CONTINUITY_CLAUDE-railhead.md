@@ -34,23 +34,17 @@ Done = (1) abstractions built + tested, (2) RL env built + tested, (3) code on G
 
 ## State
 - Done:
-  - [x] Phase 0: scaffold, SME research (docs/research/01-04), DESIGN.md (M1-M5)
-  - [x] Phase 1: engine patches, admin/bridge/World, runtime (log, replay, daemon, forks, waits,
-        ledger), 42 player actions (GUI parity), queries + observe, rh/railhead CLIs
-  - [x] Phase 2: rewards, seal, verifier (+turn credit), generators (deliver, deliver_bid,
-        impossible, tycoon, simops), road oracle, Harbor export (per-arch manifests), HF builder
-  - [x] Verified: 184+ tests; Linux CI green; macOS-generated tasks replay identically on Linux;
-        local harbor run: oracle 1.0 / nop 0.0 on deliver+simops, zero divergences
-  - [x] Pushed to https://github.com/rachittshah/railhead (public); STE docs (README, docs/*)
-  - [x] Harbor CLI logged in (rachittshah) via no-browser OAuth (Brave window on LG monitor)
-  - [x] railhead view: GUI spectator on LG monitor lower half (RailheadViewer.app in .cache)
-- Now: [→] full catalog generation (scratchpad gen_catalog.sh), player-deliver subagent playing
-- Next: commit tasks/ → tag v0.1.0 → CI multi-arch image → GHCR public → export (amd64+arm64
-        manifests) → harbor publish (railhead = dev+ood, railhead-train = train) → HF push
-- Remaining:
-  - [ ] HF auth: user must run `hf auth login` (I won't mint tokens in their account)
-  - [ ] GHCR package visibility public (may need user click in GitHub settings)
-  - [ ] Final LG monitor showcase + README results table
+  - [x] Phases 0-2 (research, abstractions, RL env); 205+ tests; Linux CI green
+  - [x] GitHub: https://github.com/rachittshah/railhead (public, tags v0.1.0, v0.1.1)
+  - [x] Image: ghcr.io/rachittshah/railhead:0.1.1 (public, amd64+arm64, start states included)
+  - [x] Harbor: rachittshah/railhead (533 dev+ood) + rachittshah/railhead-train (1006), public;
+        registry-pulled oracle trials pass
+  - [x] Arena 1 (Claude, 5y) + Arena 2 (11 models incl. 7 Codex, 10y, 512^2, all modes) verified;
+        dashboard https://claude.ai/artifact/CcYXpgQuqQEddZKweQwy3E ; OTel traces in traces/ (local only)
+  - [x] HF dataset built at .cache/hf/out (tasks 1539 rows, trajectories 1547 incl. 11 model games)
+- Now: [→] Claude Sonnet/Opus/Fable still playing Arena 2 (.cache/arena2); verify when done
+- Blocked: HF push needs the user's token: `hf auth login`, then
+  `railhead hub push .cache/hf/out --repo rachittshah/railhead`
 
 ## Open Questions
 - RESOLVED: fast-forward needs patch 0001 (done, ~3-5k days/s).
