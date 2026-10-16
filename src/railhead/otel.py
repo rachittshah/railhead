@@ -115,7 +115,34 @@ def main(argv: list[str]) -> int:
         srv.serve_forever()
         return 0
     if sub == "summary":
-        print(json.dumps(summarize(d), indent=1))
+        print(json.dumps(summarize_players(d) if "--by-player" in argv else summarize(d), indent=1))
         return 0
     print(__doc__)
     return 2
+
+
+def summarize_players(out_dir: Path) -> dict[str, dict]:
+    """Per player (resource attribute ``player``): LLM requests, tokens and cost for Claude Code
+    (``api_request`` events) and Codex (``codex.sse_event`` response.completed events)."""
+    agg: dict[str, dict] = defaultdict(lambda: {"model": "", "requests": 0, "input_tokens": 0, "output_tokens": 0,
+                                                "cache_read_tokens": 0, "cost_usd": 0.0, "tool_calls": 0})
+    for res, attrs, rec in iter_log_records(out_dir):
+        player = str(res.get("player") or attrs.get("model") or res.get("service.name", "?"))
+        name = str(attrs.get("event.name") or rec.get("body", {}).get("stringValue", ""))
+        a = agg[player]
+        if name.endswith("api_request") and "cost_usd" in attrs:  # Claude Code
+            a["requests"] += 1
+            a["model"] = str(attrs.get("model", a["model"]))
+            a["input_tokens"] += int(attrs.get("input_tokens") or 0)
+            a["output_tokens"] += int(attrs.get("output_tokens") or 0)
+            a["cache_read_tokens"] += int(attrs.get("cache_read_tokens") or 0)
+            a["cost_usd"] += float(attrs.get("cost_usd") or 0.0)
+        elif name == "codex.sse_event" and attrs.get("event.kind") == "response.completed":
+            a["requests"] += 1
+            a["model"] = str(attrs.get("model", a["model"]))
+            a["input_tokens"] += int(attrs.get("input_token_count") or 0)
+            a["output_tokens"] += int(attrs.get("output_token_count") or 0)
+            a["cache_read_tokens"] += int(attrs.get("cached_token_count") or 0)
+        elif name.endswith("tool_result"):
+            a["tool_calls"] += 1
+    return dict(agg)

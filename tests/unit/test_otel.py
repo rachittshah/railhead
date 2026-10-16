@@ -65,3 +65,21 @@ def test_unknown_path_is_404(tmp_path):
             assert e.code == 404
     finally:
         srv.shutdown()
+
+
+def test_summary_by_player_counts_codex_completion_tokens(tmp_path):
+    from railhead.otel import summarize_players
+
+    rec = {"resourceLogs": [{"resource": {"attributes": [{"key": "player", "value": {"stringValue": "gpt-6-luna"}}]},
+           "scopeLogs": [{"logRecords": [{"attributes": [
+               {"key": "event.name", "value": {"stringValue": "codex.sse_event"}},
+               {"key": "event.kind", "value": {"stringValue": "response.completed"}},
+               {"key": "model", "value": {"stringValue": "gpt-6-luna"}},
+               {"key": "input_token_count", "value": {"stringValue": "1200"}},
+               {"key": "output_token_count", "value": {"stringValue": "300"}},
+               {"key": "cached_token_count", "value": {"intValue": "800"}}]}]}]}]}
+    (tmp_path / "logs.jsonl").write_text(json.dumps({"signal": "logs", "body": rec}) + "\n")
+    s = summarize_players(tmp_path)
+    assert s["gpt-6-luna"]["requests"] == 1
+    assert s["gpt-6-luna"]["input_tokens"] == 1200 and s["gpt-6-luna"]["output_tokens"] == 300
+    assert s["gpt-6-luna"]["cache_read_tokens"] == 800

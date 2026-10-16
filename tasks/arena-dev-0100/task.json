@@ -1,0 +1,51 @@
+{
+ "task_id": "arena-dev-0100",
+ "family": "tycoon",
+ "horizon_days": 3650,
+ "runoff_days": 365,
+ "limits": {
+  "max_forks": 2,
+  "max_fork_days": 730
+ },
+ "objective": {
+  "w_idle": -36300,
+  "w_base": 147407,
+  "score": "log50"
+ },
+ "scenario": {
+  "gen_version": 1,
+  "family": "arena",
+  "split": "dev",
+  "seed": 100,
+  "generation_seed": 1409722973,
+  "landscape": "temperate",
+  "map_log2": 9,
+  "starting_year": 1960,
+  "settings": {
+   "difficulty": {
+    "number_towns": "3",
+    "industry_density": "3",
+    "terrain_type": "0",
+    "quantity_sea_lakes": "2",
+    "max_loan": "500000",
+    "initial_interest": "3",
+    "vehicle_breakdowns": "0",
+    "construction_cost": "0",
+    "vehicle_costs": "0",
+    "subsidy_multiplier": "2",
+    "disasters": "false",
+    "economy": "false"
+   },
+   "economy": {
+    "type": "1"
+   },
+   "game_creation": {
+    "town_name": "english"
+   }
+  }
+ },
+ "title": "Arena: make money and scale for 10 years",
+ "briefing": "You run a new transport company on a large 512x512 map, starting in 1960, with a **10-year (3,650-day) mandate**. **Every form of transport is allowed:** road vehicles (buses, trucks), rail (track, stations, signals, depots, locomotives with wagons you couple using `rh vehicle attach`), air (airports and aircraft) and water (docks, ship depots and ships). Carry any cargo or passengers you like, between any industries and towns.\n\nWhen the mandate ends, your company keeps running **without you** for 365 more days. The result is your **net worth (cash minus loan) after year 11**, on a log scale: doing nothing scores 0, a simple scripted truck route scores about 0.18 (net worth \u00a3147,407), and 1 needs 50 times that route's gain. Asset stripping and loan games do not help: only sustainable profit survives the run-off.",
+ "split": "dev",
+ "version": 1
+}
