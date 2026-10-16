@@ -149,11 +149,12 @@ def export_task(task_id: str, out_dir: Path, image: str = DEFAULT_IMAGE, version
     (dst / "instruction.md").write_text(instruction_md(spec))
     (dst / "environment" / "Dockerfile").write_text(
         f"FROM {image}\nENV RAILHEAD_TASK={spec.task_id}\n")
-    seal_task(src)
     shutil.copy(src / "task.json", dst / "tests" / "task.json")
-    shutil.copy(src / "sealed.json", dst / "tests" / "sealed.json")
     if (src / "secret.json").exists():
         shutil.copy(src / "secret.json", dst / "tests" / "secret.json")
+    shutil.copy(src / "start.sav", dst / "tests" / "start.sav")
+    seal_task(dst / "tests")  # hashes of the exact start state + specs the verifier will trust
+    (dst / "tests" / "start.sav").unlink()  # the verifier uses the image's copy; the hash pins it
     write_sha256_manifest(dst / "tests" / "sealed.sha256")
     (dst / "tests" / "test.sh").write_text(TEST_SH.replace("__TASK__", spec.task_id))
     if (src / "oracle.jsonl").exists():

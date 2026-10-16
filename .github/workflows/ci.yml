@@ -25,3 +25,5 @@ jobs:
         run: uv venv --python 3.12 .venv && uv pip install -e ".[dev]"
       - name: Unit + integration tests (Linux determinism)
         run: .venv/bin/pytest -q -x
+      - name: Cross-platform determinism (macOS-generated tasks re-verified on Linux amd64)
+        run: .venv/bin/railhead recheck tasks
