@@ -87,6 +87,18 @@ def help_text(group: str | None = None) -> str:
     return "\n".join(lines)
 
 
+def route(cmd: str, rest: list[str]) -> tuple[str, str]:
+    """Decide whether `rh <cmd> <rest...>` is a player action or a query. A `<group> <verb>` that names
+    a registry action always wins (e.g. `company` is both the finance query and an action group)."""
+    from railhead.actions import REGISTRY
+
+    if rest and not rest[0].startswith("-") and "=" not in rest[0] and f"{cmd}.{rest[0]}" in REGISTRY:
+        return "act", f"{cmd}.{rest[0]}"
+    if cmd == "map" or cmd in QUERY_COMMANDS:
+        return "query", cmd
+    return "other", cmd
+
+
 def _is_tile_key(k: str) -> bool:
     return k == "tile" or k.endswith("_tile")
 
@@ -252,7 +264,7 @@ def _run(argv: list[str], as_json: bool) -> int:
         else:
             raise ValueError(f"unknown fork subcommand {sub!r}")
         return 0
-    if cmd == "map" or cmd in QUERY_COMMANDS:
+    if route(cmd, rest)[0] == "query":
         a = parse_kv(rest, mx)
         view = {k: a.pop(k) for k in ("layer", "page") if k in a}
         if cmd == "map":

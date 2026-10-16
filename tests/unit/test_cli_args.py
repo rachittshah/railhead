@@ -52,3 +52,15 @@ def test_unknown_group_help_is_an_error():
 
     with pytest.raises(ValueError):
         help_text("nosuchgroup")
+
+
+def test_group_verb_wins_over_a_query_of_the_same_name():
+    """`company` is both a query and an action group: `rh company loan` must be the action."""
+    from railhead.cli import route
+
+    assert route("company", ["loan", "amount=300000"]) == ("act", "company.loan")
+    assert route("company", ["rename", "name=Acme"]) == ("act", "company.rename")
+    assert route("company", []) == ("query", "company")
+    assert route("company", ["--json"]) == ("query", "company")
+    assert route("vehicles", []) == ("query", "vehicles")
+    assert route("road", ["line", "from_tile=1,2"]) == ("act", "road.line")
