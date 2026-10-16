@@ -407,5 +407,5 @@ The module `railhead.hub` writes Parquet files for the Hugging Face dataset.
 
 | Workflow | Trigger | Steps |
 |---|---|---|
-| `ci.yml` | A push to `main`, a pull request, or a manual start | Builds the engine, installs the package, and runs all tests. |
+| `ci.yml` | A push to `main`, a pull request, or a manual start | Job `test`: builds the engine, keeps it in the cache, and runs all tests. Job `recheck`: six parallel shards replay the oracle log of each task on Linux amd64 and compare the reward with the certificate (`railhead recheck tasks --shard i/6 --jobs 4`). |
 | `image.yml` | A tag that starts with `v`, or a manual start | Builds the image for `linux/amd64` and `linux/arm64` and pushes it to `ghcr.io/<owner>/railhead`. |

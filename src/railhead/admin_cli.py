@@ -18,7 +18,7 @@
     railhead figures docs/data/<arena>.json ... [--out docs/img]   result charts (SVG, light and dark)
     railhead render <state_dir> <out.png> [--title T]   network map of a live world (engine minimap + routes)
     railhead harden <tasks_dir>   apply leak fixes to an existing catalog (ids, scenario, targets)
-    railhead recheck <tasks_dir> [ids]   re-verify oracle logs against certificates (cross-platform check)
+    railhead recheck <tasks_dir> [ids] [--shard i/n] [--jobs N]   re-verify oracle logs against certificates
 """
 
 from __future__ import annotations
@@ -33,24 +33,47 @@ from railhead.client import Client, DaemonError
 from railhead.daemon import ensure_up, shutdown
 
 
-def recheck(tasks_dir: Path, ids: list[str] | None = None) -> int:
-    """Re-score every task's oracle log and compare with the stored certificate (determinism check)."""
+def parse_shard(text: str) -> tuple[int, int]:
+    """'i/n' -> (i, n) with 0 <= i < n."""
+    try:
+        i, n = (int(x) for x in text.split("/"))
+    except ValueError:
+        raise ValueError(f"shard must be i/n, got {text!r}") from None
+    if n < 1 or not 0 <= i < n:
+        raise ValueError(f"shard must be i/n with 0 <= i < n, got {text!r}")
+    return i, n
+
+
+def shard_dirs(dirs: list[Path], i: int, n: int) -> list[Path]:
+    """Every n-th task, starting at i: the shards partition the sorted catalog exactly once."""
+    return dirs[i::n]
+
+
+def _recheck_one(tdir_s: str) -> dict:
     import tempfile
 
     from railhead.verify import verify
 
-    bad = 0
+    tdir = Path(tdir_s)
+    cert = json.loads((tdir / "certificates.json").read_text())
+    out = verify(tdir, tdir / "start.sav", tdir / "oracle.jsonl", Path(tempfile.mkdtemp(prefix="rh-recheck-")))
+    same = out["valid"] == 1 and abs(out["reward"] - cert["oracle_reward"]) < 1e-9
+    return {"task": tdir.name, "match": same, "reward": out["reward"], "cert": cert["oracle_reward"],
+            "delivered": out.get("delivered"), "valid": out["valid"]}
+
+
+def recheck(tasks_dir: Path, ids: list[str] | None = None, shard: tuple[int, int] = (0, 1), jobs: int = 1) -> int:
+    """Re-score every task's oracle log and compare with the stored certificate (determinism check)."""
+    from concurrent.futures import ProcessPoolExecutor
+
     dirs = sorted(p for p in tasks_dir.iterdir() if (p / "certificates.json").exists())
-    for tdir in dirs:
-        if ids and tdir.name not in ids:
-            continue
-        cert = json.loads((tdir / "certificates.json").read_text())
-        out = verify(tdir, tdir / "start.sav", tdir / "oracle.jsonl", Path(tempfile.mkdtemp(prefix="rh-recheck-")))
-        same = out["valid"] == 1 and abs(out["reward"] - cert["oracle_reward"]) < 1e-9
-        bad += 0 if same else 1
-        print(json.dumps({"task": tdir.name, "match": same, "reward": out["reward"], "cert": cert["oracle_reward"],
-                          "delivered": out.get("delivered"), "valid": out["valid"]}), flush=True)
-    print(json.dumps({"checked": len(dirs), "mismatches": bad}))
+    dirs = [d for d in shard_dirs(dirs, *shard) if not ids or d.name in ids]
+    bad = 0
+    with ProcessPoolExecutor(max_workers=max(1, jobs)) as ex:
+        for row in ex.map(_recheck_one, [str(d) for d in dirs]):
+            bad += 0 if row["match"] else 1
+            print(json.dumps(row), flush=True)
+    print(json.dumps({"checked": len(dirs), "mismatches": bad, "shard": f"{shard[0]}/{shard[1]}"}))
     return 1 if bad else 0
 
 
@@ -163,7 +186,14 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(opaque_catalog(Path(argv[1]))))
             return 0
         if cmd == "recheck":
-            return recheck(Path(argv[1]), argv[2:] or None)
+            rest, shard, jobs = argv[2:], (0, 1), 1
+            if "--shard" in rest:
+                k = rest.index("--shard")
+                shard, rest = parse_shard(rest[k + 1]), rest[:k] + rest[k + 2:]
+            if "--jobs" in rest:
+                k = rest.index("--jobs")
+                jobs, rest = int(rest[k + 1]), rest[:k] + rest[k + 2:]
+            return recheck(Path(argv[1]), rest or None, shard=shard, jobs=jobs)
         if cmd == "gen":
             from railhead.gen.build import main as gen_main
 

@@ -17,8 +17,43 @@ jobs:
       - uses: actions/checkout@v4
       - name: Engine build deps
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake ninja-build zlib1g-dev liblzma-dev liblzo2-dev unzip
-      - name: Cache engine build
-        uses: actions/cache@v4
+      - name: Restore engine build
+        id: engine-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/openttd-src
+          key: engine-${{ runner.os }}-${{ hashFiles('engine/**') }}
+      - name: Build patched OpenTTD 15.3
+        run: engine/build.sh
+      # Save right after the build: actions/cache only saves on job success, and a red test run
+      # must not cost the next run an 8-minute engine build.
+      - name: Save engine build
+        if: steps.engine-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/openttd-src
+          key: engine-${{ runner.os }}-${{ hashFiles('engine/**') }}
+      - uses: astral-sh/setup-uv@v6
+      - name: Install
+        run: uv venv --python 3.12 .venv && uv pip install -e ".[dev,viz]"
+      - name: Unit + integration tests (Linux determinism)
+        run: .venv/bin/pytest -q -x
+
+  # Every oracle log in the catalog was recorded on macOS; replay all of them on Linux amd64.
+  # Six shards run in parallel so the full catalog fits the timeout.
+  recheck:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Engine build deps
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake ninja-build zlib1g-dev liblzma-dev liblzo2-dev unzip
+      - name: Restore engine build
+        uses: actions/cache/restore@v4
         with:
           path: .cache/openttd-src
           key: engine-${{ runner.os }}-${{ hashFiles('engine/**') }}
@@ -26,8 +61,6 @@ jobs:
         run: engine/build.sh
       - uses: astral-sh/setup-uv@v6
       - name: Install
-        run: uv venv --python 3.12 .venv && uv pip install -e ".[dev,viz]"
-      - name: Unit + integration tests (Linux determinism)
-        run: .venv/bin/pytest -q -x
-      - name: Cross-platform determinism (macOS-generated tasks re-verified on Linux amd64)
-        run: .venv/bin/railhead recheck tasks
+        run: uv venv --python 3.12 .venv && uv pip install -e .
+      - name: Cross-platform determinism, shard ${{ matrix.shard }} of 6
+        run: .venv/bin/railhead recheck tasks --shard ${{ matrix.shard }}/6 --jobs 4
