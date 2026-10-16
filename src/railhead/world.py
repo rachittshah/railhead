@@ -12,7 +12,8 @@ import time
 from pathlib import Path
 from typing import Any
 
-from railhead.bridge import Bridge
+from railhead.actionlog import ActionLog
+from railhead.bridge import Bridge, BridgeError
 from railhead.server import OpenTTDServer, ServerConfig
 
 AGENT_AI = "RailheadIdle"
@@ -25,6 +26,7 @@ class World:
         self.bridge = Bridge(self.admin)
         self.bridge.wait_ready(timeout=60)
         self.set_speed(speed)
+        self.log: ActionLog | None = None
 
     # ------------------------------------------------------------------ construction
     @classmethod
@@ -79,10 +81,69 @@ class World:
     def company(self) -> int:
         return self.state()["company"]
 
-    def step(self, *, days: int | None = None, ticks: int | None = None, timeout: float = 600.0) -> dict:
+    def step(
+        self, *, days: int | None = None, ticks: int | None = None, until: list[str] | None = None,
+        timeout: float = 600.0,
+    ) -> dict:
+        """Advance game time (unlogged). ``until`` = wake conditions, e.g. ["vehicle_crashed", "cash_below:5000"]."""
         if (days is None) == (ticks is None):
             raise ValueError("step needs exactly one of days= or ticks=")
-        return self.call("step", timeout=timeout, **({"days": days} if days is not None else {"ticks": ticks}))
+        args: dict[str, Any] = {"days": days} if days is not None else {"ticks": ticks}
+        if until:
+            args["until"] = list(until)
+        return self.call("step", timeout=timeout, **args)
+
+    # ------------------------------------------------------------------ logged play
+    def attach_log(self, log: ActionLog, header: bool = True) -> None:
+        """Record every subsequent act()/wait() — the log + start savegame is the proof of play."""
+        self.log = log
+        if header:
+            st = self.state()
+            log.write({"kind": "header", "v": 1, "company": st["company"], "ticks": st["ticks"],
+                       "checksum": self.call("checksum")})
+
+    def act(self, method: str, **args: Any) -> Any:
+        """Issue one player action (GS method) and log it; failures are logged then re-raised."""
+        ticks = self.state()["ticks"] if self.log else 0
+        try:
+            ret = self.call(method, **args)
+        except BridgeError as e:
+            if self.log:
+                self.log.write({"kind": "act", "ticks": ticks, "m": method, "a": args, "ok": False, "code": e.code})
+            raise
+        if self.log:
+            self.log.write({"kind": "act", "ticks": ticks, "m": method, "a": args, "ok": True, "ret": ret})
+        return ret
+
+    def wait(self, *, days: int | None = None, ticks: int | None = None, until: list[str] | None = None) -> dict:
+        t0 = self.state()["ticks"] if self.log else 0
+        out = self.step(days=days, ticks=ticks, until=until)
+        if self.log:
+            a: dict[str, Any] = {"days": days} if days is not None else {"ticks": ticks}
+            if until:
+                a["until"] = list(until)
+            self.log.write({"kind": "wait", "ticks": t0, "end_ticks": out["ticks"], "a": a,
+                            "reason": out.get("reason"), "checksum": self.call("checksum")})
+        return out
+
+    def note(self, method: str, **args: Any) -> None:
+        """Log a non-world-changing meta decision (forecast, promise, abstain, flag, submit)."""
+        if self.log:
+            self.log.write({"kind": "meta", "ticks": self.state()["ticks"], "m": method, "a": args})
+
+    # ------------------------------------------------------------------ forks
+    def fork(self, workdir: Path, reseed: int | None = None) -> World:
+        """A new World loaded from a snapshot of this one. ``reseed`` resamples hidden randomness
+        (industry production, breakdowns, town growth) so the fork shows *a* future, not *the* future."""
+        workdir = Path(workdir)
+        snap = self.save(workdir.parent / f"{workdir.name}.fork.sav")
+        child = World.load(workdir, snap)
+        if reseed is not None:
+            out = child.admin.rcon(f"reseed {int(reseed) & 0xFFFFFFFF}")
+            if not out or not out[0].startswith("Reseeded"):
+                child.close()
+                raise RuntimeError(f"engine lacks the Railhead reseed patch: {out!r}")
+        return child
 
     def save(self, dest: Path) -> Path:
         """Synchronous savegame snapshot (threaded_saves=false) copied to ``dest``."""

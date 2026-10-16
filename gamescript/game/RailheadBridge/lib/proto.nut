@@ -46,36 +46,45 @@ Proto <- {
 }
 
 Events <- {
+	/* Forward an engine event to Python; returns its kind (or null if not forwarded). */
 	function Forward(ev, et) {
+		local kind = null;
 		switch (et) {
 			case GSEvent.ET_VEHICLE_CRASHED: {
 				local e = GSEventVehicleCrashed.Convert(ev);
+				kind = "vehicle_crashed";
 				Proto.Event("vehicle_crashed", { vehicle = e.GetVehicleID(), tile = e.GetCrashSite(), reason = e.GetCrashReason() });
 				break;
 			}
 			case GSEvent.ET_INDUSTRY_OPEN: {
+				kind = "industry_open";
 				Proto.Event("industry_open", { industry = GSEventIndustryOpen.Convert(ev).GetIndustryID() });
 				break;
 			}
 			case GSEvent.ET_INDUSTRY_CLOSE: {
+				kind = "industry_close";
 				Proto.Event("industry_close", { industry = GSEventIndustryClose.Convert(ev).GetIndustryID() });
 				break;
 			}
 			case GSEvent.ET_COMPANY_BANKRUPT: {
+				kind = "company_bankrupt";
 				Proto.Event("company_bankrupt", { company = GSEventCompanyBankrupt.Convert(ev).GetCompanyID() });
 				break;
 			}
 			case GSEvent.ET_COMPANY_IN_TROUBLE: {
+				kind = "company_in_trouble";
 				Proto.Event("company_in_trouble", { company = GSEventCompanyInTrouble.Convert(ev).GetCompanyID() });
 				break;
 			}
 			case GSEvent.ET_STATION_FIRST_VEHICLE: {
 				local e = GSEventStationFirstVehicle.Convert(ev);
+				kind = "station_first_vehicle";
 				Proto.Event("station_first_vehicle", { station = e.GetStationID(), vehicle = e.GetVehicleID() });
 				break;
 			}
 			default:
 				break;
 		}
+		return kind;
 	}
 }

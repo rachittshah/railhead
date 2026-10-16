@@ -15,6 +15,7 @@ hub = ["huggingface_hub>=0.30", "pyarrow>=15"]
 
 [project.scripts]
 rh = "railhead.cli:main"
+railhead = "railhead.admin_cli:main"
 
 [build-system]
 requires = ["hatchling"]

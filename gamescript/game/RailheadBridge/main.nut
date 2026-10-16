@@ -9,6 +9,7 @@
  *    {t:"p", id, rows:[...]} chunks first.
  */
 
+require("lib/util.nut");
 require("lib/proto.nut");
 require("lib/query.nut");
 require("lib/action.nut");
@@ -22,17 +23,28 @@ class RailheadBridge extends GSController {
 	step_mode = 0;      // 0 none, 1 ticks, 2 economy-days
 	step_left = 0;
 	step_target = 0;
+	step_start_date = 0;
+	step_until = null;   // table kind -> arg (int or null) while a step is running
+	last_day = -1;
+	last_month = -1;
 	loaded = false;
+	monitors = null;     // objective ledger: [{id, kind, cargo, target, company, total}]
 
-	constructor() {}
+	/* Wake conditions a step may stop on. GS events + conditions synthesized at day boundaries. */
+	static UNTIL_KINDS = ["vehicle_crashed", "industry_open", "industry_close", "company_bankrupt",
+		"company_in_trouble", "station_first_vehicle", "cash_below", "new_month"];
+
+	constructor() { this.monitors = []; }
 
 	function Save() {
-		return { ticks = this.ticks, company = this.company };
+		return { ticks = this.ticks, company = this.company, monitors = this.monitors, actions = Action.SaveState() };
 	}
 
 	function Load(version, data) {
 		if ("ticks" in data) this.ticks = data.ticks;
 		if ("company" in data) this.company = data.company;
+		if ("monitors" in data) this.monitors = data.monitors;
+		if ("actions" in data) Action.LoadState(data.actions);
 		this.loaded = true;
 	}
 
@@ -57,22 +69,48 @@ class RailheadBridge extends GSController {
 	/* ---------------------------------------------------------------- stepping */
 	function CountTick() {
 		this.ticks++;
+		local today = GSDate.GetCurrentDate();
+		if (today != this.last_day) {
+			this.last_day = today;
+			this.PollMonitors();
+			local reason = this.DayConditions(today);
+			if (reason != null) return this.FinishStep(reason);
+		}
 		local done = false;
 		if (this.step_mode == 1) {
 			this.step_left--;
 			done = this.step_left <= 0;
 		} else {
-			done = GSDate.GetCurrentDate() >= this.step_target;
+			done = today >= this.step_target;
 		}
-		if (done) this.FinishStep();
+		if (done) this.FinishStep("elapsed");
 	}
 
-	function FinishStep() {
+	/* Conditions evaluated once per game day while stepping. */
+	function DayConditions(today) {
+		if (this.step_until == null) return null;
+		if ("cash_below" in this.step_until && this.company >= 0) {
+			if (GSCompany.GetBankBalance(this.company) < this.step_until.cash_below) return "cash_below";
+		}
+		local m = GSDate.GetMonth(today);
+		if ("new_month" in this.step_until && this.last_month >= 0 && m != this.last_month) {
+			this.last_month = m;
+			return "new_month";
+		}
+		this.last_month = m;
+		return null;
+	}
+
+	function FinishStep(reason) {
 		local id = this.step_id;
 		this.step_mode = 0;
 		this.step_id = -1;
+		this.step_until = null;
 		GSGame.Pause();
-		Proto.Ok(id, this.StateTable());
+		local st = this.StateTable();
+		st.reason <- reason;
+		st.days <- st.date - this.step_start_date;
+		Proto.Ok(id, st);
 	}
 
 	function H_step(id, a) {
@@ -88,7 +126,26 @@ class RailheadBridge extends GSController {
 		} else {
 			return Proto.Err(id, "ERR_BAD_ARG", "step needs ticks or days");
 		}
+		this.step_until = null;
+		if ("until" in a && a.until != null) {
+			if (typeof a.until != "array") { this.step_mode = 0; return Proto.Err(id, "ERR_BAD_ARG", "until must be a list"); }
+			local u = {};
+			foreach (item in a.until) {
+				local kind = item;
+				local arg = null;
+				local colon = item.find(":");
+				if (colon != null) { kind = item.slice(0, colon); arg = item.slice(colon + 1).tointeger(); }
+				local known = false;
+				foreach (k in RailheadBridge.UNTIL_KINDS) if (k == kind) known = true;
+				if (!known) { this.step_mode = 0; return Proto.Err(id, "ERR_BAD_ARG", "unknown until kind '" + kind + "'"); }
+				u[kind] <- arg;
+			}
+			this.step_until = u;
+		}
 		this.step_id = id;
+		this.step_start_date = GSDate.GetCurrentDate();
+		this.last_day = this.step_start_date;
+		this.last_month = GSDate.GetMonth(this.step_start_date);
 		GSGame.Unpause();
 		// We resume inside the first unpaused tick: count it now.
 		if (!GSGame.IsPaused()) this.CountTick();
@@ -104,7 +161,10 @@ class RailheadBridge extends GSController {
 				local req = GSEventAdminPort.Convert(ev).GetObject();
 				if (req != null) this.Dispatch(req);
 			} else {
-				Events.Forward(ev, et);
+				local kind = Events.Forward(ev, et);
+				if (kind != null && this.step_mode != 0 && this.step_until != null && (kind in this.step_until)) {
+					this.FinishStep(kind);
+				}
 			}
 		}
 	}
@@ -132,8 +192,10 @@ class RailheadBridge extends GSController {
 
 	/* ---------------------------------------------------------------- meta */
 	function StateTable() {
+		local d = GSDate.GetCurrentDate();
 		return {
-			date = GSDate.GetCurrentDate(),
+			ymd = GSDate.GetYear(d) + "-" + Util.Pad2(GSDate.GetMonth(d)) + "-" + Util.Pad2(GSDate.GetDayOfMonth(d)),
+			date = d,
 			paused = GSGame.IsPaused(),
 			ticks = this.ticks,
 			company = this.company,
@@ -205,6 +267,47 @@ class RailheadBridge extends GSController {
 		il.Sort(GSList.SORT_BY_ITEM, GSList.SORT_ASCENDING);
 		foreach (i, _ in il) h = mix(h, GSIndustry.GetLocation(i));
 		Proto.Ok(id, { h = h, date = GSDate.GetCurrentDate(), ticks = this.ticks, vehicles = vl.Count() });
+	}
+
+	/* ---------------------------------------------------------------- objective ledger
+	 * Engine-native GSCargoMonitor amounts (delta since last call) accumulated daily into totals
+	 * that live in the GS savegame data. Rewards are read from here during replay. */
+	static MONITOR_KINDS = ["industry_delivery", "industry_pickup", "town_delivery", "town_pickup"];
+
+	function PollMonitors() {
+		foreach (m in this.monitors) {
+			local d = 0;
+			if (m.kind == "industry_delivery") d = GSCargoMonitor.GetIndustryDeliveryAmount(m.company, m.cargo, m.target, true);
+			else if (m.kind == "industry_pickup") d = GSCargoMonitor.GetIndustryPickupAmount(m.company, m.cargo, m.target, true);
+			else if (m.kind == "town_delivery") d = GSCargoMonitor.GetTownDeliveryAmount(m.company, m.cargo, m.target, true);
+			else if (m.kind == "town_pickup") d = GSCargoMonitor.GetTownPickupAmount(m.company, m.cargo, m.target, true);
+			if (d > 0) m.total += d;
+		}
+	}
+
+	function H_monitor_add(id, a) {
+		local kind = ("kind" in a) ? a.kind : null;
+		local known = false;
+		foreach (k in RailheadBridge.MONITOR_KINDS) if (k == kind) known = true;
+		if (!known) return Proto.Err(id, "ERR_BAD_ARG", "kind must be one of industry_delivery, industry_pickup, town_delivery, town_pickup");
+		if (!("cargo" in a) || !GSCargo.IsValidCargo(a.cargo)) return Proto.Err(id, "ERR_BAD_ARG", "invalid cargo");
+		if (!("target" in a)) return Proto.Err(id, "ERR_BAD_ARG", "target required");
+		local is_town = kind.find("town") == 0;
+		if (is_town ? !GSTown.IsValidTown(a.target) : !GSIndustry.IsValidIndustry(a.target)) {
+			return Proto.Err(id, "ERR_BAD_ARG", "invalid target " + a.target);
+		}
+		local company = ("company" in a) ? a.company : this.company;
+		if (company < 0) return Proto.Err(id, "ERR_NO_COMPANY", "no company bound");
+		local m = { id = this.monitors.len(), kind = kind, cargo = a.cargo, target = a.target, company = company, total = 0 };
+		this.monitors.append(m);
+		this.PollMonitors();  // starts monitoring (first call) without counting history
+		m.total = 0;
+		Proto.Ok(id, m.id);
+	}
+
+	function H_monitor_read(id, a) {
+		this.PollMonitors();
+		Proto.Rows(id, this.monitors);
 	}
 
 	function H_bind_company(id, a) {
