@@ -12,6 +12,7 @@ dependencies = []
 dev = ["pytest>=8", "pytest-timeout>=2.3", "ruff>=0.6"]
 gym = ["gymnasium>=1.0"]
 hub = ["huggingface_hub>=0.30", "pyarrow>=15"]
+viz = ["matplotlib>=3.8"]
 
 [project.scripts]
 rh = "railhead.cli:main"

@@ -26,7 +26,7 @@ jobs:
         run: engine/build.sh
       - uses: astral-sh/setup-uv@v6
       - name: Install
-        run: uv venv --python 3.12 .venv && uv pip install -e ".[dev]"
+        run: uv venv --python 3.12 .venv && uv pip install -e ".[dev,viz]"
       - name: Unit + integration tests (Linux determinism)
         run: .venv/bin/pytest -q -x
       - name: Cross-platform determinism (macOS-generated tasks re-verified on Linux amd64)

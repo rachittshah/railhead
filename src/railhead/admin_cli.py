@@ -13,6 +13,9 @@
     railhead export-manifest <out>  add this CPU architecture's sealed manifest to exported tasks
     railhead hub build <tasks> <harbor> <out> [--credit] | railhead hub push <out> [--repo R]
     railhead otel serve|summary [--port 4318] [--dir traces]   zero-dependency OTLP/HTTP trace sink
+    railhead trace bundle <arena_dir> [--otel traces] [--out DIR]   per-player e2e trace bundles (scrubbed, local)
+    railhead figures docs/data/<arena>.json ... [--out docs/img]   result charts (SVG, light and dark)
+    railhead render <state_dir> <out.png> [--title T]   network map of a live world (engine minimap + routes)
     railhead harden <tasks_dir>   apply leak fixes to an existing catalog (ids, scenario, targets)
     railhead recheck <tasks_dir> [ids]   re-verify oracle logs against certificates (cross-platform check)
 """
@@ -133,6 +136,18 @@ def main(argv: list[str] | None = None) -> int:
             from railhead.otel import main as otel_main
 
             return otel_main(argv[1:])
+        if cmd == "trace":
+            from railhead.trace import main as trace_main
+
+            return trace_main(argv[1:])
+        if cmd == "figures":
+            from railhead.figures import main as figures_main
+
+            return figures_main(argv[1:])
+        if cmd == "render":
+            from railhead.render import main as render_main
+
+            return render_main(argv[1:])
         if cmd == "harden":
             from railhead.gen.build import harden_catalog
 

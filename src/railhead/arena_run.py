@@ -62,7 +62,9 @@ def agent_command(p: Player, prompt: str, workdir: Path, otel: str = "http://127
     return ["codex", "exec", "-m", p.model, "--skip-git-repo-check", "--dangerously-bypass-approvals-and-sandbox",
             "-C", str(workdir), "-c", 'model_reasoning_effort="high"',
             "-c", f'otel.exporter={{otlp-http={{endpoint="{otel}/v1/logs",protocol="json"}}}}',
-            "-c", "otel.log_user_prompt=true", "-c", f'otel.environment="arena-{p.label}"', prompt]
+            "-c", f'otel.trace_exporter={{otlp-http={{endpoint="{otel}/v1/traces",protocol="json"}}}}',
+            "-c", "otel.log_user_prompt=true", "-c", "otel.log_agent_responses=true",
+            "-c", f'otel.environment="arena-{p.label}"', prompt]
 
 
 def agent_env(p: Player, task: str, state: Path, tasks_dir: Path, otel: str, base: dict | None = None) -> dict:
@@ -74,7 +76,8 @@ def agent_env(p: Player, task: str, state: Path, tasks_dir: Path, otel: str, bas
         "CLAUDE_CODE_ENABLE_TELEMETRY": "1", "OTEL_LOGS_EXPORTER": "otlp", "OTEL_METRICS_EXPORTER": "otlp",
         "OTEL_TRACES_EXPORTER": "otlp", "CLAUDE_CODE_ENHANCED_TELEMETRY_BETA": "1",
         "OTEL_EXPORTER_OTLP_PROTOCOL": "http/json", "OTEL_EXPORTER_OTLP_ENDPOINT": otel,
-        "OTEL_LOG_USER_PROMPTS": "1", "OTEL_LOG_TOOL_DETAILS": "1", "OTEL_LOGS_EXPORT_INTERVAL": "2000",
+        "OTEL_LOG_USER_PROMPTS": "1", "OTEL_LOG_TOOL_DETAILS": "1", "OTEL_LOG_TOOL_CONTENT": "1",
+        "OTEL_LOGS_EXPORT_INTERVAL": "2000",
         "OTEL_RESOURCE_ATTRIBUTES": f"player={p.label},arena.task={task}",
     })
     return env

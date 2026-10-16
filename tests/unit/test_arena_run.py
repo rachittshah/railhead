@@ -21,6 +21,9 @@ def test_codex_player_gets_traces_and_no_sandbox_for_the_unix_socket(tmp_path):
     assert cmd[:2] == ["codex", "exec"] and cmd[cmd.index("-m") + 1] == "gpt-6-luna"
     assert "--dangerously-bypass-approvals-and-sandbox" in cmd and "--skip-git-repo-check" in cmd
     assert any("otel.exporter" in c for c in cmd)
+    # e2e traces: spans and the model's own responses, not only token counts
+    assert any("otel.trace_exporter" in c and "/v1/traces" in c for c in cmd)
+    assert "otel.log_agent_responses=true" in cmd
 
 
 def test_agent_env_points_rh_at_its_own_daemon_and_tags_traces(tmp_path):
@@ -30,4 +33,5 @@ def test_agent_env_points_rh_at_its_own_daemon_and_tags_traces(tmp_path):
     assert env["RAILHEAD_STATE"] == str(tmp_path / "state")
     assert env["CLAUDE_CODE_ENABLE_TELEMETRY"] == "1"
     assert "player=haiku" in env["OTEL_RESOURCE_ATTRIBUTES"]
+    assert env["OTEL_LOG_TOOL_CONTENT"] == "1"  # full tool input and output in the trace events
     assert env["PATH"].split(":")[0].endswith("/bin")
