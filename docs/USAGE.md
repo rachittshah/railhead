@@ -636,3 +636,82 @@ The default repository is `rachittshah/railhead`.
 
 The image sets `RAILHEAD_OPENTTD`, `RAILHEAD_SCRIPTS`, `RAILHEAD_TASKS`, and `RAILHEAD_STATE`.
 Each Harbor task sets `RAILHEAD_TASK`.
+
+## Record the LLM traces (OpenTelemetry)
+
+Railhead has an OTLP/HTTP receiver that uses only the Python standard library.
+It writes each export to a JSONL file.
+
+1. Start the receiver:
+
+   ```bash
+   railhead otel serve --port 4318 --dir traces
+   ```
+
+2. Start a Claude Code player with telemetry. Set these variables in the environment of the process:
+
+   ```bash
+   export CLAUDE_CODE_ENABLE_TELEMETRY=1 OTEL_LOGS_EXPORTER=otlp OTEL_METRICS_EXPORTER=otlp
+   export OTEL_TRACES_EXPORTER=otlp CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1
+   export OTEL_EXPORTER_OTLP_PROTOCOL=http/json OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318
+   export OTEL_LOG_USER_PROMPTS=1 OTEL_LOG_TOOL_DETAILS=1
+   ```
+
+3. Start a Codex player with telemetry. Use configuration overrides on the command line:
+
+   ```bash
+   codex exec -c 'otel.exporter={otlp-http={endpoint="http://127.0.0.1:4318/v1/logs",protocol="json"}}' \
+     -c otel.log_user_prompt=true "<prompt>"
+   ```
+
+4. Show the requests, the tokens, and the cost for each model:
+
+   ```bash
+   railhead otel summary --dir traces
+   ```
+
+CAUTION: Inside a Docker container, `127.0.0.1` is the container. Use `http://host.docker.internal:4318`.
+
+## Run an arena
+
+An arena puts several players on the same task.
+Each player has its own daemon and its own state directory.
+
+1. Start one daemon for each player:
+
+   ```bash
+   for p in a b c; do
+     RAILHEAD_TASKS="$PWD/tasks" RAILHEAD_STATE="$PWD/arena/$p/state" railhead up arena-dev-0005
+   done
+   ```
+
+2. Give each player the same instruction. Set `RAILHEAD_STATE` to the directory of that player.
+3. Show the scoreboard:
+
+   ```bash
+   railhead arena arena
+   ```
+
+4. Calculate the verified result of each player:
+
+   ```bash
+   python -m railhead.verify tasks/arena-dev-0005 tasks/arena-dev-0005/start.sav \
+     arena/a/state/run/actions.jsonl arena/a/verify
+   ```
+
+## Watch a game
+
+The viewer is a GUI client of OpenTTD 15.3 that joins as a spectator.
+It does not change the world.
+
+- To watch a live player, attach to its daemon:
+
+  ```bash
+  railhead view --attach arena/a/state
+  ```
+
+- To watch a recorded game, replay its action log:
+
+  ```bash
+  railhead view arena-dev-0005 --log arena/a/state/run/actions.jsonl --speed 1000
+  ```
