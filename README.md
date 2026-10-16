@@ -79,6 +79,38 @@ For each turn, it replays the log without that turn and compares the two rewards
 A task can start from any savegame.
 The `simops` family uses this property: its start state is a transport network with faults.
 
+## Results: models play first-person
+
+Four Claude models played the same `arena` world (`arena-dev-0005`): 256x256 tiles, 1975, a 5-year mandate and a 1-year run-off.
+Each model played as the company owner through `rh` only.
+No program built anything for the models.
+The verifier replayed each action log from the sealed start state.
+Then the world continued without the model to the end of the mandate and through the run-off.
+
+| Model | Net worth after run-off | Gain / baseline gain | Arena score | Actions | Replay |
+|---|---|---|---|---|---|
+| Claude Sonnet 5.5 | £2,574,034 | 12.9 | 0.671 | 524 | valid, 0 divergences |
+| Claude Opus 5.5 | £1,598,757 | 8.1 | 0.561 | 417 | valid, 0 divergences |
+| Claude Haiku 5.5 | £749,707 | 3.8 | 0.400 | 479 | valid, 0 divergences |
+| Scripted truck route (baseline) | £185,775 | 1.0 | 0.178 | – | certificate |
+| No play | -£13,800 | 0.0 | 0.000 | 0 | certificate |
+
+Read these results with these limits:
+
+- Sonnet and Opus stopped after about 2.3 game years because their sessions reached a usage limit. Their networks continued without them. The rules of the task permit this.
+- Haiku played the full 5 years and repaid its loan. It built a smaller network.
+- Claude Fable 5.1 restarted after an interface fault (an unchecked `submit`) and then reached a usage limit before its first action.
+- This is one world and one run for each model. It shows that the environment can tell models apart. It is not a benchmark result.
+
+The model players also found five interface faults.
+Each fault is now fixed and has a test:
+
+1. A train could not couple wagons. `rh vehicle attach` now does this.
+2. `rh help` did not list the action verbs. It now lists all verbs and their arguments.
+3. Meta commands accepted unknown arguments. Now they reject them, and `submit` needs `confirm=yes`.
+4. A depot or a stop did not connect to the road. Now it connects like the GUI.
+5. A daemon restart with a relative state path did not start the engine. Paths are now absolute.
+
 ## Quick start
 
 Before you start, make sure that you have these items:

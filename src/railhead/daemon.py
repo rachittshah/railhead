@@ -36,7 +36,34 @@ READ_METHODS = {
     "state", "checksum", "companies", "map_info", "towns", "industries", "cargos", "engines", "stations",
     "vehicles", "orders", "depots", "company", "tile", "tiles", "subsidies", "catchment", "monitor_read",
 }
-META_METHODS = {"forecast", "promise", "abstain", "flag", "submit"}
+# Meta decisions: exact argument schemas {name: (type, required)}. Unknown keys are refused, and the
+# irreversible `submit` needs confirm=yes (a model once ended a 5-year game by probing `submit vtype=road`).
+META_SCHEMAS: dict[str, dict[str, tuple[type, bool]]] = {
+    "submit": {"confirm": (str, True)},
+    "promise": {"quantity": (int, True)},
+    "forecast": {"metric": (str, True), "p10": (int, False), "p50": (int, True), "p90": (int, False),
+                 "by_day": (int, False)},
+    "abstain": {"reason": (str, True), "max_possible": (int, False)},
+    "flag": {"note": (str, True)},
+}
+META_METHODS = set(META_SCHEMAS)
+WAIT_KEYS = {"days", "ticks", "until"}
+
+
+def check_meta(m: str, a: dict) -> None:
+    schema = META_SCHEMAS[m]
+    unknown = set(a) - set(schema)
+    if unknown:
+        raise OpError("ERR_BAD_ARG", f"{m}: unknown argument(s) {sorted(unknown)} (arguments: {', '.join(schema)})")
+    for k, (typ, required) in schema.items():
+        if k not in a:
+            if required:
+                raise OpError("ERR_BAD_ARG", f"{m}: missing required argument '{k}' (arguments: {', '.join(schema)})")
+            continue
+        if not isinstance(a[k], typ) or isinstance(a[k], bool):
+            raise OpError("ERR_BAD_ARG", f"{m}: '{k}' must be {typ.__name__}")
+    if m == "submit" and a["confirm"] != "yes":
+        raise OpError("ERR_BAD_ARG", "submit is irreversible: run `rh submit confirm=yes` to end your mandate")
 TICKS_PER_DAY = 74
 
 
@@ -150,6 +177,7 @@ class Railheadd:
             m = req.get("m")
             if m not in META_METHODS:
                 raise OpError("ERR_BAD_ARG", f"unknown meta decision {m!r}")
+            check_meta(m, a)
             self.world.note(m, **a)
             if m == "submit":
                 self.submitted = True
@@ -163,6 +191,9 @@ class Railheadd:
         raise OpError("ERR_UNKNOWN_OP", f"unknown op {op!r}")
 
     def _wait(self, req: dict) -> dict:
+        unknown = set(req) - WAIT_KEYS - {"op"}
+        if unknown:
+            raise OpError("ERR_BAD_ARG", f"wait: unknown argument(s) {sorted(unknown)} (arguments: days, ticks, until)")
         left = self.days_left()
         if left <= 0:
             raise OpError("ERR_HORIZON", "the task horizon has been reached")
@@ -223,7 +254,16 @@ class Railheadd:
 
 # ---------------------------------------------------------------------- socket server
 def serve(task_id: str, state: Path) -> None:
+    state = Path(state).resolve()
     state.mkdir(parents=True, exist_ok=True)
+    # Single instance per state dir for the daemon's whole life: a second daemon would delete this
+    # one's world directory during its own boot (seen live when a client raced a restart).
+    life = open(state / "daemon.lock", "w")
+    try:
+        fcntl.flock(life, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        raise SystemExit("another railheadd already owns this state dir") from None
+    (state / "daemon.pid").write_text(str(os.getpid()))  # visible while booting (replay can take a while)
     d = Railheadd(task_id, state)
     sock = socket_path(state)
     if sock.exists():
@@ -258,7 +298,6 @@ def serve(task_id: str, state: Path) -> None:
 
     srv = Server(str(sock), Handler)
     os.chmod(sock, 0o666)
-    (state / "daemon.pid").write_text(str(os.getpid()))
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
     t = threading.Thread(target=srv.serve_forever, kwargs={"poll_interval": 0.1}, daemon=True)
     t.start()
@@ -295,21 +334,24 @@ def _kill_stale_children(state: Path) -> None:
 
 def ensure_up(task_id: str | None = None, state: Path | None = None, timeout: float = 180.0) -> int:
     """Start railheadd for ``task_id`` unless it already runs. Returns the daemon pid."""
-    state = Path(state or state_root())
+    state = Path(state or state_root()).resolve()
     state.mkdir(parents=True, exist_ok=True)
     task_id = task_id or os.environ.get("RAILHEAD_TASK")
     with open(state / "up.lock", "w") as lockf:
         fcntl.flock(lockf, fcntl.LOCK_EX)
         pidf = state / "daemon.pid"
         if pidf.exists() and _alive(int(pidf.read_text() or 0)):
-            try:
-                info = Client(state, timeout=10).request("ping")
-                if task_id and info["task_id"] != task_id:
-                    raise DaemonError("ERR_TASK_MISMATCH", f"daemon runs {info['task_id']}, not {task_id}")
-                return int(info["pid"])
-            except (OSError, DaemonError) as e:
-                if isinstance(e, DaemonError) and e.code == "ERR_TASK_MISMATCH":
-                    raise
+            deadline = time.monotonic() + timeout
+            while time.monotonic() < deadline and _alive(int(pidf.read_text() or 0)):
+                try:
+                    info = Client(state, timeout=10).request("ping")
+                    if task_id and info["task_id"] != task_id:
+                        raise DaemonError("ERR_TASK_MISMATCH", f"daemon runs {info['task_id']}, not {task_id}")
+                    return int(info["pid"])
+                except (OSError, DaemonError) as e:
+                    if isinstance(e, DaemonError) and e.code == "ERR_TASK_MISMATCH":
+                        raise
+                    time.sleep(0.2)  # booting (replaying its log): wait, do not start a second daemon
         if not task_id:
             raise DaemonError("ERR_NO_TASK", "no task given (set RAILHEAD_TASK)")
         _kill_stale_children(state)
@@ -333,6 +375,13 @@ def ensure_up(task_id: str | None = None, state: Path | None = None, timeout: fl
 
 def shutdown(state: Path | None = None) -> None:
     state = Path(state or state_root())
+    state.mkdir(parents=True, exist_ok=True)
+    with open(state / "up.lock", "w") as lockf:
+        fcntl.flock(lockf, fcntl.LOCK_EX)
+        _shutdown_locked(state)
+
+
+def _shutdown_locked(state: Path) -> None:
     try:
         Client(state, timeout=30).request("shutdown")
     except (OSError, DaemonError):

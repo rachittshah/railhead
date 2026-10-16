@@ -43,7 +43,7 @@ rh fork create name=try1           # a sandbox copy of the world (shows *a* poss
 rh fork do name=try1 m=road_line from_tile=10,4 to_tile=30,4
 rh fork wait name=try1 days=90     # costs imagination budget (fork-days)
 rh fork drop name=try1
-rh submit                          # optional: you are done; the world keeps running without you
+rh submit confirm=yes              # optional: you are done; the world keeps running without you
 ```
 Any build command accepts `dry_run=true` to get its cost without doing it. Errors name a likely fix.
 

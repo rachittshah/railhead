@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import random
 import shutil
 import sys
@@ -219,6 +220,8 @@ def gen_tycoon(seed: int, split: str, out: Path, family: str = "tycoon", horizon
         if base["valid"] != 1 or base["net_worth"] <= idle["net_worth"]:
             raise Rejected("baseline does not beat doing nothing")
         spec.objective = {"w_idle": int(idle["net_worth"]), "w_base": int(base["net_worth"])}
+        if family == "arena":
+            spec.objective["score"] = "log50"  # unsaturated scale score: strong models beat the baseline 10x+
         spec.title = "Build a transport empire" if family == "tycoon" else "Arena: make money and scale"
         spec.briefing = (
             f"You run a new transport company with a {horizon}-day mandate. Build whatever network you like "
@@ -348,4 +351,50 @@ def harden_catalog(tasks_dir: Path) -> dict:
                 stats["recertified"] += 1
             finally:
                 shutil.rmtree(work, ignore_errors=True)
+    return stats
+
+
+OPAQUE_FAMILIES = ("deliver", "deliver_bid", "simops")  # ids must not reveal the generator seed
+
+
+def _salt() -> str:
+    """Local, never-published salt for opaque task ids (~/.railhead/id_salt)."""
+    p = Path.home() / ".railhead" / "id_salt"
+    if not p.exists():
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(os.urandom(16).hex())
+        p.chmod(0o600)
+    return p.read_text().strip()
+
+
+def opaque_catalog(tasks_dir: Path) -> dict:
+    """Rename seed-revealing task ids to salted opaque ones and move map seeds into secret.json.
+
+    The generator is public and deterministic, so `simops-train-0042` would let anyone recompute
+    the injected faults (or a bid task's oracle delivery) offline. Idempotent."""
+    import hashlib
+
+    tasks_dir, salt = Path(tasks_dir), _salt()
+    stats = {"renamed": 0, "scrubbed": 0}
+    for tdir in sorted(p for p in tasks_dir.iterdir() if (p / "task.json").exists()):
+        spec = TaskSpec.load(tdir)
+        changed = False
+        for k in ("seed", "generation_seed"):
+            if k in spec.scenario:
+                spec.secret.setdefault("scenario_private", {})[k] = spec.scenario.pop(k)
+                changed = True
+        prefix, split, tail = spec.task_id.rsplit("-", 2)[0], spec.split, spec.task_id.rsplit("-", 1)[1]
+        if prefix in OPAQUE_FAMILIES and tail.isdigit():
+            spec.secret["source_task_id"] = spec.task_id
+            h = hashlib.sha256(f"{salt}:{spec.task_id}".encode()).hexdigest()[:6]
+            new_id = f"{prefix}-{split}-{h}"
+            new_dir = tasks_dir / new_id
+            assert not new_dir.exists(), new_id
+            tdir.rename(new_dir)
+            tdir, spec.task_id = new_dir, new_id
+            stats["renamed"] += 1
+            changed = True
+        if changed:
+            _write(tdir, spec)
+            stats["scrubbed"] += 1
     return stats

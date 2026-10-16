@@ -1,5 +1,7 @@
 """Real OpenTTD dedicated server + Admin Port client (needs a built OpenTTD; see engine/README)."""
 
+from pathlib import Path
+
 import pytest
 
 from railhead.admin_client import AdminClient
@@ -38,3 +40,10 @@ def test_two_servers_run_side_by_side_on_distinct_ports(tmp_path):
             "127.0.0.1", b.admin_port, b.admin_password
         ) as cb:
             assert (ca.welcome.seed, cb.welcome.seed) == (1, 2)
+
+
+def test_server_works_with_a_relative_workdir(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    with OpenTTDServer(Path("rel/inst"), ServerConfig(seed=1, game_script=None)) as srv:
+        with AdminClient.connect("127.0.0.1", srv.admin_port, srv.admin_password) as admin:
+            assert admin.welcome.seed == 1

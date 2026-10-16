@@ -67,7 +67,7 @@ Canonical names (CLI `rh <group> <verb>`, SDK `w.<group>_<verb>()`, log `{"a":"<
 | `water` | `dock(tile)`, `canal(tile)`, `lock(tile)`, `ship_depot(tile, toward)` |
 | `bridge` | `build(type, start, end, vehicle=rail|road)` · `tunnel(start, vehicle)` |
 | `land` | `raise(tile, corner)`, `lower(tile, corner)`, `level(from, to)`, `demolish(tile)` |
-| `vehicle` | `buy(depot, engine, [cargo])`, `sell(v)`, `start(v)`, `stop(v)`, `depot(v)` (send), `refit(v, cargo)`, `clone(depot, v, share_orders)`, `skip_order(v, i)` |
+| `vehicle` | `buy(depot, engine, [cargo])`, `attach(wagon, train)`, `sell_wagon(v, i)`, `sell(v)`, `start(v)`, `stop(v)`, `depot(v)` (send), `refit(v, cargo)`, `clone(depot, v, share_orders)`, `skip_order(v, i)` |
 | `order` | `append(v, tile, flags)`, `insert(v, i, tile, flags)`, `remove(v, i)`, `clear(v)`, `share(v, other)`; flags ∈ {`full_load`, `full_load_any`, `unload`, `transfer`, `no_load`, `no_unload`, `non_stop`, `via`, `go_depot`, `service`} |
 | `company` | `loan(amount)`, `rename(name)` |
 | `town` | `action(town, kind)` kind ∈ {advertise_small/medium/large, road_rebuild, statue, fund_buildings, exclusive_rights, bribe} |

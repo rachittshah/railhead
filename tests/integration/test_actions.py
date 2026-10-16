@@ -540,3 +540,22 @@ def test_e2e_bus_line_is_deterministic_for_a_fixed_seed(world, tmp_path):
     with World.create(tmp_path / "again", dataclasses.replace(world.server.config)) as w2:
         second = _bus_line(w2)
     assert first == second
+
+
+def test_rail_wagons_couple_to_a_locomotive_like_the_depot_gui(world):
+    x, y = site(world, 4, 3)
+    act(world, "rail.set_type", railtype=0)
+    act(world, "rail.depot", tile=at(x + 1, y + 1), front_tile=at(x + 2, y + 1))
+    engines = world.call("engines", vtype="rail")
+    loco = next(e for e in engines if not e.get("wagon"))
+    wagon = next(e for e in engines if e.get("wagon") and e.get("capacity", 0) > 0)
+    train = act(world, "vehicle.buy", depot_tile=at(x + 1, y + 1), engine=loco["id"])["vehicle"]
+    free = act(world, "vehicle.buy", depot_tile=at(x + 1, y + 1), engine=wagon["id"])["vehicle"]
+    out = act(world, "vehicle.attach", vehicle=free, train_vehicle=train)
+    assert out["wagons"] == 2
+    assert vehicle_row(world, train)["capacity"] > 0
+    # a second wagon goes to the end of the same train
+    free2 = act(world, "vehicle.buy", depot_tile=at(x + 1, y + 1), engine=wagon["id"])["vehicle"]
+    assert act(world, "vehicle.attach", vehicle=free2, train_vehicle=train)["wagons"] == 3
+    # selling a wagon back out of the train
+    assert act(world, "vehicle.sell_wagon", vehicle=train, index=2)["wagons"] == 2

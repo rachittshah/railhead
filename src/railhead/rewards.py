@@ -38,3 +38,13 @@ def tycoon(w: float, w_idle: float, w_base: float) -> float:
 
 def abstain(abstained: bool, feasible: bool) -> float:
     return 1.0 if (abstained and not feasible) else 0.0
+
+
+def tycoon_log(w: float, w_idle: float, w_base: float, k: float = 50.0) -> float:
+    """Arena scale score: ln(1 + gain/baseline_gain) / ln(1 + k). 0 = doing nothing; the scripted
+    baseline scores ln2/ln51 ~ 0.18; 1 needs k times the baseline's gain. Strong models stay unsaturated."""
+    import math
+
+    gain_base = max(w_base - w_idle, 1.0)
+    g = max(0.0, (w - w_idle) / gain_base)
+    return _clip(math.log1p(g) / math.log1p(k))

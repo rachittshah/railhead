@@ -26,6 +26,67 @@ QUERY_COMMANDS = {
 META_COMMANDS = {"forecast", "promise", "abstain", "flag", "submit"}
 
 
+META_HELP = [
+    "rh wait days=N [until=vehicle_crashed,industry_close,cash_below:N,new_month,...]   (or ticks=N)",
+    "rh promise quantity=N                       commit to a delivery quantity (bid tasks)",
+    "rh forecast metric=NAME p50=N [p10=N p90=N by_day=N]",
+    "rh abstain reason=\"...\" [max_possible=N]   declare the contract impossible",
+    "rh flag note=\"...\"                          report an environment problem",
+    "rh submit confirm=yes                       end your mandate (irreversible; the world runs on)",
+]
+INFO_HELP = [
+    "rh status | brief | info | history [n=30]",
+    "rh towns | industries | stations | vehicles | depots [vtype=road] | company | cargos | subsidies",
+    "rh engines vtype=road|rail|air|water        vehicles you can buy",
+    "rh map x=0 y=0 w=48 h=24 [layer=kind|height|owner|slope|build]",
+    "rh tile tile=X,Y [radius=3] | rh catchment tile=X,Y | rh orders vehicle=N",
+    "rh fork create|list|drop name=F | fork do name=F m=<gs_method> ... | fork wait name=F days=N",
+    "rh q <query> k=v | rh do <gs_method> k=v    raw JSON escape hatches;  add --json to any command",
+]
+
+
+def _param_usage(p) -> str:
+    from railhead.actions import ENUM, FLAGS, TILE
+
+    if p.type == TILE:
+        v = "X,Y"
+    elif p.type == ENUM:
+        v = "|".join(p.choices)
+    elif p.type == FLAGS:
+        v = "'[" + ",".join(f'"{c}"' for c in p.choices[:3]) + ",...]'"
+    else:
+        v = p.type.upper()
+    return f"{p.name}={v}" if p.required else f"[{p.name}={v}]"
+
+
+def help_text(group: str | None = None) -> str:
+    """Every player verb with its arguments, generated from the action registry (never out of date)."""
+    from railhead.actions import REGISTRY
+
+    groups: dict[str, list] = {}
+    for name, spec in REGISTRY.items():
+        g, v = name.split(".")
+        groups.setdefault(g, []).append((v, spec))
+    if group is not None and group not in groups:
+        raise ValueError(f"unknown group {group!r}; groups: {', '.join(groups)}")
+    lines = []
+    if group is None:
+        lines += ["Railhead: you play OpenTTD directly. Tiles are X,Y. The world is frozen except in `rh wait`.", "",
+                  "LOOK"] + [f"  {x}" for x in INFO_HELP] + ["", "ACT (player commands; add dry_run=true to price one)"]
+    for g, verbs in groups.items():
+        if group is not None and g != group:
+            continue
+        for v, spec in verbs:
+            usage = " ".join(_param_usage(p) for p in spec.params if p.name != "dry_run")
+            lines.append(f"  rh {g} {v} {usage}".rstrip())
+            if group is not None:
+                lines.append(f"      {spec.doc}")
+    if group is None:
+        lines += ["", "TIME AND DECISIONS"] + [f"  {x}" for x in META_HELP]
+        lines += ["", "Details for one group: rh help <group>   (e.g. rh help vehicle)"]
+    return "\n".join(lines)
+
+
 def _is_tile_key(k: str) -> bool:
     return k == "tile" or k.endswith("_tile")
 
@@ -106,6 +167,9 @@ def _render(cmd: str, result: Any, c: Client, args: dict) -> str | None:
         return observe.format_industries(result, _labels(c), page=int(args.get("page", 1)))
     if cmd == "tile":
         return observe.format_tile(result, _labels(c))
+    if cmd == "engines" and isinstance(result, list):
+        fields = ["id", "name", "cargo", "capacity", "speed", "price", "running_cost", "reliability", "wagon", "power"]
+        return observe.format_table(result, [f for f in fields if result and f in result[0]], page=int(args.get("page", 1)))
     if isinstance(result, list) and result and isinstance(result[0], dict):
         return observe.format_table(result, list(result[0].keys())[:10], page=int(args.get("page", 1)))
     return None
@@ -116,7 +180,11 @@ def main(argv: list[str] | None = None) -> int:
     as_json = "--json" in argv
     argv = [a for a in argv if a != "--json"]
     if not argv or argv[0] in ("help", "-h", "--help"):
-        print(__doc__)
+        try:
+            print(help_text(argv[1] if len(argv) > 1 else None))
+        except ValueError as e:
+            print(f"ERR_BAD_ARG: {e}", file=sys.stderr)
+            return 2
         return 0
     try:
         return _run(argv, as_json)
@@ -152,11 +220,19 @@ def _run(argv: list[str], as_json: bool) -> int:
         a = parse_kv(rest, mx)
         if isinstance(a.get("until"), str):
             a["until"] = [u for u in a["until"].split(",") if u]
-        _print(c.request("wait", **a), as_json)
+        out = c.request("wait", **a)
+        if as_json:
+            print(json.dumps(out))
+        else:
+            left = c.request("info")["days_left"]
+            print(f"waited {out.get('days')} days -> {out.get('ymd')} (stopped because: {out.get('reason')}); "
+                  f"{left} days left")
         return 0
     if cmd in META_COMMANDS:
         _print(c.request("meta", m=cmd, a=parse_kv(rest, mx)), as_json)
         return 0
+    if cmd in ("q", "do") and not rest:
+        raise ValueError(f"usage: rh {cmd} <{'query' if cmd == 'q' else 'gs_method'}> key=value ...")
     if cmd == "q":
         _print(c.request("query", m=rest[0], a=parse_kv(rest[1:], mx)), as_json)
         return 0
@@ -189,6 +265,11 @@ def _run(argv: list[str], as_json: bool) -> int:
         print(text if text is not None else json.dumps(result, indent=None if as_json else 1, default=str))
         return 0
     # rh <group> <verb> k=v ...  ->  registry action
+    from railhead.actions import REGISTRY
+
+    if not rest and any(n.startswith(cmd + ".") for n in REGISTRY):
+        print(help_text(cmd))
+        return 0
     if rest:
         from railhead.actions import to_gs
 

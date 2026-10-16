@@ -83,3 +83,66 @@ def test_fork_budget_is_enforced(env):
     c.request("fork_drop", name="f1")
     # the real world did not move
     assert c.request("info")["days_left"] == 120
+
+
+def test_meta_decisions_reject_unknown_arguments_and_submit_needs_confirmation(env):
+    ensure_up("t-demo")
+    c = Client(env)
+    for m, a in [("submit", {}), ("submit", {"vtype": "road"}), ("flag", {"vtype": "road"}),
+                 ("promise", {"qty": 5}), ("forecast", {"bogus": 1})]:
+        with pytest.raises(DaemonError) as ei:
+            c.request("meta", m=m, a=a)
+        assert ei.value.code == "ERR_BAD_ARG", (m, a)
+    assert c.request("info")["submitted"] is False
+    c.request("meta", m="promise", a={"quantity": 100})
+    c.request("meta", m="flag", a={"note": "station rating looks odd"})
+    c.request("meta", m="submit", a={"confirm": "yes"})
+    assert c.request("info")["submitted"] is True
+
+
+def test_wait_rejects_unknown_arguments(env):
+    ensure_up("t-demo")
+    with pytest.raises(DaemonError) as ei:
+        Client(env).request("wait", days=5, vtype="road")
+    assert ei.value.code == "ERR_BAD_ARG"
+
+
+def test_concurrent_ensure_up_and_restart_never_run_two_daemons(env):
+    import threading
+
+    pids: list[int] = []
+    ts = [threading.Thread(target=lambda: pids.append(ensure_up("t-demo"))) for _ in range(4)]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join()
+    assert len(set(pids)) == 1
+    c = Client(env)
+    c.request("wait", days=3)
+    before = c.request("query", m="checksum")
+    # restart while other clients race to bring it back up
+    shutdown(env)
+    pids.clear()
+    ts = [threading.Thread(target=lambda: pids.append(ensure_up("t-demo"))) for _ in range(4)]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join()
+    assert len(set(pids)) == 1
+    assert Client(env).request("query", m="checksum") == before
+
+
+def test_shutdown_racing_a_client_restart_leaves_a_healthy_daemon(env):
+    import threading
+    import time as _t
+
+    ensure_up("t-demo")
+    Client(env).request("wait", days=2)
+    for _ in range(3):
+        stopper = threading.Thread(target=shutdown, args=(env,))
+        stopper.start()
+        _t.sleep(0.05)
+        pid = ensure_up("t-demo")  # a player's rh call arrives mid-shutdown
+        stopper.join()
+        pid = ensure_up("t-demo")
+        assert Client(env).request("query", m="state")["paused"] is True, pid

@@ -19,7 +19,7 @@ DESIGN_VERBS = {
     "water": {"dock", "canal", "lock", "ship_depot"},
     "bridge": {"build", "tunnel"},
     "land": {"raise", "lower", "level", "demolish"},
-    "vehicle": {"buy", "sell", "start", "stop", "depot", "refit", "clone", "skip_order"},
+    "vehicle": {"buy", "sell", "start", "stop", "depot", "refit", "clone", "skip_order", "attach", "sell_wagon"},
     "order": {"append", "insert", "remove", "clear", "share"},
     "company": {"loan", "rename"},
     "town": {"action"},

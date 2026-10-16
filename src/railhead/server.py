@@ -75,7 +75,8 @@ class OpenTTDServer:
     def __init__(
         self, workdir: Path, config: ServerConfig, binary: Path | None = None, ready_timeout: float = 60.0
     ) -> None:
-        self.workdir = Path(workdir)
+        # absolute: the engine runs with cwd=workdir, so a relative -c path would point nowhere
+        self.workdir = Path(workdir).resolve()
         self.config = config
         self.binary = Path(binary) if binary else find_openttd()
         self.ready_timeout = ready_timeout

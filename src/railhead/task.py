@@ -78,7 +78,7 @@ def tasks_root() -> Path:
 
 
 def state_root() -> Path:
-    return Path(os.environ.get("RAILHEAD_STATE", Path.home() / ".railhead" / "state"))
+    return Path(os.environ.get("RAILHEAD_STATE", Path.home() / ".railhead" / "state")).resolve()
 
 
 def task_dir(task_id: str) -> Path:

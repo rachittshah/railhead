@@ -22,3 +22,33 @@ def test_non_tile_params_keep_commas():
 def test_malformed_pair_is_an_error():
     with pytest.raises(ValueError):
         parse_kv(["oops"], map_x=128)
+
+
+def test_help_lists_every_registry_verb_with_its_arguments():
+    from railhead.actions import REGISTRY
+    from railhead.cli import help_text
+
+    text = help_text()
+    for name in REGISTRY:
+        group, verb = name.split(".")
+        assert f"rh {group} {verb}" in text, name
+    assert "rh company loan amount=" in text
+    assert "rh vehicle attach vehicle=" in text and "train_vehicle=" in text
+    assert "rh submit confirm=yes" in text
+
+
+def test_group_help_lists_only_that_group():
+    from railhead.cli import help_text
+
+    text = help_text("vehicle")
+    assert "rh vehicle buy" in text and "rh road line" not in text
+    assert "depot_tile=X,Y" in text  # tiles are shown as X,Y
+
+
+def test_unknown_group_help_is_an_error():
+    import pytest
+
+    from railhead.cli import help_text
+
+    with pytest.raises(ValueError):
+        help_text("nosuchgroup")

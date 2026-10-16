@@ -93,7 +93,9 @@ def score(spec: TaskSpec, world, log: Path, start_date: int, start_ticks: int = 
     elif fam == "simops":
         r = rewards.simops(out["runoff_delivered"], float(obj["k0"]), float(obj["kstar"]))
     elif fam == "tycoon":
-        r = rewards.tycoon(out["net_worth"], float(obj["w_idle"]), float(obj["w_base"]))
+        score = rewards.tycoon_log if obj.get("score") == "log50" else rewards.tycoon
+        r = score(out["net_worth"], float(obj["w_idle"]), float(obj["w_base"]))
+        out["gain_vs_baseline"] = (out["net_worth"] - float(obj["w_idle"])) / max(float(obj["w_base"]) - float(obj["w_idle"]), 1.0)
     else:
         raise ValueError(f"unknown task family {fam!r}")
     out["reward"] = float(r)

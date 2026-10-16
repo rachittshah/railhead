@@ -130,7 +130,11 @@ def main(argv: list[str] | None = None) -> int:
         if cmd == "harden":
             from railhead.gen.build import harden_catalog
 
-            print(json.dumps(harden_catalog(Path(argv[1]))))
+            if "--ids-only" not in argv:
+                print(json.dumps(harden_catalog(Path(argv[1]))))
+            from railhead.gen.build import opaque_catalog
+
+            print(json.dumps(opaque_catalog(Path(argv[1]))))
             return 0
         if cmd == "recheck":
             return recheck(Path(argv[1]), argv[2:] or None)

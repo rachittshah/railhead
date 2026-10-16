@@ -47,3 +47,13 @@ def test_abstention_pays_only_when_the_task_is_infeasible():
     assert rewards.abstain(abstained=True, feasible=False) == 1.0
     assert rewards.abstain(abstained=False, feasible=False) == 0.0
     assert rewards.abstain(abstained=True, feasible=True) == 0.0
+
+
+def test_tycoon_log_keeps_headroom_far_beyond_the_baseline():
+    # gains in multiples of the baseline's gain: 0, 1, 3.8, 8.1, 12.9 -> strictly increasing, never saturated
+    rs = [rewards.tycoon_log(w=-13_800 + m * 199_575, w_idle=-13_800, w_base=185_775) for m in (0, 1, 3.8, 8.1, 12.9)]
+    assert rs[0] == 0.0
+    assert all(a < b for a, b in zip(rs, rs[1:]))
+    assert rs[-1] < 1.0
+    assert rewards.tycoon_log(w=-1e9, w_idle=-13_800, w_base=185_775) == 0.0
+    assert rewards.tycoon_log(w=1e12, w_idle=-13_800, w_base=185_775) == 1.0

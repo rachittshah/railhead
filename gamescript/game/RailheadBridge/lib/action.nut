@@ -752,6 +752,36 @@ Action <- {
 		Action.Done(ctx, GSVehicle.SellVehicle(ctx.p.vehicle), { vehicle = ctx.p.vehicle });
 	}
 
+	/* Couple a free wagon (or wagon chain) behind a train in the same depot: the depot GUI's drag. */
+	function H_vehicle_attach(br, id, a) {
+		// `vehicle` is a free wagon, which is not a primary vehicle: validate it by hand.
+		local ctx = Action.Begin(br, id, a, [["vehicle", "int"], ["train_vehicle", "vehicle"]]);
+		if (ctx == null) return;
+		local w = ctx.p.vehicle;
+		local t = ctx.p.train_vehicle;
+		if (!GSVehicle.IsValidVehicle(w) || GSVehicle.GetOwner(w) != br.company) {
+			return Proto.Err(id, "ERR_BAD_ARG", "vehicle " + w + " is not one of your vehicles (use the wagon id from vehicle.buy)");
+		}
+		if (GSVehicle.GetVehicleType(w) != GSVehicle.VT_RAIL || GSVehicle.GetVehicleType(t) != GSVehicle.VT_RAIL) {
+			return Proto.Err(id, "ERR_BAD_ARG", "both vehicle and train_vehicle must be rail vehicles");
+		}
+		if (w == t) return Proto.Err(id, "ERR_BAD_ARG", "cannot attach a train to itself");
+		local ok = GSVehicle.MoveWagonChain(w, 0, t, GSVehicle.GetNumWagons(t) - 1);
+		Action.Done(ctx, ok, { train_vehicle = t, wagons = GSVehicle.GetNumWagons(t) });
+	}
+
+	/* Sell one wagon of a train stopped in a depot (index 0 is the front engine). */
+	function H_vehicle_sell_wagon(br, id, a) {
+		local ctx = Action.Begin(br, id, a, [["vehicle", "vehicle"], ["index", "int"]]);
+		if (ctx == null) return;
+		local t = ctx.p.vehicle;
+		if (ctx.p.index < 1 || ctx.p.index >= GSVehicle.GetNumWagons(t)) {
+			return Proto.Err(id, "ERR_BAD_ARG", "index must be 1.." + (GSVehicle.GetNumWagons(t) - 1) + " (0 is the engine; sell the whole train with vehicle.sell)");
+		}
+		local ok = GSVehicle.SellWagon(t, ctx.p.index);
+		Action.Done(ctx, ok, { vehicle = t, wagons = GSVehicle.GetNumWagons(t) });
+	}
+
 	/* Idempotent start/stop (the GUI button is a toggle; a model should not have to track parity). */
 	function StartStop(br, id, a, want_running) {
 		local ctx = Action.Begin(br, id, a, [["vehicle", "vehicle"]]);
