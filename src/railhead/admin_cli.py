@@ -128,18 +128,20 @@ def main(argv: list[str] | None = None) -> int:
             from railhead.arena import main as arena_main
 
             return arena_main(argv[1:])
-        if cmd == "view" and len(argv) > 2 and argv[1] == "--attach":
-            from railhead.viewer import attach
-
-            attach(Path(argv[2]))
-            return 0
         if cmd == "view":
-            from railhead.viewer import view
+            from railhead.viewer import attach, view
 
-            days = int(argv[argv.index("--days") + 1]) if "--days" in argv else 365
-            speed = int(argv[argv.index("--speed") + 1]) if "--speed" in argv else 300
-            log = Path(argv[argv.index("--log") + 1]) if "--log" in argv else None
-            view(argv[1], days=days, speed=speed, log=log)
+            try:
+                if len(argv) > 2 and argv[1] == "--attach":
+                    attach(Path(argv[2]))
+                    return 0
+                days = int(argv[argv.index("--days") + 1]) if "--days" in argv else 365
+                speed = int(argv[argv.index("--speed") + 1]) if "--speed" in argv else 300
+                log = Path(argv[argv.index("--log") + 1]) if "--log" in argv else None
+                view(argv[1], days=days, speed=speed, log=log)
+            except RuntimeError as e:  # no LG monitor, or the window did not land on it
+                print(f"railhead view: {e}", file=sys.stderr)
+                return 1
             return 0
         if cmd == "export-manifest":
             from railhead.harbor_export import add_arch_manifests

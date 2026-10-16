@@ -767,6 +767,11 @@ The charts and the maps need matplotlib. Install it with `uv pip install -e ".[v
 The viewer is a GUI client of OpenTTD 15.3 that joins as a spectator.
 It does not change the world.
 
+The viewer opens only on the LG monitor.
+It reads the list of connected displays from macOS and finds the display with "LG" in its name.
+If no LG display is connected, the command stops with an error and opens no window.
+After it places the window, it reads the window position again. If the window is not on the LG monitor, it closes the window and stops with an error.
+
 - To watch a live player, attach to its daemon:
 
   ```bash
