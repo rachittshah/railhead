@@ -7,6 +7,7 @@ hashes are of the exact files the verifier will trust).
 from __future__ import annotations
 
 import json
+import platform
 import shutil
 from pathlib import Path
 
@@ -118,7 +119,10 @@ OUT=/logs/verifier
 mkdir -p "$OUT"
 fail() { echo "{\\"reward\\": 0.0, \\"valid\\": 1, \\"tamper\\": $1, \\"rejected\\": 0}" > "$OUT/reward.json"; echo 0 > "$OUT/reward.txt"; exit 0; }
 # 1) integrity of every trusted file, checked with coreutils before any Python runs
-sha256sum -c /tests/sealed.sha256 --quiet > "$OUT/integrity.txt" 2>&1 || fail 1
+# (the engine binary differs per CPU architecture, so there is one manifest per arch)
+MANIFEST=/tests/sealed.$(uname -m).sha256
+[ -f "$MANIFEST" ] || MANIFEST=/tests/sealed.sha256
+sha256sum -c "$MANIFEST" --quiet > "$OUT/integrity.txt" 2>&1 || fail 1
 # 2) stop the live world (flushes the log); keep a copy of the proof
 /opt/railhead/venv/bin/railhead down > /dev/null 2>&1 || true
 LOG=/var/lib/railhead/run/actions.jsonl
@@ -156,6 +160,7 @@ def export_task(task_id: str, out_dir: Path, image: str = DEFAULT_IMAGE, version
     seal_task(dst / "tests")  # hashes of the exact start state + specs the verifier will trust
     (dst / "tests" / "start.sav").unlink()  # the verifier uses the image's copy; the hash pins it
     write_sha256_manifest(dst / "tests" / "sealed.sha256")
+    write_sha256_manifest(dst / "tests" / f"sealed.{platform.machine()}.sha256")
     (dst / "tests" / "test.sh").write_text(TEST_SH.replace("__TASK__", spec.task_id))
     if (src / "oracle.jsonl").exists():
         shutil.copy(src / "oracle.jsonl", dst / "solution" / "oracle.jsonl")
@@ -169,3 +174,12 @@ def export_all(out_dir: Path, task_ids: list[str] | None = None, image: str = DE
                version: str = "0.1.0") -> list[Path]:
     ids = task_ids or sorted(p.name for p in tasks_root().iterdir() if (p / "task.json").exists())
     return [export_task(t, out_dir, image, version) for t in ids]
+
+
+def add_arch_manifests(out_dir: Path) -> int:
+    """Second pass, run inside the image of another CPU architecture: add its trusted-file manifest."""
+    n = 0
+    for tests in sorted(Path(out_dir).glob("*/tests")):
+        write_sha256_manifest(tests / f"sealed.{platform.machine()}.sha256")
+        n += 1
+    return n
