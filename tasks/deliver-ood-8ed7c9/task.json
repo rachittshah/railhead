@@ -1,0 +1,64 @@
+{
+ "task_id": "deliver-ood-8ed7c9",
+ "family": "deliver",
+ "horizon_days": 300,
+ "runoff_days": 0,
+ "limits": {
+  "max_forks": 2,
+  "max_fork_days": 180
+ },
+ "objective": {
+  "cargo": 3,
+  "cargo_name": "Oil",
+  "source": 6,
+  "source_name": "Lardston Oil Wells",
+  "source_xy": [
+   31,
+   24
+  ],
+  "dest": 3,
+  "dest_name": "Lardston Oil Refinery",
+  "dest_xy": [
+   41,
+   39
+  ],
+  "monitor": 0,
+  "monitors_aux": [
+   1
+  ],
+  "quantity": 440
+ },
+ "scenario": {
+  "gen_version": 1,
+  "split": "ood",
+  "landscape": "arctic",
+  "map_log2": 6,
+  "starting_year": 1950,
+  "settings": {
+   "difficulty": {
+    "number_towns": "2",
+    "industry_density": "3",
+    "terrain_type": "2",
+    "quantity_sea_lakes": "1",
+    "max_loan": "200000",
+    "initial_interest": "2",
+    "vehicle_breakdowns": "0",
+    "construction_cost": "0",
+    "vehicle_costs": "0",
+    "subsidy_multiplier": "2",
+    "disasters": "false",
+    "economy": "false"
+   },
+   "economy": {
+    "type": "1"
+   },
+   "game_creation": {
+    "town_name": "english"
+   }
+  }
+ },
+ "title": "Deliver Oil to Lardston Oil Refinery",
+ "briefing": "You run a young transport company. A customer needs **Oil** delivered to **Lardston Oil Refinery** (industry id 3, near tile 41,39).\n\nA likely supplier is **Lardston Oil Wells** (industry id 6, near tile 31,24); any source counts, only what your company delivers to that industry is counted.\n\n**Contract:** deliver at least **440 units** within the horizon.\n\nIf you conclude the contract cannot be met by anyone, say so with `rh abstain reason=\"...\"`; abstaining on a feasible contract scores zero.\n\nThe reward is the fraction of the contract delivered (capped at 1), measured by the engine.",
+ "split": "ood",
+ "version": 1
+}

@@ -1,0 +1,64 @@
+{
+ "task_id": "deliver-dev-d7e1f2",
+ "family": "deliver",
+ "horizon_days": 300,
+ "runoff_days": 0,
+ "limits": {
+  "max_forks": 2,
+  "max_fork_days": 180
+ },
+ "objective": {
+  "cargo": 4,
+  "cargo_name": "Livestock",
+  "source": 10,
+  "source_name": "Radworth Farm",
+  "source_xy": [
+   194,
+   139
+  ],
+  "dest": 29,
+  "dest_name": "Radworth Factory",
+  "dest_xy": [
+   178,
+   132
+  ],
+  "monitor": 0,
+  "monitors_aux": [
+   1
+  ],
+  "quantity": 270
+ },
+ "scenario": {
+  "gen_version": 1,
+  "split": "dev",
+  "landscape": "temperate",
+  "map_log2": 8,
+  "starting_year": 2000,
+  "settings": {
+   "difficulty": {
+    "number_towns": "2",
+    "industry_density": "5",
+    "terrain_type": "0",
+    "quantity_sea_lakes": "1",
+    "max_loan": "300000",
+    "initial_interest": "4",
+    "vehicle_breakdowns": "1",
+    "construction_cost": "0",
+    "vehicle_costs": "0",
+    "subsidy_multiplier": "2",
+    "disasters": "false",
+    "economy": "false"
+   },
+   "economy": {
+    "type": "1"
+   },
+   "game_creation": {
+    "town_name": "english"
+   }
+  }
+ },
+ "title": "Deliver Livestock to Radworth Factory",
+ "briefing": "You run a young transport company. A customer needs **Livestock** delivered to **Radworth Factory** (industry id 29, near tile 178,132).\n\nA likely supplier is **Radworth Farm** (industry id 10, near tile 194,139); any source counts, only what your company delivers to that industry is counted.\n\n**Contract:** deliver at least **270 units** within the horizon.\n\nIf you conclude the contract cannot be met by anyone, say so with `rh abstain reason=\"...\"`; abstaining on a feasible contract scores zero.\n\nThe reward is the fraction of the contract delivered (capped at 1), measured by the engine.",
+ "split": "dev",
+ "version": 1
+}

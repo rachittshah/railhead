@@ -1,0 +1,64 @@
+{
+ "task_id": "deliver-dev-f4188b",
+ "family": "deliver",
+ "horizon_days": 300,
+ "runoff_days": 0,
+ "limits": {
+  "max_forks": 2,
+  "max_fork_days": 180
+ },
+ "objective": {
+  "cargo": 7,
+  "cargo_name": "Wood",
+  "source": 11,
+  "source_name": "Ratfield Forest",
+  "source_xy": [
+   117,
+   66
+  ],
+  "dest": 2,
+  "dest_name": "Ratfield Sawmill",
+  "dest_xy": [
+   99,
+   91
+  ],
+  "monitor": 0,
+  "monitors_aux": [
+   1
+  ],
+  "quantity": 430
+ },
+ "scenario": {
+  "gen_version": 1,
+  "split": "dev",
+  "landscape": "temperate",
+  "map_log2": 7,
+  "starting_year": 1975,
+  "settings": {
+   "difficulty": {
+    "number_towns": "3",
+    "industry_density": "4",
+    "terrain_type": "1",
+    "quantity_sea_lakes": "0",
+    "max_loan": "300000",
+    "initial_interest": "3",
+    "vehicle_breakdowns": "1",
+    "construction_cost": "0",
+    "vehicle_costs": "0",
+    "subsidy_multiplier": "2",
+    "disasters": "false",
+    "economy": "false"
+   },
+   "economy": {
+    "type": "1"
+   },
+   "game_creation": {
+    "town_name": "english"
+   }
+  }
+ },
+ "title": "Deliver Wood to Ratfield Sawmill",
+ "briefing": "You run a young transport company. A customer needs **Wood** delivered to **Ratfield Sawmill** (industry id 2, near tile 99,91).\n\nA likely supplier is **Ratfield Forest** (industry id 11, near tile 117,66); any source counts, only what your company delivers to that industry is counted.\n\n**Contract:** deliver at least **430 units** within the horizon.\n\nIf you conclude the contract cannot be met by anyone, say so with `rh abstain reason=\"...\"`; abstaining on a feasible contract scores zero.\n\nThe reward is the fraction of the contract delivered (capped at 1), measured by the engine.",
+ "split": "dev",
+ "version": 1
+}

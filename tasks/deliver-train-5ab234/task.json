@@ -1,0 +1,64 @@
+{
+ "task_id": "deliver-train-5ab234",
+ "family": "deliver",
+ "horizon_days": 300,
+ "runoff_days": 0,
+ "limits": {
+  "max_forks": 2,
+  "max_fork_days": 180
+ },
+ "objective": {
+  "cargo": 4,
+  "cargo_name": "Livestock",
+  "source": 7,
+  "source_name": "Lafingburg Farm",
+  "source_xy": [
+   45,
+   5
+  ],
+  "dest": 5,
+  "dest_name": "Lafingburg Factory",
+  "dest_xy": [
+   27,
+   8
+  ],
+  "monitor": 0,
+  "monitors_aux": [
+   1
+  ],
+  "quantity": 390
+ },
+ "scenario": {
+  "gen_version": 1,
+  "split": "train",
+  "landscape": "temperate",
+  "map_log2": 6,
+  "starting_year": 1990,
+  "settings": {
+   "difficulty": {
+    "number_towns": "2",
+    "industry_density": "3",
+    "terrain_type": "0",
+    "quantity_sea_lakes": "2",
+    "max_loan": "300000",
+    "initial_interest": "2",
+    "vehicle_breakdowns": "1",
+    "construction_cost": "0",
+    "vehicle_costs": "0",
+    "subsidy_multiplier": "2",
+    "disasters": "false",
+    "economy": "false"
+   },
+   "economy": {
+    "type": "1"
+   },
+   "game_creation": {
+    "town_name": "english"
+   }
+  }
+ },
+ "title": "Deliver Livestock to Lafingburg Factory",
+ "briefing": "You run a young transport company. A customer needs **Livestock** delivered to **Lafingburg Factory** (industry id 5, near tile 27,8).\n\nA likely supplier is **Lafingburg Farm** (industry id 7, near tile 45,5); any source counts, only what your company delivers to that industry is counted.\n\n**Contract:** deliver at least **390 units** within the horizon.\n\nIf you conclude the contract cannot be met by anyone, say so with `rh abstain reason=\"...\"`; abstaining on a feasible contract scores zero.\n\nThe reward is the fraction of the contract delivered (capped at 1), measured by the engine.",
+ "split": "train",
+ "version": 1
+}

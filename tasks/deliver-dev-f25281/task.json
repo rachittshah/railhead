@@ -1,0 +1,64 @@
+{
+ "task_id": "deliver-dev-f25281",
+ "family": "deliver",
+ "horizon_days": 300,
+ "runoff_days": 0,
+ "limits": {
+  "max_forks": 2,
+  "max_fork_days": 180
+ },
+ "objective": {
+  "cargo": 8,
+  "cargo_name": "Iron Ore",
+  "source": 9,
+  "source_name": "Tarnbury Iron Ore Mine",
+  "source_xy": [
+   32,
+   41
+  ],
+  "dest": 6,
+  "dest_name": "Tarnbury Steel Mill",
+  "dest_xy": [
+   33,
+   21
+  ],
+  "monitor": 0,
+  "monitors_aux": [
+   1
+  ],
+  "quantity": 470
+ },
+ "scenario": {
+  "gen_version": 1,
+  "split": "dev",
+  "landscape": "temperate",
+  "map_log2": 7,
+  "starting_year": 2000,
+  "settings": {
+   "difficulty": {
+    "number_towns": "1",
+    "industry_density": "3",
+    "terrain_type": "2",
+    "quantity_sea_lakes": "2",
+    "max_loan": "300000",
+    "initial_interest": "4",
+    "vehicle_breakdowns": "0",
+    "construction_cost": "0",
+    "vehicle_costs": "0",
+    "subsidy_multiplier": "2",
+    "disasters": "false",
+    "economy": "false"
+   },
+   "economy": {
+    "type": "1"
+   },
+   "game_creation": {
+    "town_name": "english"
+   }
+  }
+ },
+ "title": "Deliver Iron Ore to Tarnbury Steel Mill",
+ "briefing": "You run a young transport company. A customer needs **Iron Ore** delivered to **Tarnbury Steel Mill** (industry id 6, near tile 33,21).\n\nA likely supplier is **Tarnbury Iron Ore Mine** (industry id 9, near tile 32,41); any source counts, only what your company delivers to that industry is counted.\n\n**Contract:** deliver at least **470 units** within the horizon.\n\nIf you conclude the contract cannot be met by anyone, say so with `rh abstain reason=\"...\"`; abstaining on a feasible contract scores zero.\n\nThe reward is the fraction of the contract delivered (capped at 1), measured by the engine.",
+ "split": "dev",
+ "version": 1
+}

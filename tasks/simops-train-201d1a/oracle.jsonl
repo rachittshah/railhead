@@ -1,0 +1,12 @@
+{"checksum":{"date":712374,"h":92144163145466,"ticks":11174,"vehicles":10},"company":0,"kind":"header","ticks":11174,"v":1}
+{"a":{"vehicle":2},"kind":"act","m":"vehicle_start","ok":true,"ret":{"changed":true,"cost":0,"vehicle":2},"seq":1,"ticks":11174}
+{"a":{"vehicle":3},"kind":"act","m":"vehicle_start","ok":true,"ret":{"changed":true,"cost":0,"vehicle":3},"seq":2,"ticks":11174}
+{"a":{"vehicle":4},"kind":"act","m":"vehicle_start","ok":true,"ret":{"changed":true,"cost":0,"vehicle":4},"seq":3,"ticks":11174}
+{"a":{"vehicle":5},"kind":"act","m":"vehicle_start","ok":true,"ret":{"changed":true,"cost":0,"vehicle":5},"seq":4,"ticks":11174}
+{"a":{"vehicle":6},"kind":"act","m":"vehicle_start","ok":true,"ret":{"changed":true,"cost":0,"vehicle":6},"seq":5,"ticks":11174}
+{"a":{"vehicle":7},"kind":"act","m":"vehicle_start","ok":true,"ret":{"changed":true,"cost":0,"vehicle":7},"seq":6,"ticks":11174}
+{"a":{"vehicle":8},"kind":"act","m":"vehicle_start","ok":true,"ret":{"changed":true,"cost":0,"vehicle":8},"seq":7,"ticks":11174}
+{"a":{"vehicle":9},"kind":"act","m":"vehicle_start","ok":true,"ret":{"changed":true,"cost":0,"vehicle":9},"seq":8,"ticks":11174}
+{"a":{"vehicle":10},"kind":"act","m":"vehicle_start","ok":true,"ret":{"changed":true,"cost":0,"vehicle":10},"seq":9,"ticks":11174}
+{"a":{"vehicle":11},"kind":"act","m":"vehicle_start","ok":true,"ret":{"changed":true,"cost":0,"vehicle":11},"seq":10,"ticks":11174}
+{"a":{},"kind":"meta","m":"submit","seq":11,"ticks":11174}

@@ -1,0 +1,51 @@
+{
+ "task_id": "simops-dev-1218f7",
+ "family": "simops",
+ "horizon_days": 60,
+ "runoff_days": 365,
+ "limits": {
+  "max_forks": 2,
+  "max_fork_days": 120
+ },
+ "objective": {
+  "monitor": 0,
+  "cargo": 4,
+  "dest": 5,
+  "dest_name": "Chadinghall Factory",
+  "source": 7,
+  "source_name": "Planley Farm"
+ },
+ "scenario": {
+  "gen_version": 1,
+  "split": "dev",
+  "landscape": "temperate",
+  "map_log2": 7,
+  "starting_year": 1950,
+  "settings": {
+   "difficulty": {
+    "number_towns": "3",
+    "industry_density": "4",
+    "terrain_type": "1",
+    "quantity_sea_lakes": "2",
+    "max_loan": "300000",
+    "initial_interest": "3",
+    "vehicle_breakdowns": "1",
+    "construction_cost": "0",
+    "vehicle_costs": "0",
+    "subsidy_multiplier": "2",
+    "disasters": "false",
+    "economy": "false"
+   },
+   "economy": {
+    "type": "1"
+   },
+   "game_creation": {
+    "town_name": "english"
+   }
+  }
+ },
+ "title": "Fix the Chadinghall Factory supply route",
+ "briefing": "You have just taken over a transport company. Its truck route carrying cargo to **Chadinghall Factory** (industry id 5) from **Planley Farm** (industry id 7) used to work but deliveries have collapsed. Diagnose what is wrong and repair it.\n\nYou have 60 game-days. Then the company runs **365 days without you**, and the reward is the cargo it delivers to that industry during the run-off, scaled so that leaving the fault in place scores 0 and a correct repair scores 1. Your vehicles, stations and orders are all inspectable with `rh`.",
+ "split": "dev",
+ "version": 1
+}

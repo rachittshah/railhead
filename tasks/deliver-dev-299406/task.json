@@ -1,0 +1,64 @@
+{
+ "task_id": "deliver-dev-299406",
+ "family": "deliver",
+ "horizon_days": 300,
+ "runoff_days": 0,
+ "limits": {
+  "max_forks": 2,
+  "max_fork_days": 180
+ },
+ "objective": {
+  "cargo": 7,
+  "cargo_name": "Wood",
+  "source": 3,
+  "source_name": "Little Bufingley Forest",
+  "source_xy": [
+   85,
+   106
+  ],
+  "dest": 2,
+  "dest_name": "Flinningpool Falls Sawmill",
+  "dest_xy": [
+   60,
+   88
+  ],
+  "monitor": 0,
+  "monitors_aux": [
+   1
+  ],
+  "quantity": 550
+ },
+ "scenario": {
+  "gen_version": 1,
+  "split": "dev",
+  "landscape": "temperate",
+  "map_log2": 7,
+  "starting_year": 1950,
+  "settings": {
+   "difficulty": {
+    "number_towns": "3",
+    "industry_density": "3",
+    "terrain_type": "1",
+    "quantity_sea_lakes": "2",
+    "max_loan": "500000",
+    "initial_interest": "2",
+    "vehicle_breakdowns": "1",
+    "construction_cost": "0",
+    "vehicle_costs": "0",
+    "subsidy_multiplier": "2",
+    "disasters": "false",
+    "economy": "false"
+   },
+   "economy": {
+    "type": "1"
+   },
+   "game_creation": {
+    "town_name": "english"
+   }
+  }
+ },
+ "title": "Deliver Wood to Flinningpool Falls Sawmill",
+ "briefing": "You run a young transport company. A customer needs **Wood** delivered to **Flinningpool Falls Sawmill** (industry id 2, near tile 60,88).\n\nA likely supplier is **Little Bufingley Forest** (industry id 3, near tile 85,106); any source counts, only what your company delivers to that industry is counted.\n\n**Contract:** deliver at least **550 units** within the horizon.\n\nIf you conclude the contract cannot be met by anyone, say so with `rh abstain reason=\"...\"`; abstaining on a feasible contract scores zero.\n\nThe reward is the fraction of the contract delivered (capped at 1), measured by the engine.",
+ "split": "dev",
+ "version": 1
+}

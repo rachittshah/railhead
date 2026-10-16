@@ -1,0 +1,67 @@
+{
+ "task_id": "deliver_bid-ood-6e5f3c",
+ "family": "deliver",
+ "horizon_days": 300,
+ "runoff_days": 0,
+ "limits": {
+  "max_forks": 2,
+  "max_fork_days": 180
+ },
+ "objective": {
+  "cargo": 8,
+  "cargo_name": "Copper Ore",
+  "source": 16,
+  "source_name": "Shorningwell Copper Ore Mine",
+  "source_xy": [
+   246,
+   39
+  ],
+  "dest": 10,
+  "dest_name": "Plenwell Factory",
+  "dest_xy": [
+   227,
+   52
+  ],
+  "monitor": 0,
+  "monitors_aux": [
+   1
+  ],
+  "quantity": 560,
+  "bid": true,
+  "bid_scale": 1180,
+  "bid_deadline_days": 30
+ },
+ "scenario": {
+  "gen_version": 1,
+  "split": "ood",
+  "landscape": "tropic",
+  "map_log2": 8,
+  "starting_year": 1975,
+  "settings": {
+   "difficulty": {
+    "number_towns": "1",
+    "industry_density": "3",
+    "terrain_type": "1",
+    "quantity_sea_lakes": "2",
+    "max_loan": "200000",
+    "initial_interest": "4",
+    "vehicle_breakdowns": "1",
+    "construction_cost": "0",
+    "vehicle_costs": "0",
+    "subsidy_multiplier": "2",
+    "disasters": "false",
+    "economy": "false"
+   },
+   "economy": {
+    "type": "1"
+   },
+   "game_creation": {
+    "town_name": "english"
+   }
+  }
+ },
+ "title": "Deliver Copper Ore to Plenwell Factory",
+ "briefing": "You run a young transport company. A customer needs **Copper Ore** delivered to **Plenwell Factory** (industry id 10, near tile 227,52).\n\nA likely supplier is **Shorningwell Copper Ore Mine** (industry id 16, near tile 246,39); any source counts, only what your company delivers to that industry is counted.\n\n**Contract:** deliver at least **560 units** within the horizon.\n\n**Promise:** within the first 30 game-days, commit to a delivery quantity with `rh promise quantity=N` (the last promise before the deadline counts; max 1,180). You are paid for min(delivered, promised) and fined for any shortfall, so promise what you can really deliver: over- and under-promising both cost you.\n\nIf you conclude the contract cannot be met by anyone, say so with `rh abstain reason=\"...\"`; abstaining on a feasible contract scores zero.\n\nThe reward is the fraction of the contract delivered (capped at 1), measured by the engine.",
+ "split": "ood",
+ "version": 1
+}

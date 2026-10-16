@@ -1,0 +1,64 @@
+{
+ "task_id": "deliver-dev-b6df7d",
+ "family": "deliver",
+ "horizon_days": 300,
+ "runoff_days": 0,
+ "limits": {
+  "max_forks": 2,
+  "max_fork_days": 180
+ },
+ "objective": {
+  "cargo": 4,
+  "cargo_name": "Livestock",
+  "source": 7,
+  "source_name": "Deninghall Farm",
+  "source_xy": [
+   77,
+   98
+  ],
+  "dest": 14,
+  "dest_name": "Deninghall Factory",
+  "dest_xy": [
+   97,
+   89
+  ],
+  "monitor": 0,
+  "monitors_aux": [
+   1
+  ],
+  "quantity": 3000
+ },
+ "scenario": {
+  "gen_version": 1,
+  "split": "dev",
+  "landscape": "temperate",
+  "map_log2": 7,
+  "starting_year": 1960,
+  "settings": {
+   "difficulty": {
+    "number_towns": "3",
+    "industry_density": "5",
+    "terrain_type": "1",
+    "quantity_sea_lakes": "2",
+    "max_loan": "200000",
+    "initial_interest": "3",
+    "vehicle_breakdowns": "0",
+    "construction_cost": "0",
+    "vehicle_costs": "0",
+    "subsidy_multiplier": "2",
+    "disasters": "false",
+    "economy": "false"
+   },
+   "economy": {
+    "type": "1"
+   },
+   "game_creation": {
+    "town_name": "english"
+   }
+  }
+ },
+ "title": "Deliver Livestock to Deninghall Factory",
+ "briefing": "You run a young transport company. A customer needs **Livestock** delivered to **Deninghall Factory** (industry id 14, near tile 97,89).\n\nA likely supplier is **Deninghall Farm** (industry id 7, near tile 77,98); any source counts, only what your company delivers to that industry is counted.\n\n**Contract:** deliver at least **3,000 units** within the horizon.\n\nIf you conclude the contract cannot be met by anyone, say so with `rh abstain reason=\"...\"`; abstaining on a feasible contract scores zero.\n\nThe reward is the fraction of the contract delivered (capped at 1), measured by the engine.",
+ "split": "dev",
+ "version": 1
+}

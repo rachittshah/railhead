@@ -1,0 +1,67 @@
+{
+ "task_id": "deliver_bid-train-b624a4",
+ "family": "deliver",
+ "horizon_days": 300,
+ "runoff_days": 0,
+ "limits": {
+  "max_forks": 2,
+  "max_fork_days": 180
+ },
+ "objective": {
+  "cargo": 3,
+  "cargo_name": "Oil",
+  "source": 8,
+  "source_name": "Wrefingfield Oil Wells",
+  "source_xy": [
+   37,
+   26
+  ],
+  "dest": 4,
+  "dest_name": "Wrefingfield Oil Refinery",
+  "dest_xy": [
+   17,
+   32
+  ],
+  "monitor": 0,
+  "monitors_aux": [
+   1
+  ],
+  "quantity": 520,
+  "bid": true,
+  "bid_scale": 1140,
+  "bid_deadline_days": 30
+ },
+ "scenario": {
+  "gen_version": 1,
+  "split": "train",
+  "landscape": "temperate",
+  "map_log2": 7,
+  "starting_year": 1950,
+  "settings": {
+   "difficulty": {
+    "number_towns": "1",
+    "industry_density": "5",
+    "terrain_type": "2",
+    "quantity_sea_lakes": "2",
+    "max_loan": "500000",
+    "initial_interest": "2",
+    "vehicle_breakdowns": "1",
+    "construction_cost": "0",
+    "vehicle_costs": "0",
+    "subsidy_multiplier": "2",
+    "disasters": "false",
+    "economy": "false"
+   },
+   "economy": {
+    "type": "1"
+   },
+   "game_creation": {
+    "town_name": "english"
+   }
+  }
+ },
+ "title": "Deliver Oil to Wrefingfield Oil Refinery",
+ "briefing": "You run a young transport company. A customer needs **Oil** delivered to **Wrefingfield Oil Refinery** (industry id 4, near tile 17,32).\n\nA likely supplier is **Wrefingfield Oil Wells** (industry id 8, near tile 37,26); any source counts, only what your company delivers to that industry is counted.\n\n**Contract:** deliver at least **520 units** within the horizon.\n\n**Promise:** within the first 30 game-days, commit to a delivery quantity with `rh promise quantity=N` (the last promise before the deadline counts; max 1,140). You are paid for min(delivered, promised) and fined for any shortfall, so promise what you can really deliver: over- and under-promising both cost you.\n\nIf you conclude the contract cannot be met by anyone, say so with `rh abstain reason=\"...\"`; abstaining on a feasible contract scores zero.\n\nThe reward is the fraction of the contract delivered (capped at 1), measured by the engine.",
+ "split": "train",
+ "version": 1
+}

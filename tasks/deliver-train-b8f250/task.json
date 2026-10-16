@@ -1,0 +1,64 @@
+{
+ "task_id": "deliver-train-b8f250",
+ "family": "deliver",
+ "horizon_days": 300,
+ "runoff_days": 0,
+ "limits": {
+  "max_forks": 2,
+  "max_fork_days": 180
+ },
+ "objective": {
+  "cargo": 1,
+  "cargo_name": "Coal",
+  "source": 0,
+  "source_name": "Great Brondham Coal Mine",
+  "source_xy": [
+   72,
+   104
+  ],
+  "dest": 1,
+  "dest_name": "Great Prufingbridge Power Station",
+  "dest_xy": [
+   53,
+   95
+  ],
+  "monitor": 0,
+  "monitors_aux": [
+   1
+  ],
+  "quantity": 550
+ },
+ "scenario": {
+  "gen_version": 1,
+  "split": "train",
+  "landscape": "temperate",
+  "map_log2": 7,
+  "starting_year": 2000,
+  "settings": {
+   "difficulty": {
+    "number_towns": "2",
+    "industry_density": "5",
+    "terrain_type": "1",
+    "quantity_sea_lakes": "2",
+    "max_loan": "200000",
+    "initial_interest": "3",
+    "vehicle_breakdowns": "0",
+    "construction_cost": "0",
+    "vehicle_costs": "0",
+    "subsidy_multiplier": "2",
+    "disasters": "false",
+    "economy": "false"
+   },
+   "economy": {
+    "type": "1"
+   },
+   "game_creation": {
+    "town_name": "english"
+   }
+  }
+ },
+ "title": "Deliver Coal to Great Prufingbridge Power Station",
+ "briefing": "You run a young transport company. A customer needs **Coal** delivered to **Great Prufingbridge Power Station** (industry id 1, near tile 53,95).\n\nA likely supplier is **Great Brondham Coal Mine** (industry id 0, near tile 72,104); any source counts, only what your company delivers to that industry is counted.\n\n**Contract:** deliver at least **550 units** within the horizon.\n\nIf you conclude the contract cannot be met by anyone, say so with `rh abstain reason=\"...\"`; abstaining on a feasible contract scores zero.\n\nThe reward is the fraction of the contract delivered (capped at 1), measured by the engine.",
+ "split": "train",
+ "version": 1
+}

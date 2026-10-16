@@ -1,0 +1,47 @@
+{
+ "task_id": "tycoon-train-0108",
+ "family": "tycoon",
+ "horizon_days": 365,
+ "runoff_days": 730,
+ "limits": {
+  "max_forks": 2,
+  "max_fork_days": 365
+ },
+ "objective": {
+  "w_idle": -12900,
+  "w_base": 57763
+ },
+ "scenario": {
+  "gen_version": 1,
+  "split": "train",
+  "landscape": "temperate",
+  "map_log2": 7,
+  "starting_year": 1975,
+  "settings": {
+   "difficulty": {
+    "number_towns": "1",
+    "industry_density": "3",
+    "terrain_type": "1",
+    "quantity_sea_lakes": "0",
+    "max_loan": "300000",
+    "initial_interest": "4",
+    "vehicle_breakdowns": "0",
+    "construction_cost": "0",
+    "vehicle_costs": "0",
+    "subsidy_multiplier": "2",
+    "disasters": "false",
+    "economy": "false"
+   },
+   "economy": {
+    "type": "1"
+   },
+   "game_creation": {
+    "town_name": "english"
+   }
+  }
+ },
+ "title": "Build a transport empire",
+ "briefing": "You run a new transport company with a 365-day mandate. Build whatever network you like (road, rail, air, water). When the mandate ends, your company keeps running **without you** for 730 more days; the reward is your **net worth (cash minus loan) after that run-off**, scaled so that doing nothing scores 0, a simple scripted truck route scores 0.5 (net worth \u00a357,763), and doubling its gain scores 1. Asset stripping and loan games do not help: only sustainable profit survives the run-off.",
+ "split": "train",
+ "version": 1
+}

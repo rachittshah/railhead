@@ -1,0 +1,14 @@
+{"checksum":{"date":726984,"h":5763125211775,"ticks":11174,"vehicles":5},"company":0,"kind":"header","ticks":11174,"v":1}
+{"a":{"flags":["full_load_any"],"tile":20918,"vehicle":21},"kind":"act","m":"order_append","ok":true,"ret":{"cost":0,"index":0,"orders":1},"seq":1,"ticks":11174}
+{"a":{"flags":["unload","no_load"],"tile":20934,"vehicle":21},"kind":"act","m":"order_append","ok":true,"ret":{"cost":0,"index":1,"orders":2},"seq":2,"ticks":11174}
+{"a":{"flags":["full_load_any"],"tile":20918,"vehicle":22},"kind":"act","m":"order_append","ok":true,"ret":{"cost":0,"index":0,"orders":1},"seq":3,"ticks":11174}
+{"a":{"flags":["unload","no_load"],"tile":20934,"vehicle":22},"kind":"act","m":"order_append","ok":true,"ret":{"cost":0,"index":1,"orders":2},"seq":4,"ticks":11174}
+{"a":{"flags":["full_load_any"],"tile":20918,"vehicle":23},"kind":"act","m":"order_append","ok":true,"ret":{"cost":0,"index":0,"orders":1},"seq":5,"ticks":11174}
+{"a":{"flags":["unload","no_load"],"tile":20934,"vehicle":23},"kind":"act","m":"order_append","ok":true,"ret":{"cost":0,"index":1,"orders":2},"seq":6,"ticks":11174}
+{"a":{"flags":["full_load_any"],"tile":20918,"vehicle":24},"kind":"act","m":"order_append","ok":true,"ret":{"cost":0,"index":0,"orders":1},"seq":7,"ticks":11174}
+{"a":{"flags":["unload","no_load"],"tile":20934,"vehicle":24},"kind":"act","m":"order_append","ok":true,"ret":{"cost":0,"index":1,"orders":2},"seq":8,"ticks":11174}
+{"a":{"flags":["full_load_any"],"tile":20918,"vehicle":25},"kind":"act","m":"order_append","ok":true,"ret":{"cost":0,"index":0,"orders":1},"seq":9,"ticks":11174}
+{"a":{"flags":["unload","no_load"],"tile":20934,"vehicle":25},"kind":"act","m":"order_append","ok":true,"ret":{"cost":0,"index":1,"orders":2},"seq":10,"ticks":11174}
+{"a":{"from_tile":20925,"to_tile":20926},"kind":"act","m":"road_line","ok":true,"ret":{"cost":258},"seq":11,"ticks":11174}
+{"a":{"from_tile":20926,"to_tile":20927},"kind":"act","m":"road_line","ok":true,"ret":{"cost":71},"seq":12,"ticks":11174}
+{"a":{},"kind":"meta","m":"submit","seq":13,"ticks":11174}

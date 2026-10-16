@@ -1,0 +1,64 @@
+{
+ "task_id": "deliver-dev-40d855",
+ "family": "deliver",
+ "horizon_days": 300,
+ "runoff_days": 0,
+ "limits": {
+  "max_forks": 2,
+  "max_fork_days": 180
+ },
+ "objective": {
+  "cargo": 1,
+  "cargo_name": "Coal",
+  "source": 0,
+  "source_name": "Prenfingpool Bridge Coal Mine",
+  "source_xy": [
+   98,
+   84
+  ],
+  "dest": 1,
+  "dest_name": "Prenfingpool Bridge Power Station",
+  "dest_xy": [
+   102,
+   117
+  ],
+  "monitor": 0,
+  "monitors_aux": [
+   1
+  ],
+  "quantity": 480
+ },
+ "scenario": {
+  "gen_version": 1,
+  "split": "dev",
+  "landscape": "temperate",
+  "map_log2": 7,
+  "starting_year": 1960,
+  "settings": {
+   "difficulty": {
+    "number_towns": "3",
+    "industry_density": "3",
+    "terrain_type": "1",
+    "quantity_sea_lakes": "0",
+    "max_loan": "500000",
+    "initial_interest": "2",
+    "vehicle_breakdowns": "0",
+    "construction_cost": "0",
+    "vehicle_costs": "0",
+    "subsidy_multiplier": "2",
+    "disasters": "false",
+    "economy": "false"
+   },
+   "economy": {
+    "type": "1"
+   },
+   "game_creation": {
+    "town_name": "english"
+   }
+  }
+ },
+ "title": "Deliver Coal to Prenfingpool Bridge Power Station",
+ "briefing": "You run a young transport company. A customer needs **Coal** delivered to **Prenfingpool Bridge Power Station** (industry id 1, near tile 102,117).\n\nA likely supplier is **Prenfingpool Bridge Coal Mine** (industry id 0, near tile 98,84); any source counts, only what your company delivers to that industry is counted.\n\n**Contract:** deliver at least **480 units** within the horizon.\n\nIf you conclude the contract cannot be met by anyone, say so with `rh abstain reason=\"...\"`; abstaining on a feasible contract scores zero.\n\nThe reward is the fraction of the contract delivered (capped at 1), measured by the engine.",
+ "split": "dev",
+ "version": 1
+}

@@ -1,0 +1,64 @@
+{
+ "task_id": "deliver-dev-0a55c1",
+ "family": "deliver",
+ "horizon_days": 300,
+ "runoff_days": 0,
+ "limits": {
+  "max_forks": 2,
+  "max_fork_days": 180
+ },
+ "objective": {
+  "cargo": 3,
+  "cargo_name": "Oil",
+  "source": 8,
+  "source_name": "Tronfingfield Oil Wells",
+  "source_xy": [
+   88,
+   75
+  ],
+  "dest": 13,
+  "dest_name": "Tronfingfield Oil Refinery",
+  "dest_xy": [
+   86,
+   97
+  ],
+  "monitor": 0,
+  "monitors_aux": [
+   1
+  ],
+  "quantity": 380
+ },
+ "scenario": {
+  "gen_version": 1,
+  "split": "dev",
+  "landscape": "temperate",
+  "map_log2": 7,
+  "starting_year": 1975,
+  "settings": {
+   "difficulty": {
+    "number_towns": "2",
+    "industry_density": "5",
+    "terrain_type": "1",
+    "quantity_sea_lakes": "1",
+    "max_loan": "300000",
+    "initial_interest": "4",
+    "vehicle_breakdowns": "0",
+    "construction_cost": "0",
+    "vehicle_costs": "0",
+    "subsidy_multiplier": "2",
+    "disasters": "false",
+    "economy": "false"
+   },
+   "economy": {
+    "type": "1"
+   },
+   "game_creation": {
+    "town_name": "english"
+   }
+  }
+ },
+ "title": "Deliver Oil to Tronfingfield Oil Refinery",
+ "briefing": "You run a young transport company. A customer needs **Oil** delivered to **Tronfingfield Oil Refinery** (industry id 13, near tile 86,97).\n\nA likely supplier is **Tronfingfield Oil Wells** (industry id 8, near tile 88,75); any source counts, only what your company delivers to that industry is counted.\n\n**Contract:** deliver at least **380 units** within the horizon.\n\nIf you conclude the contract cannot be met by anyone, say so with `rh abstain reason=\"...\"`; abstaining on a feasible contract scores zero.\n\nThe reward is the fraction of the contract delivered (capped at 1), measured by the engine.",
+ "split": "dev",
+ "version": 1
+}

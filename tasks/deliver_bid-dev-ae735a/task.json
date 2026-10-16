@@ -1,0 +1,67 @@
+{
+ "task_id": "deliver_bid-dev-ae735a",
+ "family": "deliver",
+ "horizon_days": 300,
+ "runoff_days": 0,
+ "limits": {
+  "max_forks": 2,
+  "max_fork_days": 180
+ },
+ "objective": {
+  "cargo": 4,
+  "cargo_name": "Livestock",
+  "source": 14,
+  "source_name": "Flonningstone Farm",
+  "source_xy": [
+   176,
+   153
+  ],
+  "dest": 13,
+  "dest_name": "Suningley Factory",
+  "dest_xy": [
+   159,
+   152
+  ],
+  "monitor": 0,
+  "monitors_aux": [
+   1
+  ],
+  "quantity": 250,
+  "bid": true,
+  "bid_scale": 650,
+  "bid_deadline_days": 30
+ },
+ "scenario": {
+  "gen_version": 1,
+  "split": "dev",
+  "landscape": "temperate",
+  "map_log2": 8,
+  "starting_year": 1960,
+  "settings": {
+   "difficulty": {
+    "number_towns": "2",
+    "industry_density": "3",
+    "terrain_type": "1",
+    "quantity_sea_lakes": "0",
+    "max_loan": "300000",
+    "initial_interest": "3",
+    "vehicle_breakdowns": "1",
+    "construction_cost": "0",
+    "vehicle_costs": "0",
+    "subsidy_multiplier": "2",
+    "disasters": "false",
+    "economy": "false"
+   },
+   "economy": {
+    "type": "1"
+   },
+   "game_creation": {
+    "town_name": "english"
+   }
+  }
+ },
+ "title": "Deliver Livestock to Suningley Factory",
+ "briefing": "You run a young transport company. A customer needs **Livestock** delivered to **Suningley Factory** (industry id 13, near tile 159,152).\n\nA likely supplier is **Flonningstone Farm** (industry id 14, near tile 176,153); any source counts, only what your company delivers to that industry is counted.\n\n**Contract:** deliver at least **250 units** within the horizon.\n\n**Promise:** within the first 30 game-days, commit to a delivery quantity with `rh promise quantity=N` (the last promise before the deadline counts; max 650). You are paid for min(delivered, promised) and fined for any shortfall, so promise what you can really deliver: over- and under-promising both cost you.\n\nIf you conclude the contract cannot be met by anyone, say so with `rh abstain reason=\"...\"`; abstaining on a feasible contract scores zero.\n\nThe reward is the fraction of the contract delivered (capped at 1), measured by the engine.",
+ "split": "dev",
+ "version": 1
+}

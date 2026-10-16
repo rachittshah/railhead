@@ -1,0 +1,64 @@
+{
+ "task_id": "deliver-train-0189a7",
+ "family": "deliver",
+ "horizon_days": 300,
+ "runoff_days": 0,
+ "limits": {
+  "max_forks": 2,
+  "max_fork_days": 180
+ },
+ "objective": {
+  "cargo": 1,
+  "cargo_name": "Coal",
+  "source": 0,
+  "source_name": "Great Grunfingfield Coal Mine",
+  "source_xy": [
+   40,
+   19
+  ],
+  "dest": 1,
+  "dest_name": "Bundhead Power Station",
+  "dest_xy": [
+   48,
+   34
+  ],
+  "monitor": 0,
+  "monitors_aux": [
+   1
+  ],
+  "quantity": 830
+ },
+ "scenario": {
+  "gen_version": 1,
+  "split": "train",
+  "landscape": "temperate",
+  "map_log2": 6,
+  "starting_year": 2000,
+  "settings": {
+   "difficulty": {
+    "number_towns": "2",
+    "industry_density": "4",
+    "terrain_type": "1",
+    "quantity_sea_lakes": "0",
+    "max_loan": "500000",
+    "initial_interest": "2",
+    "vehicle_breakdowns": "1",
+    "construction_cost": "0",
+    "vehicle_costs": "0",
+    "subsidy_multiplier": "2",
+    "disasters": "false",
+    "economy": "false"
+   },
+   "economy": {
+    "type": "1"
+   },
+   "game_creation": {
+    "town_name": "english"
+   }
+  }
+ },
+ "title": "Deliver Coal to Bundhead Power Station",
+ "briefing": "You run a young transport company. A customer needs **Coal** delivered to **Bundhead Power Station** (industry id 1, near tile 48,34).\n\nA likely supplier is **Great Grunfingfield Coal Mine** (industry id 0, near tile 40,19); any source counts, only what your company delivers to that industry is counted.\n\n**Contract:** deliver at least **830 units** within the horizon.\n\nIf you conclude the contract cannot be met by anyone, say so with `rh abstain reason=\"...\"`; abstaining on a feasible contract scores zero.\n\nThe reward is the fraction of the contract delivered (capped at 1), measured by the engine.",
+ "split": "train",
+ "version": 1
+}

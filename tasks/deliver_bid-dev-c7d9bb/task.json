@@ -1,0 +1,67 @@
+{
+ "task_id": "deliver_bid-dev-c7d9bb",
+ "family": "deliver",
+ "horizon_days": 300,
+ "runoff_days": 0,
+ "limits": {
+  "max_forks": 2,
+  "max_fork_days": 180
+ },
+ "objective": {
+  "cargo": 1,
+  "cargo_name": "Coal",
+  "source": 0,
+  "source_name": "Trardwood Coal Mine",
+  "source_xy": [
+   64,
+   109
+  ],
+  "dest": 29,
+  "dest_name": "Trardwood Power Station",
+  "dest_xy": [
+   60,
+   86
+  ],
+  "monitor": 0,
+  "monitors_aux": [
+   1
+  ],
+  "quantity": 250,
+  "bid": true,
+  "bid_scale": 680,
+  "bid_deadline_days": 30
+ },
+ "scenario": {
+  "gen_version": 1,
+  "split": "dev",
+  "landscape": "temperate",
+  "map_log2": 8,
+  "starting_year": 1960,
+  "settings": {
+   "difficulty": {
+    "number_towns": "2",
+    "industry_density": "4",
+    "terrain_type": "1",
+    "quantity_sea_lakes": "1",
+    "max_loan": "300000",
+    "initial_interest": "2",
+    "vehicle_breakdowns": "0",
+    "construction_cost": "0",
+    "vehicle_costs": "0",
+    "subsidy_multiplier": "2",
+    "disasters": "false",
+    "economy": "false"
+   },
+   "economy": {
+    "type": "1"
+   },
+   "game_creation": {
+    "town_name": "english"
+   }
+  }
+ },
+ "title": "Deliver Coal to Trardwood Power Station",
+ "briefing": "You run a young transport company. A customer needs **Coal** delivered to **Trardwood Power Station** (industry id 29, near tile 60,86).\n\nA likely supplier is **Trardwood Coal Mine** (industry id 0, near tile 64,109); any source counts, only what your company delivers to that industry is counted.\n\n**Contract:** deliver at least **250 units** within the horizon.\n\n**Promise:** within the first 30 game-days, commit to a delivery quantity with `rh promise quantity=N` (the last promise before the deadline counts; max 680). You are paid for min(delivered, promised) and fined for any shortfall, so promise what you can really deliver: over- and under-promising both cost you.\n\nIf you conclude the contract cannot be met by anyone, say so with `rh abstain reason=\"...\"`; abstaining on a feasible contract scores zero.\n\nThe reward is the fraction of the contract delivered (capped at 1), measured by the engine.",
+ "split": "dev",
+ "version": 1
+}

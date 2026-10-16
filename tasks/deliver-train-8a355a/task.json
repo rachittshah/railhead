@@ -1,0 +1,64 @@
+{
+ "task_id": "deliver-train-8a355a",
+ "family": "deliver",
+ "horizon_days": 300,
+ "runoff_days": 0,
+ "limits": {
+  "max_forks": 2,
+  "max_fork_days": 180
+ },
+ "objective": {
+  "cargo": 1,
+  "cargo_name": "Coal",
+  "source": 0,
+  "source_name": "Little Frunnway Coal Mine",
+  "source_xy": [
+   35,
+   94
+  ],
+  "dest": 42,
+  "dest_name": "Little Frunnway Power Station",
+  "dest_xy": [
+   31,
+   113
+  ],
+  "monitor": 0,
+  "monitors_aux": [
+   1
+  ],
+  "quantity": 26000
+ },
+ "scenario": {
+  "gen_version": 1,
+  "split": "train",
+  "landscape": "temperate",
+  "map_log2": 8,
+  "starting_year": 1975,
+  "settings": {
+   "difficulty": {
+    "number_towns": "1",
+    "industry_density": "4",
+    "terrain_type": "1",
+    "quantity_sea_lakes": "2",
+    "max_loan": "500000",
+    "initial_interest": "2",
+    "vehicle_breakdowns": "1",
+    "construction_cost": "0",
+    "vehicle_costs": "0",
+    "subsidy_multiplier": "2",
+    "disasters": "false",
+    "economy": "false"
+   },
+   "economy": {
+    "type": "1"
+   },
+   "game_creation": {
+    "town_name": "english"
+   }
+  }
+ },
+ "title": "Deliver Coal to Little Frunnway Power Station",
+ "briefing": "You run a young transport company. A customer needs **Coal** delivered to **Little Frunnway Power Station** (industry id 42, near tile 31,113).\n\nA likely supplier is **Little Frunnway Coal Mine** (industry id 0, near tile 35,94); any source counts, only what your company delivers to that industry is counted.\n\n**Contract:** deliver at least **26,000 units** within the horizon.\n\nIf you conclude the contract cannot be met by anyone, say so with `rh abstain reason=\"...\"`; abstaining on a feasible contract scores zero.\n\nThe reward is the fraction of the contract delivered (capped at 1), measured by the engine.",
+ "split": "train",
+ "version": 1
+}

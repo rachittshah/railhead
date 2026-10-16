@@ -1,0 +1,64 @@
+{
+ "task_id": "deliver-dev-e71398",
+ "family": "deliver",
+ "horizon_days": 300,
+ "runoff_days": 0,
+ "limits": {
+  "max_forks": 2,
+  "max_fork_days": 180
+ },
+ "objective": {
+  "cargo": 4,
+  "cargo_name": "Livestock",
+  "source": 7,
+  "source_name": "Prarnville Farm",
+  "source_xy": [
+   11,
+   43
+  ],
+  "dest": 5,
+  "dest_name": "Prarnville Factory",
+  "dest_xy": [
+   8,
+   22
+  ],
+  "monitor": 0,
+  "monitors_aux": [
+   1
+  ],
+  "quantity": 530
+ },
+ "scenario": {
+  "gen_version": 1,
+  "split": "dev",
+  "landscape": "temperate",
+  "map_log2": 6,
+  "starting_year": 1960,
+  "settings": {
+   "difficulty": {
+    "number_towns": "1",
+    "industry_density": "3",
+    "terrain_type": "0",
+    "quantity_sea_lakes": "0",
+    "max_loan": "200000",
+    "initial_interest": "4",
+    "vehicle_breakdowns": "0",
+    "construction_cost": "0",
+    "vehicle_costs": "0",
+    "subsidy_multiplier": "2",
+    "disasters": "false",
+    "economy": "false"
+   },
+   "economy": {
+    "type": "1"
+   },
+   "game_creation": {
+    "town_name": "english"
+   }
+  }
+ },
+ "title": "Deliver Livestock to Prarnville Factory",
+ "briefing": "You run a young transport company. A customer needs **Livestock** delivered to **Prarnville Factory** (industry id 5, near tile 8,22).\n\nA likely supplier is **Prarnville Farm** (industry id 7, near tile 11,43); any source counts, only what your company delivers to that industry is counted.\n\n**Contract:** deliver at least **530 units** within the horizon.\n\nIf you conclude the contract cannot be met by anyone, say so with `rh abstain reason=\"...\"`; abstaining on a feasible contract scores zero.\n\nThe reward is the fraction of the contract delivered (capped at 1), measured by the engine.",
+ "split": "dev",
+ "version": 1
+}

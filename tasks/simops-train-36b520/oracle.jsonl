@@ -1,0 +1,10 @@
+{"checksum":{"date":716026,"h":38759237597256,"ticks":11174,"vehicles":3},"company":0,"kind":"header","ticks":11174,"v":1}
+{"a":{"from_tile":6303,"to_tile":6175},"kind":"act","m":"road_line","ok":true,"ret":{"cost":71},"seq":1,"ticks":11174}
+{"a":{"from_tile":6175,"to_tile":6047},"kind":"act","m":"road_line","ok":true,"ret":{"cost":71},"seq":2,"ticks":11174}
+{"a":{"flags":["full_load_any"],"tile":6940,"vehicle":1},"kind":"act","m":"order_append","ok":true,"ret":{"cost":0,"index":0,"orders":1},"seq":3,"ticks":11174}
+{"a":{"flags":["unload","no_load"],"tile":5410,"vehicle":1},"kind":"act","m":"order_append","ok":true,"ret":{"cost":0,"index":1,"orders":2},"seq":4,"ticks":11174}
+{"a":{"flags":["full_load_any"],"tile":6940,"vehicle":2},"kind":"act","m":"order_append","ok":true,"ret":{"cost":0,"index":0,"orders":1},"seq":5,"ticks":11174}
+{"a":{"flags":["unload","no_load"],"tile":5410,"vehicle":2},"kind":"act","m":"order_append","ok":true,"ret":{"cost":0,"index":1,"orders":2},"seq":6,"ticks":11174}
+{"a":{"flags":["full_load_any"],"tile":6940,"vehicle":3},"kind":"act","m":"order_append","ok":true,"ret":{"cost":0,"index":0,"orders":1},"seq":7,"ticks":11174}
+{"a":{"flags":["unload","no_load"],"tile":5410,"vehicle":3},"kind":"act","m":"order_append","ok":true,"ret":{"cost":0,"index":1,"orders":2},"seq":8,"ticks":11174}
+{"a":{},"kind":"meta","m":"submit","seq":9,"ticks":11174}

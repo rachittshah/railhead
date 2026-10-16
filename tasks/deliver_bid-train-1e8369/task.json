@@ -1,0 +1,67 @@
+{
+ "task_id": "deliver_bid-train-1e8369",
+ "family": "deliver",
+ "horizon_days": 300,
+ "runoff_days": 0,
+ "limits": {
+  "max_forks": 2,
+  "max_fork_days": 180
+ },
+ "objective": {
+  "cargo": 8,
+  "cargo_name": "Iron Ore",
+  "source": 9,
+  "source_name": "New Drinhill Iron Ore Mine",
+  "source_xy": [
+   16,
+   99
+  ],
+  "dest": 6,
+  "dest_name": "Carnville Steel Mill",
+  "dest_xy": [
+   10,
+   74
+  ],
+  "monitor": 0,
+  "monitors_aux": [
+   1
+  ],
+  "quantity": 310,
+  "bid": true,
+  "bid_scale": 780,
+  "bid_deadline_days": 30
+ },
+ "scenario": {
+  "gen_version": 1,
+  "split": "train",
+  "landscape": "temperate",
+  "map_log2": 7,
+  "starting_year": 1975,
+  "settings": {
+   "difficulty": {
+    "number_towns": "3",
+    "industry_density": "4",
+    "terrain_type": "2",
+    "quantity_sea_lakes": "2",
+    "max_loan": "300000",
+    "initial_interest": "3",
+    "vehicle_breakdowns": "0",
+    "construction_cost": "0",
+    "vehicle_costs": "0",
+    "subsidy_multiplier": "2",
+    "disasters": "false",
+    "economy": "false"
+   },
+   "economy": {
+    "type": "1"
+   },
+   "game_creation": {
+    "town_name": "english"
+   }
+  }
+ },
+ "title": "Deliver Iron Ore to Carnville Steel Mill",
+ "briefing": "You run a young transport company. A customer needs **Iron Ore** delivered to **Carnville Steel Mill** (industry id 6, near tile 10,74).\n\nA likely supplier is **New Drinhill Iron Ore Mine** (industry id 9, near tile 16,99); any source counts, only what your company delivers to that industry is counted.\n\n**Contract:** deliver at least **310 units** within the horizon.\n\n**Promise:** within the first 30 game-days, commit to a delivery quantity with `rh promise quantity=N` (the last promise before the deadline counts; max 780). You are paid for min(delivered, promised) and fined for any shortfall, so promise what you can really deliver: over- and under-promising both cost you.\n\nIf you conclude the contract cannot be met by anyone, say so with `rh abstain reason=\"...\"`; abstaining on a feasible contract scores zero.\n\nThe reward is the fraction of the contract delivered (capped at 1), measured by the engine.",
+ "split": "train",
+ "version": 1
+}

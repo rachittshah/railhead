@@ -1,0 +1,67 @@
+{
+ "task_id": "deliver_bid-train-247b92",
+ "family": "deliver",
+ "horizon_days": 300,
+ "runoff_days": 0,
+ "limits": {
+  "max_forks": 2,
+  "max_fork_days": 180
+ },
+ "objective": {
+  "cargo": 4,
+  "cargo_name": "Livestock",
+  "source": 20,
+  "source_name": "Nunthill City Farm",
+  "source_xy": [
+   157,
+   104
+  ],
+  "dest": 30,
+  "dest_name": "Nunthill City Factory",
+  "dest_xy": [
+   137,
+   105
+  ],
+  "monitor": 0,
+  "monitors_aux": [
+   1
+  ],
+  "quantity": 350,
+  "bid": true,
+  "bid_scale": 1010,
+  "bid_deadline_days": 30
+ },
+ "scenario": {
+  "gen_version": 1,
+  "split": "train",
+  "landscape": "temperate",
+  "map_log2": 8,
+  "starting_year": 1990,
+  "settings": {
+   "difficulty": {
+    "number_towns": "2",
+    "industry_density": "4",
+    "terrain_type": "2",
+    "quantity_sea_lakes": "0",
+    "max_loan": "300000",
+    "initial_interest": "2",
+    "vehicle_breakdowns": "0",
+    "construction_cost": "0",
+    "vehicle_costs": "0",
+    "subsidy_multiplier": "2",
+    "disasters": "false",
+    "economy": "false"
+   },
+   "economy": {
+    "type": "1"
+   },
+   "game_creation": {
+    "town_name": "english"
+   }
+  }
+ },
+ "title": "Deliver Livestock to Nunthill City Factory",
+ "briefing": "You run a young transport company. A customer needs **Livestock** delivered to **Nunthill City Factory** (industry id 30, near tile 137,105).\n\nA likely supplier is **Nunthill City Farm** (industry id 20, near tile 157,104); any source counts, only what your company delivers to that industry is counted.\n\n**Contract:** deliver at least **350 units** within the horizon.\n\n**Promise:** within the first 30 game-days, commit to a delivery quantity with `rh promise quantity=N` (the last promise before the deadline counts; max 1,010). You are paid for min(delivered, promised) and fined for any shortfall, so promise what you can really deliver: over- and under-promising both cost you.\n\nIf you conclude the contract cannot be met by anyone, say so with `rh abstain reason=\"...\"`; abstaining on a feasible contract scores zero.\n\nThe reward is the fraction of the contract delivered (capped at 1), measured by the engine.",
+ "split": "train",
+ "version": 1
+}

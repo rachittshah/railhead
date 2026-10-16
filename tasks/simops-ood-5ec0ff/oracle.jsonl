@@ -1,0 +1,10 @@
+{"checksum":{"date":730636,"h":118995220841591,"ticks":11174,"vehicles":4},"company":0,"kind":"header","ticks":11174,"v":1}
+{"a":{"flags":["full_load_any"],"tile":33595,"vehicle":7},"kind":"act","m":"order_append","ok":true,"ret":{"cost":0,"index":0,"orders":1},"seq":1,"ticks":11174}
+{"a":{"flags":["unload","no_load"],"tile":30525,"vehicle":7},"kind":"act","m":"order_append","ok":true,"ret":{"cost":0,"index":1,"orders":2},"seq":2,"ticks":11174}
+{"a":{"flags":["full_load_any"],"tile":33595,"vehicle":8},"kind":"act","m":"order_append","ok":true,"ret":{"cost":0,"index":0,"orders":1},"seq":3,"ticks":11174}
+{"a":{"flags":["unload","no_load"],"tile":30525,"vehicle":8},"kind":"act","m":"order_append","ok":true,"ret":{"cost":0,"index":1,"orders":2},"seq":4,"ticks":11174}
+{"a":{"flags":["full_load_any"],"tile":33595,"vehicle":9},"kind":"act","m":"order_append","ok":true,"ret":{"cost":0,"index":0,"orders":1},"seq":5,"ticks":11174}
+{"a":{"flags":["unload","no_load"],"tile":30525,"vehicle":9},"kind":"act","m":"order_append","ok":true,"ret":{"cost":0,"index":1,"orders":2},"seq":6,"ticks":11174}
+{"a":{"flags":["full_load_any"],"tile":33595,"vehicle":10},"kind":"act","m":"order_append","ok":true,"ret":{"cost":0,"index":0,"orders":1},"seq":7,"ticks":11174}
+{"a":{"flags":["unload","no_load"],"tile":30525,"vehicle":10},"kind":"act","m":"order_append","ok":true,"ret":{"cost":0,"index":1,"orders":2},"seq":8,"ticks":11174}
+{"a":{},"kind":"meta","m":"submit","seq":9,"ticks":11174}

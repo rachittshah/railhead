@@ -1,0 +1,64 @@
+{
+ "task_id": "deliver-ood-4b6b9b",
+ "family": "deliver",
+ "horizon_days": 300,
+ "runoff_days": 0,
+ "limits": {
+  "max_forks": 2,
+  "max_fork_days": 180
+ },
+ "objective": {
+  "cargo": 8,
+  "cargo_name": "Copper Ore",
+  "source": 1,
+  "source_name": "Honbourne Bridge Copper Ore Mine",
+  "source_xy": [
+   10,
+   198
+  ],
+  "dest": 65,
+  "dest_name": "Honbourne Bridge Factory",
+  "dest_xy": [
+   9,
+   173
+  ],
+  "monitor": 0,
+  "monitors_aux": [
+   1
+  ],
+  "quantity": 450
+ },
+ "scenario": {
+  "gen_version": 1,
+  "split": "ood",
+  "landscape": "tropic",
+  "map_log2": 8,
+  "starting_year": 1950,
+  "settings": {
+   "difficulty": {
+    "number_towns": "2",
+    "industry_density": "5",
+    "terrain_type": "0",
+    "quantity_sea_lakes": "1",
+    "max_loan": "200000",
+    "initial_interest": "4",
+    "vehicle_breakdowns": "1",
+    "construction_cost": "0",
+    "vehicle_costs": "0",
+    "subsidy_multiplier": "2",
+    "disasters": "false",
+    "economy": "false"
+   },
+   "economy": {
+    "type": "1"
+   },
+   "game_creation": {
+    "town_name": "english"
+   }
+  }
+ },
+ "title": "Deliver Copper Ore to Honbourne Bridge Factory",
+ "briefing": "You run a young transport company. A customer needs **Copper Ore** delivered to **Honbourne Bridge Factory** (industry id 65, near tile 9,173).\n\nA likely supplier is **Honbourne Bridge Copper Ore Mine** (industry id 1, near tile 10,198); any source counts, only what your company delivers to that industry is counted.\n\n**Contract:** deliver at least **450 units** within the horizon.\n\nIf you conclude the contract cannot be met by anyone, say so with `rh abstain reason=\"...\"`; abstaining on a feasible contract scores zero.\n\nThe reward is the fraction of the contract delivered (capped at 1), measured by the engine.",
+ "split": "ood",
+ "version": 1
+}

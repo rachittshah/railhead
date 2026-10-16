@@ -1,0 +1,64 @@
+{
+ "task_id": "deliver-train-2a720a",
+ "family": "deliver",
+ "horizon_days": 300,
+ "runoff_days": 0,
+ "limits": {
+  "max_forks": 2,
+  "max_fork_days": 180
+ },
+ "objective": {
+  "cargo": 7,
+  "cargo_name": "Wood",
+  "source": 3,
+  "source_name": "Bonninghall Forest",
+  "source_xy": [
+   26,
+   89
+  ],
+  "dest": 11,
+  "dest_name": "Bonninghall Sawmill",
+  "dest_xy": [
+   43,
+   91
+  ],
+  "monitor": 0,
+  "monitors_aux": [
+   1
+  ],
+  "quantity": 5000
+ },
+ "scenario": {
+  "gen_version": 1,
+  "split": "train",
+  "landscape": "temperate",
+  "map_log2": 7,
+  "starting_year": 1960,
+  "settings": {
+   "difficulty": {
+    "number_towns": "1",
+    "industry_density": "5",
+    "terrain_type": "2",
+    "quantity_sea_lakes": "0",
+    "max_loan": "500000",
+    "initial_interest": "4",
+    "vehicle_breakdowns": "1",
+    "construction_cost": "0",
+    "vehicle_costs": "0",
+    "subsidy_multiplier": "2",
+    "disasters": "false",
+    "economy": "false"
+   },
+   "economy": {
+    "type": "1"
+   },
+   "game_creation": {
+    "town_name": "english"
+   }
+  }
+ },
+ "title": "Deliver Wood to Bonninghall Sawmill",
+ "briefing": "You run a young transport company. A customer needs **Wood** delivered to **Bonninghall Sawmill** (industry id 11, near tile 43,91).\n\nA likely supplier is **Bonninghall Forest** (industry id 3, near tile 26,89); any source counts, only what your company delivers to that industry is counted.\n\n**Contract:** deliver at least **5,000 units** within the horizon.\n\nIf you conclude the contract cannot be met by anyone, say so with `rh abstain reason=\"...\"`; abstaining on a feasible contract scores zero.\n\nThe reward is the fraction of the contract delivered (capped at 1), measured by the engine.",
+ "split": "train",
+ "version": 1
+}

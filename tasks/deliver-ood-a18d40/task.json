@@ -1,0 +1,64 @@
+{
+ "task_id": "deliver-ood-a18d40",
+ "family": "deliver",
+ "horizon_days": 300,
+ "runoff_days": 0,
+ "limits": {
+  "max_forks": 2,
+  "max_fork_days": 180
+ },
+ "objective": {
+  "cargo": 8,
+  "cargo_name": "Copper Ore",
+  "source": 1,
+  "source_name": "Little Frundworth Copper Ore Mine",
+  "source_xy": [
+   16,
+   118
+  ],
+  "dest": 10,
+  "dest_name": "Little Frundworth Factory",
+  "dest_xy": [
+   37,
+   112
+  ],
+  "monitor": 0,
+  "monitors_aux": [
+   1
+  ],
+  "quantity": 260
+ },
+ "scenario": {
+  "gen_version": 1,
+  "split": "ood",
+  "landscape": "tropic",
+  "map_log2": 7,
+  "starting_year": 1975,
+  "settings": {
+   "difficulty": {
+    "number_towns": "1",
+    "industry_density": "3",
+    "terrain_type": "0",
+    "quantity_sea_lakes": "1",
+    "max_loan": "300000",
+    "initial_interest": "2",
+    "vehicle_breakdowns": "0",
+    "construction_cost": "0",
+    "vehicle_costs": "0",
+    "subsidy_multiplier": "2",
+    "disasters": "false",
+    "economy": "false"
+   },
+   "economy": {
+    "type": "1"
+   },
+   "game_creation": {
+    "town_name": "english"
+   }
+  }
+ },
+ "title": "Deliver Copper Ore to Little Frundworth Factory",
+ "briefing": "You run a young transport company. A customer needs **Copper Ore** delivered to **Little Frundworth Factory** (industry id 10, near tile 37,112).\n\nA likely supplier is **Little Frundworth Copper Ore Mine** (industry id 1, near tile 16,118); any source counts, only what your company delivers to that industry is counted.\n\n**Contract:** deliver at least **260 units** within the horizon.\n\nIf you conclude the contract cannot be met by anyone, say so with `rh abstain reason=\"...\"`; abstaining on a feasible contract scores zero.\n\nThe reward is the fraction of the contract delivered (capped at 1), measured by the engine.",
+ "split": "ood",
+ "version": 1
+}

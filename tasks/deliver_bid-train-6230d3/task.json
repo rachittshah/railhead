@@ -1,0 +1,67 @@
+{
+ "task_id": "deliver_bid-train-6230d3",
+ "family": "deliver",
+ "horizon_days": 300,
+ "runoff_days": 0,
+ "limits": {
+  "max_forks": 2,
+  "max_fork_days": 180
+ },
+ "objective": {
+  "cargo": 1,
+  "cargo_name": "Coal",
+  "source": 13,
+  "source_name": "Chundstone Bay Coal Mine",
+  "source_xy": [
+   68,
+   35
+  ],
+  "dest": 1,
+  "dest_name": "Slarnway Power Station",
+  "dest_xy": [
+   105,
+   34
+  ],
+  "monitor": 0,
+  "monitors_aux": [
+   1
+  ],
+  "quantity": 510,
+  "bid": true,
+  "bid_scale": 1330,
+  "bid_deadline_days": 30
+ },
+ "scenario": {
+  "gen_version": 1,
+  "split": "train",
+  "landscape": "temperate",
+  "map_log2": 8,
+  "starting_year": 1950,
+  "settings": {
+   "difficulty": {
+    "number_towns": "1",
+    "industry_density": "3",
+    "terrain_type": "1",
+    "quantity_sea_lakes": "0",
+    "max_loan": "200000",
+    "initial_interest": "2",
+    "vehicle_breakdowns": "1",
+    "construction_cost": "0",
+    "vehicle_costs": "0",
+    "subsidy_multiplier": "2",
+    "disasters": "false",
+    "economy": "false"
+   },
+   "economy": {
+    "type": "1"
+   },
+   "game_creation": {
+    "town_name": "english"
+   }
+  }
+ },
+ "title": "Deliver Coal to Slarnway Power Station",
+ "briefing": "You run a young transport company. A customer needs **Coal** delivered to **Slarnway Power Station** (industry id 1, near tile 105,34).\n\nA likely supplier is **Chundstone Bay Coal Mine** (industry id 13, near tile 68,35); any source counts, only what your company delivers to that industry is counted.\n\n**Contract:** deliver at least **510 units** within the horizon.\n\n**Promise:** within the first 30 game-days, commit to a delivery quantity with `rh promise quantity=N` (the last promise before the deadline counts; max 1,330). You are paid for min(delivered, promised) and fined for any shortfall, so promise what you can really deliver: over- and under-promising both cost you.\n\nIf you conclude the contract cannot be met by anyone, say so with `rh abstain reason=\"...\"`; abstaining on a feasible contract scores zero.\n\nThe reward is the fraction of the contract delivered (capped at 1), measured by the engine.",
+ "split": "train",
+ "version": 1
+}

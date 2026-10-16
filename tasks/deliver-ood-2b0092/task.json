@@ -1,0 +1,64 @@
+{
+ "task_id": "deliver-ood-2b0092",
+ "family": "deliver",
+ "horizon_days": 300,
+ "runoff_days": 0,
+ "limits": {
+  "max_forks": 2,
+  "max_fork_days": 180
+ },
+ "objective": {
+  "cargo": 9,
+  "cargo_name": "Paper",
+  "source": 23,
+  "source_name": "Sindingstone Paper Mill",
+  "source_xy": [
+   10,
+   116
+  ],
+  "dest": 4,
+  "dest_name": "Sindingstone Printing Works",
+  "dest_xy": [
+   19,
+   133
+  ],
+  "monitor": 0,
+  "monitors_aux": [
+   1
+  ],
+  "quantity": 1000
+ },
+ "scenario": {
+  "gen_version": 1,
+  "split": "ood",
+  "landscape": "arctic",
+  "map_log2": 8,
+  "starting_year": 1950,
+  "settings": {
+   "difficulty": {
+    "number_towns": "3",
+    "industry_density": "4",
+    "terrain_type": "2",
+    "quantity_sea_lakes": "1",
+    "max_loan": "500000",
+    "initial_interest": "3",
+    "vehicle_breakdowns": "0",
+    "construction_cost": "0",
+    "vehicle_costs": "0",
+    "subsidy_multiplier": "2",
+    "disasters": "false",
+    "economy": "false"
+   },
+   "economy": {
+    "type": "1"
+   },
+   "game_creation": {
+    "town_name": "english"
+   }
+  }
+ },
+ "title": "Deliver Paper to Sindingstone Printing Works",
+ "briefing": "You run a young transport company. A customer needs **Paper** delivered to **Sindingstone Printing Works** (industry id 4, near tile 19,133).\n\nA likely supplier is **Sindingstone Paper Mill** (industry id 23, near tile 10,116); any source counts, only what your company delivers to that industry is counted.\n\n**Contract:** deliver at least **1,000 units** within the horizon.\n\nIf you conclude the contract cannot be met by anyone, say so with `rh abstain reason=\"...\"`; abstaining on a feasible contract scores zero.\n\nThe reward is the fraction of the contract delivered (capped at 1), measured by the engine.",
+ "split": "ood",
+ "version": 1
+}

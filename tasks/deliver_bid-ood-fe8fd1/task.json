@@ -1,0 +1,67 @@
+{
+ "task_id": "deliver_bid-ood-fe8fd1",
+ "family": "deliver",
+ "horizon_days": 300,
+ "runoff_days": 0,
+ "limits": {
+  "max_forks": 2,
+  "max_fork_days": 180
+ },
+ "objective": {
+  "cargo": 10,
+  "cargo_name": "Gold",
+  "source": 7,
+  "source_name": "Frondborough Gold Mine",
+  "source_xy": [
+   16,
+   88
+  ],
+  "dest": 8,
+  "dest_name": "Great Slonfingley Market Bank",
+  "dest_xy": [
+   54,
+   70
+  ],
+  "monitor": 0,
+  "monitors_aux": [
+   1
+  ],
+  "quantity": 310,
+  "bid": true,
+  "bid_scale": 700,
+  "bid_deadline_days": 30
+ },
+ "scenario": {
+  "gen_version": 1,
+  "split": "ood",
+  "landscape": "arctic",
+  "map_log2": 7,
+  "starting_year": 2000,
+  "settings": {
+   "difficulty": {
+    "number_towns": "3",
+    "industry_density": "4",
+    "terrain_type": "0",
+    "quantity_sea_lakes": "1",
+    "max_loan": "500000",
+    "initial_interest": "4",
+    "vehicle_breakdowns": "1",
+    "construction_cost": "0",
+    "vehicle_costs": "0",
+    "subsidy_multiplier": "2",
+    "disasters": "false",
+    "economy": "false"
+   },
+   "economy": {
+    "type": "1"
+   },
+   "game_creation": {
+    "town_name": "english"
+   }
+  }
+ },
+ "title": "Deliver Gold to Great Slonfingley Market Bank",
+ "briefing": "You run a young transport company. A customer needs **Gold** delivered to **Great Slonfingley Market Bank** (industry id 8, near tile 54,70).\n\nA likely supplier is **Frondborough Gold Mine** (industry id 7, near tile 16,88); any source counts, only what your company delivers to that industry is counted.\n\n**Contract:** deliver at least **310 units** within the horizon.\n\n**Promise:** within the first 30 game-days, commit to a delivery quantity with `rh promise quantity=N` (the last promise before the deadline counts; max 700). You are paid for min(delivered, promised) and fined for any shortfall, so promise what you can really deliver: over- and under-promising both cost you.\n\nIf you conclude the contract cannot be met by anyone, say so with `rh abstain reason=\"...\"`; abstaining on a feasible contract scores zero.\n\nThe reward is the fraction of the contract delivered (capped at 1), measured by the engine.",
+ "split": "ood",
+ "version": 1
+}

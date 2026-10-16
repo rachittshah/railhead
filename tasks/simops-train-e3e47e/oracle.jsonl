@@ -1,0 +1,4 @@
+{"checksum":{"date":726984,"h":54751728636450,"ticks":11174,"vehicles":5},"company":0,"kind":"header","ticks":11174,"v":1}
+{"a":{"from_tile":45796,"to_tile":45797},"kind":"act","m":"road_line","ok":true,"ret":{"cost":329},"seq":1,"ticks":11174}
+{"a":{"from_tile":45797,"to_tile":45798},"code":"ERR_ALREADY_BUILT","kind":"act","m":"road_line","ok":false,"seq":2,"ticks":11174}
+{"a":{},"kind":"meta","m":"submit","seq":3,"ticks":11174}

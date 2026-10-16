@@ -1,0 +1,16 @@
+{"checksum":{"date":712374,"h":70117209939421,"ticks":11174,"vehicles":4},"company":0,"kind":"header","ticks":11174,"v":1}
+{"a":{"front_tile":11658,"kind":"truck","tile":11786},"kind":"act","m":"road_stop","ok":true,"ret":{"connected":false,"cost":292,"station":0},"seq":1,"ticks":11174}
+{"a":{"from_tile":11658,"to_tile":11786},"code":"ERR_ALREADY_BUILT","kind":"act","m":"road_line","ok":false,"seq":2,"ticks":11174}
+{"a":{"vehicle":2},"kind":"act","m":"order_clear","ok":true,"ret":{"cost":0,"orders":0},"seq":3,"ticks":11174}
+{"a":{"flags":["full_load_any"],"tile":11786,"vehicle":2},"kind":"act","m":"order_append","ok":true,"ret":{"cost":0,"index":0,"orders":1},"seq":4,"ticks":11174}
+{"a":{"flags":["unload","no_load"],"tile":9350,"vehicle":2},"kind":"act","m":"order_append","ok":true,"ret":{"cost":0,"index":1,"orders":2},"seq":5,"ticks":11174}
+{"a":{"vehicle":3},"kind":"act","m":"order_clear","ok":true,"ret":{"cost":0,"orders":0},"seq":6,"ticks":11174}
+{"a":{"flags":["full_load_any"],"tile":11786,"vehicle":3},"kind":"act","m":"order_append","ok":true,"ret":{"cost":0,"index":0,"orders":1},"seq":7,"ticks":11174}
+{"a":{"flags":["unload","no_load"],"tile":9350,"vehicle":3},"kind":"act","m":"order_append","ok":true,"ret":{"cost":0,"index":1,"orders":2},"seq":8,"ticks":11174}
+{"a":{"vehicle":4},"kind":"act","m":"order_clear","ok":true,"ret":{"cost":0,"orders":0},"seq":9,"ticks":11174}
+{"a":{"flags":["full_load_any"],"tile":11786,"vehicle":4},"kind":"act","m":"order_append","ok":true,"ret":{"cost":0,"index":0,"orders":1},"seq":10,"ticks":11174}
+{"a":{"flags":["unload","no_load"],"tile":9350,"vehicle":4},"kind":"act","m":"order_append","ok":true,"ret":{"cost":0,"index":1,"orders":2},"seq":11,"ticks":11174}
+{"a":{"vehicle":5},"kind":"act","m":"order_clear","ok":true,"ret":{"cost":0,"orders":0},"seq":12,"ticks":11174}
+{"a":{"flags":["full_load_any"],"tile":11786,"vehicle":5},"kind":"act","m":"order_append","ok":true,"ret":{"cost":0,"index":0,"orders":1},"seq":13,"ticks":11174}
+{"a":{"flags":["unload","no_load"],"tile":9350,"vehicle":5},"kind":"act","m":"order_append","ok":true,"ret":{"cost":0,"index":1,"orders":2},"seq":14,"ticks":11174}
+{"a":{},"kind":"meta","m":"submit","seq":15,"ticks":11174}

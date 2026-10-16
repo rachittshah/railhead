@@ -1,0 +1,64 @@
+{
+ "task_id": "deliver-ood-66e0e2",
+ "family": "deliver",
+ "horizon_days": 300,
+ "runoff_days": 0,
+ "limits": {
+  "max_forks": 2,
+  "max_fork_days": 180
+ },
+ "objective": {
+  "cargo": 9,
+  "cargo_name": "Water",
+  "source": 43,
+  "source_name": "Menfield Water Supply",
+  "source_xy": [
+   161,
+   38
+  ],
+  "dest": 9,
+  "dest_name": "Grondinghattan Ridge Water Tower",
+  "dest_xy": [
+   184,
+   37
+  ],
+  "monitor": 0,
+  "monitors_aux": [
+   1
+  ],
+  "quantity": 660
+ },
+ "scenario": {
+  "gen_version": 1,
+  "split": "ood",
+  "landscape": "tropic",
+  "map_log2": 8,
+  "starting_year": 1990,
+  "settings": {
+   "difficulty": {
+    "number_towns": "3",
+    "industry_density": "5",
+    "terrain_type": "1",
+    "quantity_sea_lakes": "2",
+    "max_loan": "300000",
+    "initial_interest": "4",
+    "vehicle_breakdowns": "0",
+    "construction_cost": "0",
+    "vehicle_costs": "0",
+    "subsidy_multiplier": "2",
+    "disasters": "false",
+    "economy": "false"
+   },
+   "economy": {
+    "type": "1"
+   },
+   "game_creation": {
+    "town_name": "english"
+   }
+  }
+ },
+ "title": "Deliver Water to Grondinghattan Ridge Water Tower",
+ "briefing": "You run a young transport company. A customer needs **Water** delivered to **Grondinghattan Ridge Water Tower** (industry id 9, near tile 184,37).\n\nA likely supplier is **Menfield Water Supply** (industry id 43, near tile 161,38); any source counts, only what your company delivers to that industry is counted.\n\n**Contract:** deliver at least **660 units** within the horizon.\n\nIf you conclude the contract cannot be met by anyone, say so with `rh abstain reason=\"...\"`; abstaining on a feasible contract scores zero.\n\nThe reward is the fraction of the contract delivered (capped at 1), measured by the engine.",
+ "split": "ood",
+ "version": 1
+}

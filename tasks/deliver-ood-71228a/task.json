@@ -1,0 +1,64 @@
+{
+ "task_id": "deliver-ood-71228a",
+ "family": "deliver",
+ "horizon_days": 300,
+ "runoff_days": 0,
+ "limits": {
+  "max_forks": 2,
+  "max_fork_days": 180
+ },
+ "objective": {
+  "cargo": 1,
+  "cargo_name": "Rubber",
+  "source": 13,
+  "source_name": "Padhead Rubber Plantation",
+  "source_xy": [
+   146,
+   248
+  ],
+  "dest": 10,
+  "dest_name": "Padhead Factory",
+  "dest_xy": [
+   147,
+   224
+  ],
+  "monitor": 0,
+  "monitors_aux": [
+   1
+  ],
+  "quantity": 31000
+ },
+ "scenario": {
+  "gen_version": 1,
+  "split": "ood",
+  "landscape": "tropic",
+  "map_log2": 8,
+  "starting_year": 2000,
+  "settings": {
+   "difficulty": {
+    "number_towns": "2",
+    "industry_density": "4",
+    "terrain_type": "2",
+    "quantity_sea_lakes": "0",
+    "max_loan": "200000",
+    "initial_interest": "4",
+    "vehicle_breakdowns": "1",
+    "construction_cost": "0",
+    "vehicle_costs": "0",
+    "subsidy_multiplier": "2",
+    "disasters": "false",
+    "economy": "false"
+   },
+   "economy": {
+    "type": "1"
+   },
+   "game_creation": {
+    "town_name": "english"
+   }
+  }
+ },
+ "title": "Deliver Rubber to Padhead Factory",
+ "briefing": "You run a young transport company. A customer needs **Rubber** delivered to **Padhead Factory** (industry id 10, near tile 147,224).\n\nA likely supplier is **Padhead Rubber Plantation** (industry id 13, near tile 146,248); any source counts, only what your company delivers to that industry is counted.\n\n**Contract:** deliver at least **31,000 units** within the horizon.\n\nIf you conclude the contract cannot be met by anyone, say so with `rh abstain reason=\"...\"`; abstaining on a feasible contract scores zero.\n\nThe reward is the fraction of the contract delivered (capped at 1), measured by the engine.",
+ "split": "ood",
+ "version": 1
+}

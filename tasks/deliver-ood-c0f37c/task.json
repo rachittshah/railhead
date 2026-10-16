@@ -1,0 +1,64 @@
+{
+ "task_id": "deliver-ood-c0f37c",
+ "family": "deliver",
+ "horizon_days": 300,
+ "runoff_days": 0,
+ "limits": {
+  "max_forks": 2,
+  "max_fork_days": 180
+ },
+ "objective": {
+  "cargo": 10,
+  "cargo_name": "Gold",
+  "source": 7,
+  "source_name": "Flonwood Gold Mine",
+  "source_xy": [
+   96,
+   16
+  ],
+  "dest": 8,
+  "dest_name": "Flonwood Bank",
+  "dest_xy": [
+   74,
+   46
+  ],
+  "monitor": 0,
+  "monitors_aux": [
+   1
+  ],
+  "quantity": 270
+ },
+ "scenario": {
+  "gen_version": 1,
+  "split": "ood",
+  "landscape": "arctic",
+  "map_log2": 7,
+  "starting_year": 1990,
+  "settings": {
+   "difficulty": {
+    "number_towns": "1",
+    "industry_density": "3",
+    "terrain_type": "0",
+    "quantity_sea_lakes": "0",
+    "max_loan": "300000",
+    "initial_interest": "4",
+    "vehicle_breakdowns": "0",
+    "construction_cost": "0",
+    "vehicle_costs": "0",
+    "subsidy_multiplier": "2",
+    "disasters": "false",
+    "economy": "false"
+   },
+   "economy": {
+    "type": "1"
+   },
+   "game_creation": {
+    "town_name": "english"
+   }
+  }
+ },
+ "title": "Deliver Gold to Flonwood Bank",
+ "briefing": "You run a young transport company. A customer needs **Gold** delivered to **Flonwood Bank** (industry id 8, near tile 74,46).\n\nA likely supplier is **Flonwood Gold Mine** (industry id 7, near tile 96,16); any source counts, only what your company delivers to that industry is counted.\n\n**Contract:** deliver at least **270 units** within the horizon.\n\nIf you conclude the contract cannot be met by anyone, say so with `rh abstain reason=\"...\"`; abstaining on a feasible contract scores zero.\n\nThe reward is the fraction of the contract delivered (capped at 1), measured by the engine.",
+ "split": "ood",
+ "version": 1
+}

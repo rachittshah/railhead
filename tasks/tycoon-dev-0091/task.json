@@ -1,0 +1,47 @@
+{
+ "task_id": "tycoon-dev-0091",
+ "family": "tycoon",
+ "horizon_days": 365,
+ "runoff_days": 730,
+ "limits": {
+  "max_forks": 2,
+  "max_fork_days": 365
+ },
+ "objective": {
+  "w_idle": 0,
+  "w_base": 1
+ },
+ "scenario": {
+  "gen_version": 1,
+  "split": "dev",
+  "landscape": "temperate",
+  "map_log2": 7,
+  "starting_year": 1950,
+  "settings": {
+   "difficulty": {
+    "number_towns": "3",
+    "industry_density": "5",
+    "terrain_type": "1",
+    "quantity_sea_lakes": "2",
+    "max_loan": "200000",
+    "initial_interest": "4",
+    "vehicle_breakdowns": "0",
+    "construction_cost": "0",
+    "vehicle_costs": "0",
+    "subsidy_multiplier": "2",
+    "disasters": "false",
+    "economy": "false"
+   },
+   "economy": {
+    "type": "1"
+   },
+   "game_creation": {
+    "town_name": "english"
+   }
+  }
+ },
+ "title": "",
+ "briefing": "",
+ "split": "dev",
+ "version": 1
+}

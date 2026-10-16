@@ -1,0 +1,4 @@
+{"checksum":{"date":721505,"h":124593671089704,"ticks":11174,"vehicles":2},"company":0,"kind":"header","ticks":11174,"v":1}
+{"a":{"vehicle":3},"kind":"act","m":"vehicle_start","ok":true,"ret":{"changed":true,"cost":0,"vehicle":3},"seq":1,"ticks":11174}
+{"a":{"vehicle":4},"kind":"act","m":"vehicle_start","ok":true,"ret":{"changed":true,"cost":0,"vehicle":4},"seq":2,"ticks":11174}
+{"a":{},"kind":"meta","m":"submit","seq":3,"ticks":11174}

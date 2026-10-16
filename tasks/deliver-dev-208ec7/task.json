@@ -1,0 +1,64 @@
+{
+ "task_id": "deliver-dev-208ec7",
+ "family": "deliver",
+ "horizon_days": 300,
+ "runoff_days": 0,
+ "limits": {
+  "max_forks": 2,
+  "max_fork_days": 180
+ },
+ "objective": {
+  "cargo": 7,
+  "cargo_name": "Wood",
+  "source": 3,
+  "source_name": "Fudworth Forest",
+  "source_xy": [
+   44,
+   39
+  ],
+  "dest": 2,
+  "dest_name": "Fudworth Sawmill",
+  "dest_xy": [
+   21,
+   52
+  ],
+  "monitor": 0,
+  "monitors_aux": [
+   1
+  ],
+  "quantity": 4000
+ },
+ "scenario": {
+  "gen_version": 1,
+  "split": "dev",
+  "landscape": "temperate",
+  "map_log2": 7,
+  "starting_year": 1990,
+  "settings": {
+   "difficulty": {
+    "number_towns": "1",
+    "industry_density": "3",
+    "terrain_type": "0",
+    "quantity_sea_lakes": "2",
+    "max_loan": "200000",
+    "initial_interest": "4",
+    "vehicle_breakdowns": "1",
+    "construction_cost": "0",
+    "vehicle_costs": "0",
+    "subsidy_multiplier": "2",
+    "disasters": "false",
+    "economy": "false"
+   },
+   "economy": {
+    "type": "1"
+   },
+   "game_creation": {
+    "town_name": "english"
+   }
+  }
+ },
+ "title": "Deliver Wood to Fudworth Sawmill",
+ "briefing": "You run a young transport company. A customer needs **Wood** delivered to **Fudworth Sawmill** (industry id 2, near tile 21,52).\n\nA likely supplier is **Fudworth Forest** (industry id 3, near tile 44,39); any source counts, only what your company delivers to that industry is counted.\n\n**Contract:** deliver at least **4,000 units** within the horizon.\n\nIf you conclude the contract cannot be met by anyone, say so with `rh abstain reason=\"...\"`; abstaining on a feasible contract scores zero.\n\nThe reward is the fraction of the contract delivered (capped at 1), measured by the engine.",
+ "split": "dev",
+ "version": 1
+}

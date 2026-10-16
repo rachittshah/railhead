@@ -1,0 +1,67 @@
+{
+ "task_id": "deliver_bid-ood-a674ed",
+ "family": "deliver",
+ "horizon_days": 300,
+ "runoff_days": 0,
+ "limits": {
+  "max_forks": 2,
+  "max_fork_days": 180
+ },
+ "objective": {
+  "cargo": 6,
+  "cargo_name": "Maize",
+  "source": 11,
+  "source_name": "Gratwood Farm",
+  "source_xy": [
+   51,
+   99
+  ],
+  "dest": 3,
+  "dest_name": "Nedington Food Processing Plant",
+  "dest_xy": [
+   35,
+   109
+  ],
+  "monitor": 0,
+  "monitors_aux": [
+   1
+  ],
+  "quantity": 290,
+  "bid": true,
+  "bid_scale": 590,
+  "bid_deadline_days": 30
+ },
+ "scenario": {
+  "gen_version": 1,
+  "split": "ood",
+  "landscape": "tropic",
+  "map_log2": 7,
+  "starting_year": 1950,
+  "settings": {
+   "difficulty": {
+    "number_towns": "1",
+    "industry_density": "4",
+    "terrain_type": "1",
+    "quantity_sea_lakes": "0",
+    "max_loan": "200000",
+    "initial_interest": "2",
+    "vehicle_breakdowns": "1",
+    "construction_cost": "0",
+    "vehicle_costs": "0",
+    "subsidy_multiplier": "2",
+    "disasters": "false",
+    "economy": "false"
+   },
+   "economy": {
+    "type": "1"
+   },
+   "game_creation": {
+    "town_name": "english"
+   }
+  }
+ },
+ "title": "Deliver Maize to Nedington Food Processing Plant",
+ "briefing": "You run a young transport company. A customer needs **Maize** delivered to **Nedington Food Processing Plant** (industry id 3, near tile 35,109).\n\nA likely supplier is **Gratwood Farm** (industry id 11, near tile 51,99); any source counts, only what your company delivers to that industry is counted.\n\n**Contract:** deliver at least **290 units** within the horizon.\n\n**Promise:** within the first 30 game-days, commit to a delivery quantity with `rh promise quantity=N` (the last promise before the deadline counts; max 590). You are paid for min(delivered, promised) and fined for any shortfall, so promise what you can really deliver: over- and under-promising both cost you.\n\nIf you conclude the contract cannot be met by anyone, say so with `rh abstain reason=\"...\"`; abstaining on a feasible contract scores zero.\n\nThe reward is the fraction of the contract delivered (capped at 1), measured by the engine.",
+ "split": "ood",
+ "version": 1
+}

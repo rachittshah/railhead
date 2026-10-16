@@ -1,0 +1,10 @@
+{"checksum":{"date":721505,"h":119080138832700,"ticks":11174,"vehicles":6},"company":0,"kind":"header","ticks":11174,"v":1}
+{"a":{"from_tile":14031,"to_tile":14030},"kind":"act","m":"road_line","ok":true,"ret":{"cost":258},"seq":1,"ticks":11174}
+{"a":{"from_tile":14030,"to_tile":14029},"kind":"act","m":"road_line","ok":true,"ret":{"cost":71},"seq":2,"ticks":11174}
+{"a":{"vehicle":2},"kind":"act","m":"vehicle_start","ok":true,"ret":{"changed":true,"cost":0,"vehicle":2},"seq":3,"ticks":11174}
+{"a":{"vehicle":3},"kind":"act","m":"vehicle_start","ok":true,"ret":{"changed":true,"cost":0,"vehicle":3},"seq":4,"ticks":11174}
+{"a":{"vehicle":4},"kind":"act","m":"vehicle_start","ok":true,"ret":{"changed":true,"cost":0,"vehicle":4},"seq":5,"ticks":11174}
+{"a":{"vehicle":5},"kind":"act","m":"vehicle_start","ok":true,"ret":{"changed":true,"cost":0,"vehicle":5},"seq":6,"ticks":11174}
+{"a":{"vehicle":6},"kind":"act","m":"vehicle_start","ok":true,"ret":{"changed":true,"cost":0,"vehicle":6},"seq":7,"ticks":11174}
+{"a":{"vehicle":7},"kind":"act","m":"vehicle_start","ok":true,"ret":{"changed":true,"cost":0,"vehicle":7},"seq":8,"ticks":11174}
+{"a":{},"kind":"meta","m":"submit","seq":9,"ticks":11174}

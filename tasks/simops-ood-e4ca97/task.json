@@ -1,0 +1,51 @@
+{
+ "task_id": "simops-ood-e4ca97",
+ "family": "simops",
+ "horizon_days": 60,
+ "runoff_days": 365,
+ "limits": {
+  "max_forks": 2,
+  "max_fork_days": 120
+ },
+ "objective": {
+  "monitor": 0,
+  "cargo": 1,
+  "dest": 1,
+  "dest_name": "Wrinfingburg Power Station",
+  "source": 0,
+  "source_name": "Wrinfingburg Coal Mine"
+ },
+ "scenario": {
+  "gen_version": 1,
+  "split": "ood",
+  "landscape": "arctic",
+  "map_log2": 6,
+  "starting_year": 1960,
+  "settings": {
+   "difficulty": {
+    "number_towns": "1",
+    "industry_density": "3",
+    "terrain_type": "1",
+    "quantity_sea_lakes": "0",
+    "max_loan": "300000",
+    "initial_interest": "3",
+    "vehicle_breakdowns": "1",
+    "construction_cost": "0",
+    "vehicle_costs": "0",
+    "subsidy_multiplier": "2",
+    "disasters": "false",
+    "economy": "false"
+   },
+   "economy": {
+    "type": "1"
+   },
+   "game_creation": {
+    "town_name": "english"
+   }
+  }
+ },
+ "title": "Fix the Wrinfingburg Power Station supply route",
+ "briefing": "You have just taken over a transport company. Its truck route carrying cargo to **Wrinfingburg Power Station** (industry id 1) from **Wrinfingburg Coal Mine** (industry id 0) used to work but deliveries have collapsed. Diagnose what is wrong and repair it.\n\nYou have 60 game-days. Then the company runs **365 days without you**, and the reward is the cargo it delivers to that industry during the run-off, scaled so that leaving the fault in place scores 0 and a correct repair scores 1. Your vehicles, stations and orders are all inspectable with `rh`.",
+ "split": "ood",
+ "version": 1
+}

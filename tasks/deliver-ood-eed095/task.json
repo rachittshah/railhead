@@ -1,0 +1,64 @@
+{
+ "task_id": "deliver-ood-eed095",
+ "family": "deliver",
+ "horizon_days": 300,
+ "runoff_days": 0,
+ "limits": {
+  "max_forks": 2,
+  "max_fork_days": 180
+ },
+ "objective": {
+  "cargo": 1,
+  "cargo_name": "Coal",
+  "source": 0,
+  "source_name": "Sadingbury Coal Mine",
+  "source_xy": [
+   102,
+   112
+  ],
+  "dest": 1,
+  "dest_name": "Sadingbury Power Station",
+  "dest_xy": [
+   114,
+   84
+  ],
+  "monitor": 0,
+  "monitors_aux": [
+   1
+  ],
+  "quantity": 540
+ },
+ "scenario": {
+  "gen_version": 1,
+  "split": "ood",
+  "landscape": "arctic",
+  "map_log2": 7,
+  "starting_year": 2000,
+  "settings": {
+   "difficulty": {
+    "number_towns": "3",
+    "industry_density": "4",
+    "terrain_type": "0",
+    "quantity_sea_lakes": "2",
+    "max_loan": "300000",
+    "initial_interest": "3",
+    "vehicle_breakdowns": "0",
+    "construction_cost": "0",
+    "vehicle_costs": "0",
+    "subsidy_multiplier": "2",
+    "disasters": "false",
+    "economy": "false"
+   },
+   "economy": {
+    "type": "1"
+   },
+   "game_creation": {
+    "town_name": "english"
+   }
+  }
+ },
+ "title": "Deliver Coal to Sadingbury Power Station",
+ "briefing": "You run a young transport company. A customer needs **Coal** delivered to **Sadingbury Power Station** (industry id 1, near tile 114,84).\n\nA likely supplier is **Sadingbury Coal Mine** (industry id 0, near tile 102,112); any source counts, only what your company delivers to that industry is counted.\n\n**Contract:** deliver at least **540 units** within the horizon.\n\nIf you conclude the contract cannot be met by anyone, say so with `rh abstain reason=\"...\"`; abstaining on a feasible contract scores zero.\n\nThe reward is the fraction of the contract delivered (capped at 1), measured by the engine.",
+ "split": "ood",
+ "version": 1
+}
