@@ -35,26 +35,29 @@ Done = (1) abstractions built + tested, (2) RL env built + tested, (3) code on G
 ## State
 - Done:
   - [x] Phase 0: scaffold, SME research (docs/research/01-04), DESIGN.md (M1-M5)
-  - [x] Phase 1 core: wire/admin codec+client, server mgr, GS bridge (exact lockstep), World
-        (found company, save/load, fork+reseed, act/wait log), engine patches 0001-0003
-        (gamespeed/reseed, 1ms paused frames, 32KB GS JSON), event-driven waits, cargo-monitor
-        ledger, action log + replay (bit-exact), daemon railheadd (whitelist, horizon cap,
-        fork budget, kill -9 recovery by replay), rh/railhead CLIs, rewards (proper bid),
-        seal + proof-of-play verifier. Commits 365cb64..1f16b58 (+uncommitted since).
-- Now: [→] impl-queries (query.nut + observe.py) and impl-actions (action.nut + actions.py) agents
-- Next: Phase 2 generators + oracles per family (deliver/passengers/simops/tycoon/impossible)
+  - [x] Phase 1: engine patches, admin/bridge/World, runtime (log, replay, daemon, forks, waits,
+        ledger), 42 player actions (GUI parity), queries + observe, rh/railhead CLIs
+  - [x] Phase 2: rewards, seal, verifier (+turn credit), generators (deliver, deliver_bid,
+        impossible, tycoon, simops), road oracle, Harbor export (per-arch manifests), HF builder
+  - [x] Verified: 184+ tests; Linux CI green; macOS-generated tasks replay identically on Linux;
+        local harbor run: oracle 1.0 / nop 0.0 on deliver+simops, zero divergences
+  - [x] Pushed to https://github.com/rachittshah/railhead (public); STE docs (README, docs/*)
+  - [x] Harbor CLI logged in (rachittshah) via no-browser OAuth (Brave window on LG monitor)
+  - [x] railhead view: GUI spectator on LG monitor lower half (RailheadViewer.app in .cache)
+- Now: [→] full catalog generation (scratchpad gen_catalog.sh), player-deliver subagent playing
+- Next: commit tasks/ → tag v0.1.0 → CI multi-arch image → GHCR public → export (amd64+arm64
+        manifests) → harbor publish (railhead = dev+ood, railhead-train = train) → HF push
 - Remaining:
-  - [ ] Harbor task exporter (task.toml/instruction/tests/solve.sh) + local `harbor run -a oracle`
-  - [ ] Docker image (docker/Dockerfile written) + GH Actions multi-arch → GHCR
-  - [ ] GitHub push; harbor auth+publish; HF datasets (tasks + trajectories w/ credit)
-  - [ ] LG monitor demo: 15.3 GUI client spectating (Mac 15.2 app can't join 15.3)
+  - [ ] HF auth: user must run `hf auth login` (I won't mint tokens in their account)
+  - [ ] GHCR package visibility public (may need user click in GitHub settings)
+  - [ ] Final LG monitor showcase + README results table
 
 ## Open Questions
 - RESOLVED: fast-forward needs patch 0001 (done, ~3-5k days/s).
 - RESOLVED: GS runs while paused; GS covers 79/100 player cmds (gaps: timetables, service intervals, semaphores...).
 - RESOLVED: 1456 B stock; 32 KB with patch 0003.
 - RESOLVED: yes (ENTRYPOINT/healthcheck). Use SHARED verifier mode (separate mode in 0.22 skips healthcheck + needs custom tests image). valid key must be int.
-- UNCONFIRMED: Harbor/HF auth — need user's GitHub OAuth (harbor) and HF token.
+- RESOLVED: Harbor auth done. OPEN: HF token (user action). Brave is the default browser (no Chrome).
 
 ## Working Set
 - Repo: ~/railhead (branch main)
