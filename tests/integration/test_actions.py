@@ -292,7 +292,8 @@ def test_rail_depot_beside_a_line_gets_the_gui_curves(world):
 # ------------------------------------------------------------------------------------------- air / water
 def test_air_family(world):
     x, y = site(world, 4, 3)
-    fails(world, "air.airport", "ERR_TYPE_NOT_AVAILABLE", tile=at(x, y), type="metropolitan")  # 1950: not yet
+    e = fails(world, "air.airport", "ERR_TYPE_NOT_AVAILABLE", tile=at(x, y), type="metropolitan")  # 1950: not yet
+    assert "small" in e.message.split("available now:")[1]  # the hint names the types that exist this year
     assert dry(world, "air.airport", tile=at(x, y), type="small") > 0
     out = act(world, "air.airport", tile=at(x, y), type="small")
     assert out["station"] >= 0 and out["hangar_tile"] >= 0

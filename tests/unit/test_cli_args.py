@@ -64,3 +64,10 @@ def test_group_verb_wins_over_a_query_of_the_same_name():
     assert route("company", ["--json"]) == ("query", "company")
     assert route("vehicles", []) == ("query", "vehicles")
     assert route("road", ["line", "from_tile=1,2"]) == ("act", "road.line")
+
+
+def test_help_says_how_to_read_a_fork():
+    # Opus 5.5 in Arena 2: "Forks can't be inspected" - the reader existed but help did not name it
+    from railhead.cli import help_text
+
+    assert "fork q name=F m=company" in help_text()

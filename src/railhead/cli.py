@@ -5,6 +5,7 @@
     rh <group> <verb> key=value ...        e.g.  rh road line from_tile=10,4 to_tile=30,4
     rh wait days=30 [until=vehicle_crashed,cash_below:5000]
     rh fork create name=a | fork do name=a m=road_line from_tile=.. | fork wait name=a days=60 | fork drop name=a
+    rh fork q name=a m=company                          (read a fork's state)
     rh forecast|promise|abstain|flag|submit key=value ...
     rh q <query> k=v ... | rh do <gs_method> k=v ...     (raw JSON escape hatches)
 Tiles are written x,y. Add --json for machine-readable output.
@@ -41,6 +42,7 @@ INFO_HELP = [
     "rh map x=0 y=0 w=48 h=24 [layer=kind|height|owner|slope|build]",
     "rh tile tile=X,Y [radius=3] | rh catchment tile=X,Y | rh orders vehicle=N",
     "rh fork create|list|drop name=F | fork do name=F m=<gs_method> ... | fork wait name=F days=N",
+    "rh fork q name=F m=company|vehicles|stations ...   read the state of a fork (same queries as above)",
     "rh q <query> k=v | rh do <gs_method> k=v    raw JSON escape hatches;  add --json to any command",
 ]
 

@@ -630,7 +630,10 @@ Action <- {
 		if (ctx == null) return;
 		local p = ctx.p;
 		if (!GSAirport.IsValidAirportType(p.type)) {
-			return Proto.Err(id, "ERR_TYPE_NOT_AVAILABLE", "airport type " + a.type + " is not available yet: try small, or wait for later years");
+			/* Name the types that exist now: the small airport expires in 1960, so "try small" was wrong then. */
+			local list = "";
+			foreach (name, t in Action.AIRPORTS) if (GSAirport.IsValidAirportType(t)) list += (list == "" ? "" : ", ") + name;
+			return Proto.Err(id, "ERR_TYPE_NOT_AVAILABLE", "airport type " + a.type + " is not available in this year; available now: " + (list == "" ? "none" : list));
 		}
 		local join = Action.JoinId(p.join_station);
 		if (join == null) return Action.Reject(ctx, "join_station " + p.join_station + " is not one of your stations");
