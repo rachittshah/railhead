@@ -48,9 +48,9 @@ Done = (1) abstractions built + tested, (2) RL env built + tested, (3) code on G
   - [x] E2E traces: OTEL_LOG_TOOL_CONTENT, Codex otel.trace_exporter + log_agent_responses;
         `railhead trace bundle` -> traces/bundles/<arena>/<player> (scrubbed, local only)
   - [x] README rewritten as techno-journalism feature (user 2026-10-16); docs/ stay STE
-- Now: [→] Fable 5.1 still playing Arena 2 (slow). When done: verify_one.sh, then
-        `railhead arena .cache/arena2 --export docs/data/arena2.json --task tasks/arena-dev-0100`,
-        `railhead figures ...`, refresh.py (README table + dashboard), update README §6 Fable text
+  - [x] Arena 2 complete: all 11 verified (Fable £9.84M after usage limit in 1963, 6th).
+        HF dataset at .cache/hf/out now has 15 model games (railhead hub add-games), card refreshed.
+- Now: [→] HF push only (needs the user's token)
 - Blocked: HF push needs the user's token: `hf auth login`, then
   `railhead hub push .cache/hf/out --repo rachittshah/railhead`
 

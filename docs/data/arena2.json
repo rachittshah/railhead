@@ -87,6 +87,23 @@
    "reached": "1970-01-29"
   },
   {
+   "player": "claude-fable-5-1",
+   "status": "verified",
+   "net_worth": 9837139,
+   "net_worth_horizon": 8450901,
+   "gain_x_baseline": 53.7,
+   "score_k50": 1.0,
+   "score_k1000": 0.579,
+   "actions": 566,
+   "failed_actions": 21,
+   "waits": 21,
+   "divergences": 0,
+   "valid": 1,
+   "vehicles": 35,
+   "stations": 32,
+   "reached": "1963-02-15"
+  },
+  {
    "player": "claude-sonnet-5-5",
    "status": "verified",
    "net_worth": 3930521,
@@ -182,14 +199,6 @@
    "vehicles": 29,
    "stations": 11,
    "reached": "1970-01-29"
-  },
-  {
-   "player": "claude-fable-5-1",
-   "status": "playing",
-   "net_worth_live": -356422,
-   "reached": "1961-12-07",
-   "vehicles": 19,
-   "stations": 20
   }
  ],
  "curves": {
@@ -310,6 +319,78 @@
     "vehicles": 19,
     "stations": 20,
     "acts": 364
+   },
+   {
+    "date": "1962-02-05",
+    "net_worth": -342369,
+    "money": 157631,
+    "loan": 500000,
+    "vehicles": 21,
+    "stations": 22,
+    "acts": 401
+   },
+   {
+    "date": "1962-05-06",
+    "net_worth": -261960,
+    "money": 238040,
+    "loan": 500000,
+    "vehicles": 23,
+    "stations": 24,
+    "acts": 453
+   },
+   {
+    "date": "1962-08-04",
+    "net_worth": -350406,
+    "money": 149594,
+    "loan": 500000,
+    "vehicles": 28,
+    "stations": 26,
+    "acts": 519
+   },
+   {
+    "date": "1962-09-18",
+    "net_worth": -341836,
+    "money": 158164,
+    "loan": 500000,
+    "vehicles": 29,
+    "stations": 28,
+    "acts": 528
+   },
+   {
+    "date": "1962-11-17",
+    "net_worth": -256693,
+    "money": 243307,
+    "loan": 500000,
+    "vehicles": 29,
+    "stations": 28,
+    "acts": 528
+   },
+   {
+    "date": "1962-12-02",
+    "net_worth": -434212,
+    "money": 65788,
+    "loan": 500000,
+    "vehicles": 34,
+    "stations": 30,
+    "acts": 548
+   },
+   {
+    "date": "1963-01-01",
+    "net_worth": -419343,
+    "money": 80657,
+    "loan": 500000,
+    "vehicles": 34,
+    "stations": 30,
+    "acts": 560
+   },
+   {
+    "date": "1963-02-15",
+    "net_worth": -279327,
+    "money": 220673,
+    "loan": 500000,
+    "vehicles": 35,
+    "stations": 32,
+    "acts": 566
    }
   ],
   "claude-haiku-5-5": [
@@ -2919,8 +3000,8 @@
  "fleet_mix": {
   "claude-fable-5-1": {
    "road": 0,
-   "rail": 37,
-   "air": 0,
+   "rail": 56,
+   "air": 6,
    "water": 0
   },
   "claude-haiku-5-5": {

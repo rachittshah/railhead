@@ -1,6 +1,6 @@
 # Railhead
 
-**Eleven AI models were each handed a transport company, a bank that would lend up to £500,000, and ten years. One built an airline. Two built trucking firms. One finished poorer than if it had never shown up for work. Before anyone was allowed to keep a score, every game was replayed from scratch, tick for tick.**
+**Eleven AI models were each handed a transport company, a bank that would lend up to £500,000, and ten years. One built an airline. Two built trucking firms. One left after three years and still beat them both. One finished poorer than if it had never shown up for work. Before anyone was allowed to keep a score, every game was replayed from scratch, tick for tick.**
 
 Railhead is a reinforcement-learning environment in which a language model plays [OpenTTD](https://www.openttd.org) *directly*: first person, from a shell, with the same commands a human player has.
 There is no autopilot, no advisor, and no helper script that builds the railway for it.
@@ -144,11 +144,26 @@ Its final report contains a rare thing, a model correcting itself mid-sentence:
 
 > "Reduced the loan from £200,000? Wait starting loan100k, later borrowed to200k; final loan200k. We should accurately say managed loan, ended at200k."
 
-## 6. The philosopher
+## 6. The founder who left early
 
-Claude Fable 5.1 thinks in long turns.
-It is still playing: after about an hour of wall-clock time and $18 of API-equivalent tokens, its company has reached 1961 and runs a small rail operation.
-Its result goes into the scoreboard when the replay of its game is verified.
+Claude Fable 5.1 thinks in long turns, and it played like an engineer.
+Where the others chose between trucks and aircraft, Fable chose railways: it built 13 rail lines, bought 56 locomotives and wagons, and added two long air routes.
+It made 566 moves, more than most players needed for the whole decade.
+
+Then, in February 1963, its Claude session ran out of usage, 79 minutes and $35.58 of API-equivalent tokens into the game.
+Fable never came back.
+At that moment its loan was drawn to the full £500,000 and its net worth was **−£279,327**.
+
+For seven more game years and then the run-off, nobody ran the company.
+The trains just kept running.
+When the replay reached the end of year 11, the company Fable had left behind was worth **£9,837,139**.
+That is sixth place, ahead of Sonnet and Haiku, who stayed for the full ten years.
+
+<img alt="Route map of claude-fable-5-1 in 1963: 13 rail lines and 2 air legs" src="docs/img/arena2-map-claude-fable-5-1.png" width="640">
+
+This is the run-off rule working exactly as designed.
+The environment does not reward being present.
+It rewards building something that can run without you.
 
 Fable also has a place in the history of this project.
 In the first arena it tripped over an unguarded `rh submit`, which ends a mandate for good.
@@ -163,12 +178,12 @@ In the first arena it tripped over an unguarded `rh submit`, which ends a mandat
 | gpt-6-sol | £27,232,656 | 148.4 | 639 | valid, 0 divergences |
 | gpt-6.1-sol | £22,371,463 | 122.0 | 286 | valid, 0 divergences |
 | gpt-5.6-sol | £13,130,503 | 71.7 | 349 | valid, 0 divergences |
+| claude-fable-5-1 | £9,837,139 | 53.7 | 566 | valid, 0 divergences |
 | claude-sonnet-5-5 | £3,930,521 | 21.6 | 1021 | valid, 0 divergences |
 | claude-haiku-5-5 | £2,757,221 | 15.2 | 832 | valid, 0 divergences |
 | gpt-5.6-terra | £335,998 | 2.0 | 241 | valid, 0 divergences |
 | gpt-6-luna | £236,701 | 1.5 | 239 | valid, 0 divergences |
 | gpt-5.6-luna | -£50,557 | -0.1 | 436 | valid, 0 divergences |
-| claude-fable-5-1 | not finished (still playing) | – | – | – |
 | Scripted truck route (baseline) | £147,407 | 1.0 | – | certificate |
 | No play | -£36,300 | 0.0 | 0 | certificate |
 
@@ -185,6 +200,7 @@ The fine print, which matters:
 
 - This is **one world and one run per model**. It shows that the environment separates models clearly. It is not a benchmark.
 - The Claude models played through Claude Code and the OpenAI models through Codex. The harnesses are different, and that is part of what was measured.
+- Fable stopped in 1963 at a usage limit of its Claude session, not by choice. The rules let its company run on, as they did for Opus and Sonnet in Arena 1.
 - "Net worth" is cash minus loan. Vehicles and buildings count only for what they earn during the run-off year, so selling everything at the end does not help.
 
 ## 8. Arena 1: the pilot episode
