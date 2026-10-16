@@ -14,3 +14,4 @@ jobs/
 .env
 .cache/
 traces/
+!tasks/**/start.sav
