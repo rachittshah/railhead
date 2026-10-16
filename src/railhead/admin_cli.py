@@ -6,6 +6,7 @@
     railhead play <log.jsonl>    re-issue a recorded action log through the daemon (oracle solve.sh)
     railhead export <out> [ids]  write Harbor task dirs (run inside the image) [--image REF] [--version V]
     railhead gen <family> <split> <from> <to> [--out tasks] [--jobs N]   generate certified tasks
+    railhead view <task_id> [--days N] [--speed PCT]   watch a task live in the GUI (macOS)
     railhead export-manifest <out>  add this CPU architecture's sealed manifest to exported tasks
     railhead hub build <tasks> <harbor> <out> [--credit] | railhead hub push <out> [--repo R]
     railhead recheck <tasks_dir> [ids]   re-verify oracle logs against certificates (cross-platform check)
@@ -86,6 +87,13 @@ def main(argv: list[str] | None = None) -> int:
         if cmd == "play":
             n = play(argv[1])
             print(json.dumps({"played": n}))
+            return 0
+        if cmd == "view":
+            from railhead.viewer import view
+
+            days = int(argv[argv.index("--days") + 1]) if "--days" in argv else 365
+            speed = int(argv[argv.index("--speed") + 1]) if "--speed" in argv else 300
+            view(argv[1], days=days, speed=speed)
             return 0
         if cmd == "export-manifest":
             from railhead.harbor_export import add_arch_manifests
