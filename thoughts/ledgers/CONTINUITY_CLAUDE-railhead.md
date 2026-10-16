@@ -50,9 +50,9 @@ Done = (1) abstractions built + tested, (2) RL env built + tested, (3) code on G
   - [x] README rewritten as techno-journalism feature (user 2026-10-16); docs/ stay STE
   - [x] Arena 2 complete: all 11 verified (Fable £9.84M after usage limit in 1963, 6th).
         HF dataset at .cache/hf/out now has 15 model games (railhead hub add-games), card refreshed.
-- Now: [→] HF push only (needs the user's token)
-- Blocked: HF push needs the user's token: `hf auth login`, then
-  `railhead hub push .cache/hf/out --repo rachittshah/railhead`
+  - [x] HF dataset public: https://huggingface.co/datasets/rachittshah/railhead (2026-10-16;
+        tasks 278/255/1006, trajectories 290/255/1006, 15 model games in dev, all valid)
+- Now: all six goal items done. Follow-ups only: open rh issues below; rerun arenas with full Codex spans.
 
 ## Open Questions
 - UNCONFIRMED: rh still has open model-reported issues: misleading tunnel error for airport on water (astra);
