@@ -268,4 +268,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    # Run through the package module so worker processes and simops share one Rejected class.
+    from railhead.gen import build as _pkg
+
+    raise SystemExit(_pkg.main())

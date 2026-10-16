@@ -14,6 +14,7 @@ import tempfile
 from pathlib import Path
 
 from railhead.actionlog import ActionLog
+from railhead.bridge import BridgeError
 from railhead.gen.build import Rejected, _empty_log, _write, certify
 from railhead.gen.families import pick_deliver_pair
 from railhead.gen.scenario import sample_scenario, server_config, task_id
@@ -40,15 +41,38 @@ def inject(w: World, o: RoadOracle, net, fault: str) -> list[tuple[str, dict]]:
             fix += [("order_append", {"vehicle": v, "tile": idx(net.pickup), "flags": ["full_load_any"]}),
                     ("order_append", {"vehicle": v, "tile": idx(net.drop), "flags": ["unload", "no_load"]})]
     elif fault == "road_gap":
-        inner = net.path[1:-1]
-        mid = inner[len(inner) // 2]
-        w.call("land_demolish", tile=idx(mid))
+        inner = net.path[2:-2]
+        order = sorted(inner, key=lambda t: abs(inner.index(t) - len(inner) // 2))  # middle first
+        mid = None
+        for _attempt in range(20):
+            for t in order:
+                try:
+                    w.call("land_demolish", tile=idx(t))
+                    mid = t
+                    break
+                except BridgeError as e:
+                    if e.code != "ERR_VEHICLE_IN_THE_WAY":
+                        raise
+            if mid is not None:
+                break
+            w.step(ticks=3)  # every candidate tile had a truck on it
+        if mid is None:
+            raise Rejected("could not open a road gap")
         i = net.path.index(mid)
         a, b = net.path[i - 1], net.path[i + 1]
         fix.append(("road_line", {"from_tile": idx(a), "to_tile": idx(mid)}))
         fix.append(("road_line", {"from_tile": idx(mid), "to_tile": idx(b)}))
     elif fault == "pickup_removed":
-        w.call("land_demolish", tile=idx(net.pickup))
+        for _attempt in range(30):  # a truck is usually loading there; wait for a gap
+            try:
+                w.call("land_demolish", tile=idx(net.pickup))
+                break
+            except BridgeError as e:
+                if e.code != "ERR_VEHICLE_IN_THE_WAY":
+                    raise
+                w.step(ticks=10)
+        else:
+            raise Rejected("pickup stop never clear of vehicles")
         fix.append(("road_stop", {"tile": idx(net.pickup), "front_tile": idx(net.path[1]), "kind": "truck"}))
         fix.append(("road_line", {"from_tile": idx(net.path[1]), "to_tile": idx(net.pickup)}))
         for v in net.vehicles:  # orders to a demolished station are dropped by the engine

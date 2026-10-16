@@ -5,6 +5,7 @@
     railhead ping                daemon health
     railhead play <log.jsonl>    re-issue a recorded action log through the daemon (oracle solve.sh)
     railhead export <out> [ids]  write Harbor task dirs (run inside the image) [--image REF] [--version V]
+    railhead gen <family> <split> <from> <to> [--out tasks] [--jobs N]   generate certified tasks
 """
 
 from __future__ import annotations
@@ -62,6 +63,10 @@ def main(argv: list[str] | None = None) -> int:
             n = play(argv[1])
             print(json.dumps({"played": n}))
             return 0
+        if cmd == "gen":
+            from railhead.gen.build import main as gen_main
+
+            return gen_main(argv[1:])
         if cmd == "export":
             from railhead.harbor_export import DEFAULT_IMAGE, export_all
 
