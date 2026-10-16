@@ -1,0 +1,4 @@
+#!/bin/bash
+# Idempotent: ensure the Railhead daemon (and the task's world) is up. Called from the ENTRYPOINT,
+# from [environment.healthcheck], and lazily by `rh`. Exit 0 once the world answers.
+exec /opt/railhead/venv/bin/railhead up "$@"

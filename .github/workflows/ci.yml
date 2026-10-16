@@ -1,0 +1,27 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Engine build deps
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake ninja-build zlib1g-dev liblzma-dev liblzo2-dev unzip
+      - name: Cache engine build
+        uses: actions/cache@v4
+        with:
+          path: .cache/openttd-src
+          key: engine-${{ runner.os }}-${{ hashFiles('engine/**') }}
+      - name: Build patched OpenTTD 15.3
+        run: engine/build.sh
+      - uses: astral-sh/setup-uv@v6
+      - name: Install
+        run: uv venv --python 3.12 .venv && uv pip install -e ".[dev]"
+      - name: Unit + integration tests (Linux determinism)
+        run: .venv/bin/pytest -q -x

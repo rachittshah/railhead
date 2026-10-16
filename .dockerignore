@@ -1,0 +1,12 @@
+# Never bake verifier-only material into the agent's image (oracle logs, certificates, secrets).
+tasks/**/oracle.jsonl
+tasks/**/certificates.json
+tasks/**/secret.json
+tasks/**/sealed.json
+.cache
+.venv
+**/__pycache__
+.git
+jobs
+runs
+harbor
