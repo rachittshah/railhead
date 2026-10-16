@@ -1,0 +1,15 @@
+diff --git a/src/video/video_driver.hpp b/src/video/video_driver.hpp
+index 7aafcbd..e8d6a98 100644
+--- a/src/video/video_driver.hpp
++++ b/src/video/video_driver.hpp
+@@ -306,7 +306,9 @@ protected:
+ 		TicToc::Tick("GameTick");
+ 
+ 		/* If we are paused, run on normal speed. */
+-		if (_pause_mode.Any()) return std::chrono::milliseconds(MILLISECONDS_PER_TICK);
++		/* Railhead: at unlimited speed also spin paused frames fast, so lockstep input
++		 * (commands applied while paused) costs ~1 ms per frame instead of a full tick. */
++		if (_pause_mode.Any()) return (_game_speed == 0) ? std::chrono::milliseconds(1) : std::chrono::milliseconds(MILLISECONDS_PER_TICK);
+ 		/* Infinite speed, as quickly as you can. */
+ 		if (_game_speed == 0) return std::chrono::microseconds(0);
+ 

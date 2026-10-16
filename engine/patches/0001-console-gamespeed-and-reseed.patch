@@ -1,0 +1,77 @@
+diff --git a/src/console_cmds.cpp b/src/console_cmds.cpp
+index 230b386..41e4f35 100644
+--- a/src/console_cmds.cpp
++++ b/src/console_cmds.cpp
+@@ -45,6 +45,8 @@
+ #include "3rdparty/fmt/chrono.h"
+ #include "company_cmd.h"
+ #include "misc_cmd.h"
++#include "gfx_func.h"
++#include "core/random_func.hpp"
+ 
+ #if defined(WITH_ZLIB)
+ #include "network/network_content.h"
+@@ -839,6 +841,54 @@ static bool ConPauseGame(std::span<std::string_view> argv)
+ 	return true;
+ }
+ 
++/**
++ * Railhead: set the game speed from the console / admin RCON so a dedicated server can
++ * fast-forward. 100 = normal speed, 0 = unlimited. Reset to 100 by every new game or load.
++ */
++static bool ConGameSpeed(std::span<std::string_view> argv)
++{
++	if (argv.empty()) {
++		IConsolePrint(CC_HELP, "Set the game speed in percent of normal speed, 0 = unlimited. Usage: 'gamespeed [<percent>]'.");
++		return true;
++	}
++
++	if (argv.size() == 1) {
++		IConsolePrint(CC_DEFAULT, "Game speed: {}", _game_speed);
++		return true;
++	}
++
++	auto speed = ParseType<uint16_t>(argv[1]);
++	if (!speed.has_value()) {
++		IConsolePrint(CC_ERROR, "'{}' is not a valid speed.", argv[1]);
++		return true;
++	}
++	_game_speed = *speed;
++	IConsolePrint(CC_DEFAULT, "Game speed: {}", _game_speed);
++	return true;
++}
++
++/**
++ * Railhead: reseed the game-state random generator. Used only on throw-away fork servers so a
++ * fork samples a plausible future instead of replaying the true one (no clients => no desync).
++ */
++static bool ConReseed(std::span<std::string_view> argv)
++{
++	if (argv.empty()) {
++		IConsolePrint(CC_HELP, "Reseed the game-state random generator (fork servers only). Usage: 'reseed <seed>'.");
++		return true;
++	}
++
++	if (argv.size() != 2) return false;
++	auto seed = ParseType<uint32_t>(argv[1]);
++	if (!seed.has_value()) {
++		IConsolePrint(CC_ERROR, "'{}' is not a valid seed.", argv[1]);
++		return true;
++	}
++	_random.SetSeed(*seed);
++	IConsolePrint(CC_DEFAULT, "Reseeded: {}", *seed);
++	return true;
++}
++
+ static bool ConUnpauseGame(std::span<std::string_view> argv)
+ {
+ 	if (argv.empty()) {
+@@ -2976,6 +3026,8 @@ void IConsoleStdLibRegister()
+ 
+ 	IConsole::CmdRegister("pause",                   ConPauseGame,        ConHookServerOrNoNetwork);
+ 	IConsole::CmdRegister("unpause",                 ConUnpauseGame,      ConHookServerOrNoNetwork);
++	IConsole::CmdRegister("gamespeed",               ConGameSpeed,        ConHookServerOrNoNetwork);
++	IConsole::CmdRegister("reseed",                  ConReseed,           ConHookServerOrNoNetwork);
+ 
+ 	IConsole::CmdRegister("authorized_key", ConNetworkAuthorizedKey, ConHookServerOnly);
+ 	IConsole::AliasRegister("ak", "authorized_key %+");

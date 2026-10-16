@@ -1,0 +1,42 @@
+diff --git a/src/network/network_admin.cpp b/src/network/network_admin.cpp
+index 99ec918..05bbad0 100644
+--- a/src/network/network_admin.cpp
++++ b/src/network/network_admin.cpp
+@@ -549,7 +549,8 @@ NetworkRecvStatus ServerNetworkAdminSocketHandler::SendConsole(std::string_view
+  */
+ NetworkRecvStatus ServerNetworkAdminSocketHandler::SendGameScript(std::string_view json)
+ {
+-	auto p = std::make_unique<Packet>(this, ADMIN_PACKET_SERVER_GAMESCRIPT);
++	/* Railhead: allow GameScript JSON up to TCP_MTU (stock: COMPAT_MTU, unchecked). */
++	auto p = std::make_unique<Packet>(this, ADMIN_PACKET_SERVER_GAMESCRIPT, TCP_MTU);
+ 
+ 	p->Send_string(json);
+ 	this->SendPacket(std::move(p));
+diff --git a/src/script/api/script_admin.cpp b/src/script/api/script_admin.cpp
+index 6cc8f95..c0a9916 100644
+--- a/src/script/api/script_admin.cpp
++++ b/src/script/api/script_admin.cpp
+@@ -11,6 +11,7 @@
+ #include "script_admin.hpp"
+ #include "script_log.hpp"
+ #include "../../network/network_admin.h"
++#include "../../network/core/config.h"
+ #include "../script_instance.hpp"
+ #include "../../string_func.h"
+ #include "../../3rdparty/nlohmann/json.hpp"
+@@ -130,7 +131,14 @@ bool ScriptAdminMakeJSON(nlohmann::json &json, HSQUIRRELVM vm, SQInteger index,
+ 		return 1;
+ 	}
+ 
+-	NetworkAdminGameScript(json.dump());
++	std::string dumped = json.dump();
++	/* Railhead: header (3) + NUL (1) + encryption MAC (16) must fit in TCP_MTU; refuse, never assert. */
++	if (dumped.size() > TCP_MTU - 32) {
++		ScriptLog::Error("JSON too large for one admin packet. No data sent.");
++		sq_pushinteger(vm, 0);
++		return 1;
++	}
++	NetworkAdminGameScript(dumped);
+ 
+ 	sq_pushinteger(vm, 1);
+ 	return 1;
