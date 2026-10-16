@@ -1,9 +1,12 @@
-# 03b — Running OpenTTD headless: local macOS + Linux Docker (hands-on)
+# 03b — Running OpenTTD headless: macOS, Linux Docker, fast-forward, visual channel (hands-on)
 
-**Date:** 2026-10-16. **Host:** macOS 15 arm64, OpenTTD 15.2 at `/Applications/OpenTTD.app`, colima VM aarch64 (4 vCPU, 8 GB, Docker 28.3.3).
-**Method:** every number below was measured in this session. Source references are to the 15.2 release tarball
-(`openttd-15.2-source.tar.xz`, sha256 `d29ab617…3ff76`), shown as `src/<file>:<line>`. Things not executed are marked **NOT RUN**.
-Companion report: `03-openttd-source.md` (engine internals). Where both cover a topic, they agree.
+**Date:** 2026-10-16. **Host:** macOS 15 arm64, colima VM aarch64 (4 vCPU, 8 GB, Docker 28.3.3).
+**Binaries:**
+
+- The local macOS runs used the installed app, **15.2** (`/Applications/OpenTTD.app`).
+- The Docker images are built from tag **15.3** (`14ec60f248547d4d062a1160f0fc26d742319888`), the latest stable 15.x per `git ls-remote`. Tags 16.0-beta1..4 also exist.
+
+**Method:** every number below was measured in this session. Source references are `src/<file>:<line>` in the 15.3 tarball. The files cited are identical in 15.2 unless noted. Items marked **NOT RUN** were read or inferred but not executed. Companion report: `03-openttd-source.md`.
 
 ---
 
@@ -11,45 +14,43 @@ Companion report: `03-openttd-source.md` (engine internals). Where both cover a 
 
 | Question | Answer (measured) |
 |---|---|
-| Local headless launch | `cd $RUN && HOME=$ISO_HOME openttd -D -x -c $RUN/openttd.cfg -s null -m null -G 12345` (config in §1.2). Admin port listening **0.27 s** after launch (64x64). |
-| Admin auth in 15.2 | Plain `ADMIN_JOIN` works **only** with `allow_insecure_admin_login = true` (default false). Otherwise the server logs `not authorized` and closes the socket. Secure join = X25519 PAKE + encrypted session (needs Monocypher; not stdlib-doable). |
-| Real-time pace (stock) | **1.998 s per game day** (74 ticks × 27 ms). One game year ≈ 12 min wall. |
-| RCON round trip at 1x | **25–30 ms** (admin packets are handled once per game tick). Join 28–46 ms. |
-| Fast-forward on a stock dedicated server | **Impossible.** No console command, no setting, no admin packet. `_game_speed` is GUI-only (`src/gfx.cpp:1858-1865`). |
-| Fast-forward with a 30-line patch | **Works.** `gamespeed 0` over RCON: **5,634 days/s** on empty 64x64, **3,078 days/s** on a 64x64 save with 19 vehicles, 2,418 (256²), 799 (512²). RCON latency drops to **0.26 ms**. |
-| Null driver (`-v null:ticks=N -g`) | Batch only (no network, no admin port). 54k–873k ticks/s depending on map size. Useful for offline rollouts from a save, not for an interactive env. |
-| Save / load / newgame (RCON) | save 27–86 ms, load (to `WELCOME`) 72–89 ms, `newgame <seed>` 65–128 ms, for 64² to 512² maps. Admin connection survives load/newgame. |
-| Reset determinism | Two `newgame 777` runs produce saves that differ **only** in the random 32-hex `savegame_id`. Everything else is byte-identical. |
-| Recommended Docker route | **Build from source, dedicated-only** (`OPTION_DEDICATED=ON`), multi-stage on `debian:trixie-slim`. Cold build **192 s** (161 s compile) on 4 vCPU arm64. Image **190 MB** on disk, **45 MB** compressed. RSS per server **7–13 MiB**. |
-| Why not binaries/apt | cdn.openttd.org has **no arm64 Linux build** (15.2 and 15.3: `linux-generic-amd64` only). Distros lag: Debian sid/forky and Ubuntu 26.04 ship **15.1**, trixie 14.1, noble 13.4. The apt image is 728 MB because it is a GUI build. |
-| Python admin libraries | **pyOpenTTDAdmin 1.1.0** (2026-06-12) is the only maintained PyPI package with 15.x secure auth and prebuilt wheels. libottdadmin2 has secure auth but is git-only and CC BY-NC-SA. |
-| `~/ottd-claude/game_client.py` approach | **Not viable for Railhead.** It needs exact version coupling, gets no command feedback, re-downloads the map on every reset, and would be lag-kicked under fast-forward (§5.3). |
+| macOS app as a headless server | **Yes, `-D` runs fine.** `cd $RUN && HOME=$ISO_HOME /Applications/OpenTTD.app/Contents/MacOS/openttd -D -x -c $RUN/openttd.cfg -G 12345` gives an admin port **0.27 s** after launch. No window or dock icon appears. |
+| Admin auth (15.x) | Plain `ADMIN_JOIN` works only with `allow_insecure_admin_login = true` (default false). Otherwise the socket is closed and the server logs "not authorized". Secure join (X25519 PAKE then an encrypted session) needs Monocypher. |
+| Stock pace | **1.998 s per game day** at 1x. RCON round trip 25–30 ms (one tick). |
+| Fast-forward, stock | **Impossible on a dedicated server.** No console command, setting or admin packet changes `_game_speed`. |
+| Fast-forward, patched (Railhead `gamespeed`) | 15.3 image, empty 64x64 map: `gamespeed 1000` gives 5.0 days/s, `5000` gives 24.9, `0` gives **5,322 days/s**. Bigger maps (15.2 build): 2,418 days/s on 256², 799 on 512². RCON at unlimited speed: **0.26 ms**. |
+| Paused-poll part of the patch | While paused at gamespeed 0, RCON drops from **27 ms to 1.7 ms**, and the GameScript loop rises from **37 to ~1,090 iterations/s**, with the world frozen. |
+| Null driver (`-v null:ticks=N`) | Offline batch only, with no admin port. macOS: 811k / 245k / 62k ticks/s on 64² / 256² / 512² fresh maps. Linux container: 873k / 229k / 54k. Vehicle-heavy worlds were **not measured**. |
+| Docker route | **Patched 15.3 source build, dedicated-only** (`-DOPTION_DEDICATED=ON`, Release, Ninja), multi-stage `debian:trixie-slim`. Cold no-cache build on arm64 took **182 s** (163 s compile). Image is **191 MB** on disk, **45.1 MB** compressed. Server RSS is **7–9 MiB**. Asset: `assets/Dockerfile.openttd-probe`. |
+| Visual channel | **Yes, three ways, all verified.** (1) The dedicated build renders `screenshot minimap` and `heightmap` over RCON. (2) A GUI build run as `-D -b 32bpp-optimized` also renders `screenshot giant`, the whole map isometric. (3) A **GUI client under Xvfb in Docker** joins the dedicated server, plays a company, gives 1280x720 frames via `scrot`, and takes mouse/keyboard input via `xdotool` (a road was built this way). |
+| GUI client under fast-forward | It keeps up to about 200x (96 days/s on 128²). At 400x and above it is **dropped** as "more than 501 ticks behind" (`max_lag_time`). |
+| Building while paused (any player) | Refused at the default `construction.command_pause_level = 1` with "Not allowed while paused". Works with `= 3`, which must be set **in the config** because `setting` refuses it during a network game. |
+| Closest prior art for direct play | **nttd** (deepsaia, Apache-2.0, 2026): OpenTTD 15.3 dedicated server, admin port and a 5.7k-line GameScript bridge using `GSCompanyMode`, 76 "human-parity" actions, REST/MCP/Gym surfaces, macOS-only, 1x pacing. No computer-use or GUI agent for OpenTTD was found. |
 
 ---
 
-## 1. Local headless run (macOS)
+## 1. Local headless run (macOS app 15.2)
 
-### 1.1 How OpenTTD picks its directories (and how to isolate it)
+### 1.1 Directory resolution and isolation
 
 | Mechanism | Effect | Evidence |
 |---|---|---|
-| `-c /dir/openttd.cfg` | `/dir` becomes the working-dir search path, the **config dir** and the **personal dir**. `save/`, `baseset/`, `game/`, `ai/`, `content_download/`, `secrets.cfg`, `private.cfg` all resolve under `/dir`. | `src/fileio.cpp:819-830`, `:906-908`, `:946`, `:965`; observed log `…/run/ found as config directory` / `personal directory` |
-| macOS personal dir | `$HOME/Documents/OpenTTD` is still a **read** search path even with `-c`. Override `HOME` to keep the user's folder out. | observed; `~/Documents/OpenTTD` had no files newer than session start |
-| Linux | XDG: `$XDG_CONFIG_HOME/openttd` (cfg) and `$XDG_DATA_HOME/openttd` (data), unless `-c` is given. | `src/fileio.cpp` `USE_XDG` branch |
-| `-x` | Never write the config back. Without it, SIGTERM rewrote `openttd.cfg` (460 lines) and moved secrets into `secrets.cfg`. | observed |
-| **No `[version]` section** | The ini version is 0, so secret/private settings (`admin_password`, `server_name`…) are read **from `openttd.cfg` itself**, and `secrets.cfg` is ignored. With the password only in `secrets.cfg`, `admin_password` read as `''` and the admin port **did not listen**. | `src/settings.cpp:1391-1395`; observed |
-| Admin port | It listens only if `admin_password` or `admin_authorized_keys` is non-empty. | `src/network/network.cpp:908-910` |
-| Seed | `generation_seed` is `NotInConfig`. Use `-G <seed>` or console `newgame <seed>`. | `src/table/settings/world_settings.ini:200-208` |
-| **`-X` on macOS hangs** | `-X` drops the app-bundle Resources path, so startup hits a fatal error. On macOS a fatal error opens a **modal NSAlert** even under `-v null`. The log shows `Could not change to foreground application. Error -50` and the process blocks forever. Linux prints `Error: …` to stderr and exits. | `src/os/macosx/macos.mm:136-144` vs `src/os/unix/unix.cpp:193-199`; observed and killed |
+| `-c /dir/openttd.cfg` | `/dir` becomes the working-dir search path, the **config dir** and the **personal dir**. `save/`, `baseset/`, `game/`, `ai/`, `screenshot/`, `content_download/`, `secrets.cfg` and `private.cfg` all resolve under `/dir`. | `src/fileio.cpp:819-830`, `:906-908`, `:965`; log line `…/run/ found as config directory` |
+| macOS personal dir | `$HOME/Documents/OpenTTD` stays a **read** search path even with `-c`. Override `HOME` for full isolation. | observed |
+| Linux | `$XDG_CONFIG_HOME/openttd` and `$XDG_DATA_HOME/openttd`, unless `-c` is given | `src/fileio.cpp` `USE_XDG` |
+| `-x` | Never write the config back. Without it, SIGTERM rewrote `openttd.cfg` (460 lines) and split secrets into `secrets.cfg`. | observed |
+| **No `[version]` section** | Secret and private settings (`admin_password`, `server_name`, `client_name`) are read **from `openttd.cfg` itself**, and `secrets.cfg` is ignored. With the password only in `secrets.cfg`, it read as `''` and the admin port **did not listen**. | `src/settings.cpp:1391-1395`; observed |
+| Admin port | Listens only if `admin_password` or `admin_authorized_keys` is set | `src/network/network.cpp:908-910` |
+| Seed | `NotInConfig`, so use `-G <seed>` or `newgame <seed>` | `src/table/settings/world_settings.ini:200-208` |
+| `-D` | Forces `sound=null`, `music=null`, `video=dedicated`, `blitter=null`. A later `-b <blitter>` overrides the blitter (used in §5). | `src/openttd.cpp:535-541` |
+| **`-X` on macOS hangs** | Startup hits a fatal error, and on macOS that opens a **modal NSAlert** even under `-v null`. The log shows `Could not change to foreground application. Error -50` and the process blocks. Linux prints `Error: …` and exits. | `src/os/macosx/macos.mm:136-144` vs `src/os/unix/unix.cpp:193-199`; observed and killed |
 
-**Rule:** generate one self-contained `openttd.cfg` per env with no `[version]` section, run with `-x`, set `HOME` to an isolated dir on macOS, and wrap every launch in a timeout.
+**Rule:** generate one self-contained `openttd.cfg` per env with no `[version]` section, run with `-x`, override `HOME` on macOS, and put a timeout on every launch.
 
-### 1.2 Exact config and commands (verified)
-
-`$RUN/openttd.cfg`:
+### 1.2 Verified config and launch
 
 ```ini
-; Single-file config. No [version] section => secrets/private settings are read from THIS file.
+; Single-file config. No [version] section => secret/private settings are read from THIS file.
 [gui]
 autosave_interval = 0
 threaded_saves = false
@@ -60,6 +61,8 @@ map_x = 6            ; 2^6 = 64
 map_y = 6
 starting_year = 1950
 land_generator = 1
+[construction]
+command_pause_level = 3   ; allow construction while paused (see §5.3); cannot be changed at runtime in network games
 [network]
 server_port = 39790
 server_admin_port = 39770
@@ -71,266 +74,288 @@ pause_on_join = false
 server_name = railhead-probe
 ```
 
-Data and launch:
+`command_pause_level = 3` was verified in the Docker runs in §5.3. The macOS runs in this section used the file without it.
 
 ```bash
 RUN=$SCRATCH/ottd/run; ISO_HOME=$SCRATCH/ottd/home
-mkdir -p $RUN/baseset $RUN/game/library $ISO_HOME
-cp ~/Documents/OpenTTD/content_download/baseset/4f474658-OpenGFX-8.0.tar $RUN/baseset/     # read-only copy
-cp ~/Documents/OpenTTD/content_download/game/library/*.tar         $RUN/game/library/      # GS libs for later
-cd $RUN
-: > cmds.txt
-# stdin console is optional; feeding it from a growing file lets other shells append commands
+mkdir -p $RUN/baseset $ISO_HOME
+cp <OpenGFX-8.0 .tar> $RUN/baseset/
+cd $RUN && : > cmds.txt
+# optional stdin console fed from a growing file; admin RCON is the real control channel
 tail -n +1 -f cmds.txt | HOME=$ISO_HOME /Applications/OpenTTD.app/Contents/MacOS/openttd \
-    -D -x -c $RUN/openttd.cfg -s null -m null -G 12345 > server.log 2>&1 &
-nc -z 127.0.0.1 39770 && echo admin up        # true after ~0.27 s
+    -D -x -c $RUN/openttd.cfg -G 12345 > server.log 2>&1 &
+nc -z 127.0.0.1 39770     # succeeds ~0.27 s after launch
 ```
 
-Server log excerpt:
-
-```
-dbg: [net:3] Starting dedicated server, version 15.2
-dbg: [net:3] Listening on 0.0.0.0:39790 (IPv4)
-dbg: [net:3] Listening on 0.0.0.0:39770 (IPv4)
-dbg: [net:3] Map generated, starting game
-```
-
-`-s null -m null` is belt-and-braces. The `-D` path never opened a window or dock icon.
-
-### 1.3 Measurements (64x64 unless noted, admin RCON from Python on loopback)
+### 1.3 Measurements (macOS 15.2, 64x64 unless noted, RCON from Python on loopback)
 
 | Operation | Result |
 |---|---|
-| Game pace at 1x | 10 days per 20 s on stdin `getdate`, and 6 days per 11.99 s on admin `DATE` daily push: **1.998 s/day** |
-| Admin join (TCP connect to `WELCOME`) | 28–46 ms |
-| RCON `getdate`, `companies`, `pause`, … | 25–30 ms each (one tick) |
-| `save probe_a` | 27–30 ms, 15 KB file |
-| `load probe_a` | `RCON_END` 29 ms, then `NEWGAME` + `WELCOME` at **80 ms** |
-| `newgame 12345` | `WELCOME` after 65–81 ms |
+| Pace at 1x | 1.998 s/day (admin `DATE` daily push; also stdin `getdate`) |
+| Admin join (connect to `WELCOME`) | 28–46 ms |
+| RCON `getdate`, `companies`, `pause`, `getseed` | 25–30 ms each |
+| `save` | 27–34 ms (64²), 86 ms (512²); 14 KB to 339 KB |
+| `ls` + `load` (to `WELCOME`) | 72–89 ms, 64² to 512² |
+| `newgame <seed>` (to `WELCOME`) | 65–128 ms, 64² to 512² |
+| Same-seed reset | Two `newgame 777` saves are byte-identical except the random 32-hex `savegame_id` in the `DATE` chunk |
 
-Map-size scaling (`setting_newgame map_x N` → `newgame 4242` → `pause` → `save` → `ls` → `load`):
+### 1.4 Console and RCON gotchas
 
-| Map | newgame | save | load | .sav size |
-|---|---|---|---|---|
-| 64x64 | 78 ms | 34 ms | 89 ms | 14 KB |
-| 128x128 | 78 ms | 38 ms | 72 ms | 29 KB |
-| 256x256 | 102 ms | 48 ms | 74 ms | 93 KB |
-| 512x512 | 128 ms | 86 ms | 88 ms | 339 KB |
-
-**Determinism check:** run `setting pause_on_newgame true`, then `newgame 777` + `save det_d1`, then `newgame 777` + `save det_d2`. The lzma-decompressed saves are 89,958 bytes each with 31 differing bytes. All of them sit in the `DATE` chunk's `id` field (the random `savegame_id`, `C9750A4E…` vs `715A9FD9…`). The map, RNG state and tick counter are identical.
-
-### 1.4 Console and RCON gotchas found
-
-1. **The stdin console can stall.** `-D` reads stdin with `std::getline(std::cin)` after a `select()` (`src/video/dedicated_v.cpp` `DedicatedHandleKeyInput`). Several lines written at once sit in the stream buffer until the next write wakes `select()`. Observed: four commands produced one output until more lines arrived. Write one command at a time, or better, use admin RCON.
-2. **`save` does not refresh the console save list.** `load <name>` right after `save <name>` answers `'<name>' cannot be found`. `ConLoad` only validates a cached list, and only `ls`/`list_saves`/`rm` refresh it (`src/console_cmds.cpp` `ConSave`/`ConLoad`/`ConListFiles`). **Always send `ls` before `load`.**
-3. **`pause_on_newgame` works at runtime.** `setting pause_on_newgame true` makes every `newgame`/reset start paused, which gives a clean RL reset.
-4. A `load` re-sends `NEWGAME` then `WELCOME` to connected admins, and the session stays up. Normal game clients are disconnected instead.
-5. **Console commands in the 15.2 release build:** `alias authorized_key ban banlist cd clear client_name clients companies connect content debug_level dump_info echo echoc exec exit font fps fps_wnd gamelog getdate getseed getsysdate help info_cmd join kick list_ai list_ai_libs list_aliases list_cmds list_dirs list_game list_game_libs list_heightmaps list_saves list_scenarios list_settings load load_heightmap load_save load_scenario ls move newgame part pause pwd quit rcon reconnect reload reload_ai rescan_ai rescan_game rescan_newgrf reset_company reset_enginepool resetengines restart return rm save saveconfig say say_client say_company schedule screenshot script scrollto server_info setting setting_newgame start_ai status stop_ai unban unpause zoomto`. `gamespeed` → `Command 'gamespeed' not found.`
+1. **The stdin console can stall.** `-D` reads stdin with `std::getline` after `select()`. Several queued lines can wait until the next write. Use admin RCON.
+2. **`save` does not refresh the console save list.** `load <new>` then answers `'<name>' cannot be found`. Send `ls` before `load`.
+3. **`setting pause_on_newgame true`** makes every reset start paused. The admin session survives `newgame` and `load`, receiving `NEWGAME` then `WELCOME`.
+4. **`screenshot` is queued** to the main thread (`src/screenshot.cpp` `MakeScreenshot` → `QueueOnMainThread`), so its RCON reply returns before the file exists. Time it with a follow-up RCON.
 
 ---
 
 ## 2. Fast simulation
 
-### 2.1 Stock 15.2: the dedicated server cannot fast-forward
+### 2.1 Stock 15.x: the dedicated server cannot fast-forward
 
-The dedicated main loop is `Tick(); SleepTillNextTick();` (`src/video/dedicated_v.cpp` `MainLoop`). The tick interval is `MILLISECONDS_PER_TICK*1000*100/_game_speed` µs, and `_game_speed == 0` means "as fast as possible" (`src/video/video_driver.hpp:311-313`). So the server **would** run fast, but nothing reachable from the console or admin port changes `_game_speed`. Only `ChangeGameSpeed()` (`src/gfx.cpp:1858-1865`), called from the GUI toolbar or hotkey, changes it. `gui.fast_forward_speed_limit` (2500) only caps that GUI toggle. `InitializeGame()` also resets `_game_speed = 100` on every new game or load (`src/misc.cpp:101`).
+The dedicated loop sleeps `27 ms × 100 / _game_speed`, where 0 means unlimited (`src/video/video_driver.hpp:309-313`). Only the GUI toolbar or hotkey calls `ChangeGameSpeed()` (`src/gfx.cpp:1858-1865`). `InitializeGame()` resets `_game_speed = 100` on every new game or load (`src/misc.cpp:101`). Paused games always tick at 27 ms. nttd independently reports "no `game_speed` setting in OpenTTD 15.3" (§6).
 
-### 2.2 Patched dedicated: a `gamespeed` console command (built and measured)
+### 2.2 The Railhead patch (built and measured on 15.3)
 
-The patch is 30 lines in one file (`src/console_cmds.cpp`). It is inlined in `assets/Dockerfile.openttd-probe`, applies cleanly to 15.2, and a dry run applied it cleanly to 15.3:
+The patch is inlined in `assets/Dockerfile.openttd-probe` and applies cleanly to 15.2 and 15.3.
+
+1. `src/console_cmds.cpp` gains `gamespeed [<pct>]` (0 = unlimited), registered with `ConHookServerOrNoNetwork`, so it is usable from admin RCON.
+2. `src/video/video_driver.hpp`: while paused **and** `_game_speed == 0`, the loop interval becomes 1 ms instead of 27 ms.
 
 ```cpp
-static bool ConGameSpeed(std::span<std::string_view> argv)
-{
-	if (argv.empty()) { IConsolePrint(CC_HELP, "...Usage: 'gamespeed [<percentage>]'."); return true; }
-	if (argv.size() > 2) return false;
-	if (argv.size() == 2) {
-		auto speed = ParseInteger<uint16_t>(argv[1]);
-		if (!speed.has_value()) { IConsolePrint(CC_ERROR, "'{}' is not a valid game speed.", argv[1]); return true; }
-		_game_speed = *speed;
-	}
-	IConsolePrint(CC_DEFAULT, "Game speed: {}%", _game_speed);
-	return true;
-}
-// registered next to getdate:
-IConsole::CmdRegister("gamespeed", ConGameSpeed, ConHookServerOrNoNetwork);
+if (_pause_mode.Any()) return std::chrono::milliseconds(_game_speed == 0 ? 1 : MILLISECONDS_PER_TICK);
 ```
 
-Measured in the patched container (arm64, admin `DATE` daily push, 3–5 s windows):
-
-| Setting / world | Days per second | Ticks per second |
+| 15.3 patched image, admin `DATE` push / poll | Days/s | Note |
 |---|---|---|
-| `gamespeed 100` (64², empty) | 0.5 | 37 |
-| `gamespeed 1000` | 5.0 | 370 |
-| `gamespeed 5000` | 24.9 | 1.8k |
-| `gamespeed 0`, 64² empty (46 years in 3 s) | **5,634** | ~417k |
-| `gamespeed 0`, 64² "Lintfield" save with 19 road vehicles (42 years in 5 s, money 0.55M → 2.7M) | **3,078** | ~228k |
-| `gamespeed 0`, 256² fresh map | 2,418 | ~179k |
-| `gamespeed 0`, 512² fresh map | 799 | ~59k |
+| `gamespeed 100` (64², empty) | 0.5 | stock pace |
+| `gamespeed 1000` | 5.0 | exactly 10x |
+| `gamespeed 5000` | 24.9 | |
+| `gamespeed 0` (64², empty) | **5,322** | 44 game-years in 3 s; RCON median 0.26 ms |
+| `gamespeed 0` (256², fresh map; 15.2 build) | 2,418 | |
+| `gamespeed 0` (512², fresh map; 15.2 build) | 799 | |
+| `gamespeed 0` (64²) **with a GameScript sending admin JSON every 100 Sleep(1) iterations** | ~1,220 | the GS loop ran 90,467 iterations/s; per-tick GS work dominates at unlimited speed |
 
-Other observations:
+Paused behaviour, measured with a probe GameScript (`RHTick`, a `Sleep(1)` loop reporting via `GSAdmin.Send` every 100 iterations):
 
-- RCON `getdate` latency at unlimited speed: **median 0.26 ms, max 0.37 ms**, against 26 ms at 1x.
-- `pause` still freezes the world, with zero days advancing in 1 s.
-- After `newgame`, `gamespeed` reads `100%` again, so the client must **re-issue `gamespeed 0` after every reset or load**.
-- Container RSS stayed at 7.4–13 MiB across all these runs, so dozens of envs per host is realistic.
+| State | GS loop iterations/s | Game days advancing | RCON round trip |
+|---|---|---|---|
+| running, gamespeed 100 | 37 | yes | 27 ms |
+| **paused**, gamespeed 100 (stock behaviour) | **37** | no | 27 ms |
+| running, gamespeed 0 | 90,467 | yes (~1,220/s) | — |
+| **paused, gamespeed 0 (patch part 2)** | **1,090** | no | **1.7 ms** |
 
-The unlimited-speed rates are fast enough that stepping precision becomes the issue. The workable pattern is `unpause`, then wait for the target `DATE`, then `pause`. At about 5k days/s, a 0.3 ms RCON round trip overshoots by roughly 1–2 days. For exact stepping, have the GameScript pause at a target date (**NOT RUN** here). Alternatively use a moderate speed such as 5000%.
+Findings:
 
-### 2.3 Null video driver: offline batch only
+- **The GameScript does run while paused** (`src/openttd.cpp` `StateGameLoop` calls `Game::GameLoop()` in its paused branch), and `Sleep(1)` keeps returning. This contradicts nttd's statement that `Sleep` "counts ticks, of which a paused game delivers none" (§6). Their hang may come from something else. GS `DoCommand`s while paused were **not tested** here.
+- `gamespeed` reads `100%` again after every `newgame` or `load`, so re-send `gamespeed 0` after each reset.
+- The RAM footprint is unchanged at 7–9 MiB per dedicated server.
+- Step precision: at about 5k days/s a 0.3 ms RCON round trip overshoots by 1–2 days. Use a GS-side target date or a moderate speed when exact stepping matters (**NOT RUN**).
 
-`-v null:ticks=N` runs N `GameLoop()` iterations with no sleeping, then exits. With `gui.autosave_on_exit = true` it writes `save/autosave/exit.sav` first (`src/video/null_v.cpp` `MainLoop`). It never starts networking, so there is no admin port or RCON. It also cannot advance a save that was stored **paused**: two such saves showed zero progress. Verified commands:
+### 2.3 Null video driver (offline batch only)
+
+`-v null:ticks=N` runs N `GameLoop()`s with no sleep, writes `save/autosave/exit.sav` if `gui.autosave_on_exit = true`, then exits. It has no network or admin port, and it cannot advance a save stored **paused**: two such saves showed zero progress.
 
 ```bash
-# new game from config (+ seed), 200k ticks, writes save/autosave/exit.sav when autosave_on_exit = true
-HOME=$ISO_HOME openttd -v null:ticks=200000 -s null -m null -x -c $DIR/openttd.cfg -G 12345 -g
-# continue an (unpaused) save
-HOME=$ISO_HOME openttd -v null:ticks=100000 -s null -m null -x -c $DIR/openttd.cfg -g $DIR/save/x.sav
+HOME=$ISO_HOME openttd -v null:ticks=200000 -s null -m null -x -c $DIR/openttd.cfg -G 12345 -g          # new game
+HOME=$ISO_HOME openttd -v null:ticks=100000 -s null -m null -x -c $DIR/openttd.cfg -g $DIR/save/x.sav   # continue an unpaused save
 ```
 
-| World | macOS native | Linux container |
+| Fresh map | macOS app 15.2 | Linux container (15.2 dedicated build) |
 |---|---|---|
-| 64² new game, 200k ticks (1950 → 1957-05-26) | 0.25 s, 811k ticks/s | 0.23 s, 873k ticks/s |
-| 256² new game, 100k ticks | 0.41 s, 245k ticks/s | 0.44 s, 229k ticks/s |
-| 512² new game, 50k ticks | 0.81 s, 62k ticks/s | 0.93 s, 54k ticks/s |
-| Lintfield save (19 RVs), 100k ticks (2121-12-17 → 2125-08-29) | 0.41 s, 243k ticks/s | NOT RUN |
+| 64², 200k ticks (1950 → 1957-05-26) | 0.25 s → **811k ticks/s** | 0.23 s → 873k ticks/s |
+| 256², 100k ticks | 0.41 s → 245k ticks/s | 0.44 s → 229k ticks/s |
+| 512², 50k ticks | 0.81 s → 62k ticks/s | 0.93 s → 54k ticks/s |
 
-Startup overhead is about 0.09 s per process. The engine runs at roughly 5,000–20,000x real time on small maps. Under real-time pacing, the bottleneck is the 27 ms/tick sleep, not the simulation.
+Startup overhead is about 0.09 s per process. These maps have towns and industries but no player vehicles. **Vehicle-heavy throughput is not measured.** A world populated by an AI or GameScript is needed for that number.
 
 ---
 
-## 3. Admin port in 15.2: auth and a minimal client
+## 3. Admin port: auth and the probe client
 
-- Admin protocol version is **3**.
-- The `SERVER_PROTOCOL` update-frequency bitmasks on 15.2 are `{DATE:0x3f, CLIENT_INFO:0x41, COMPANY_INFO:0x41, COMPANY_ECONOMY:0x3d, COMPANY_STATS:0x3d, CHAT:0x40, CONSOLE:0x40, CMD_NAMES:0x01, CMD_LOGGING:0x40, GAMESCRIPT:0x40}`.
-- `AdminUpdateFrequency` is now an `enum class` bitset: Poll=0x01, Daily=0x02, …, Automatic=0x40.
-- **Plain `ADMIN_JOIN` (type 0)** sends password, name and version. It succeeds only if `network.allow_insecure_admin_login = true` (`src/network/network_admin.cpp:629`).
-- With the default `false`, the server logs `The admin '' () made an error and has been disconnected: 'not authorized'`. The Python side only saw the socket close; no `SERVER_ERROR` packet was readable first. The setting can be flipped at runtime with `setting network.allow_insecure_admin_login true|false`. Both directions were verified.
-- **Secure join** follows this sequence:
-  1. The client sends `ADMIN_JOIN_SECURE` (9).
-  2. The server replies `SERVER_AUTH_REQUEST` (128), and the client answers with `ADMIN_AUTH_RESPONSE` (10).
-  3. The server sends `SERVER_ENABLE_ENCRYPTION` (129), and every later packet is AEAD-encrypted.
-  4. Methods are X25519 PAKE with a password, or authorized keys. The crypto is Monocypher's incremental AEAD with key ratcheting, which Python's stdlib cannot do.
-- **Recommendation for Railhead:** use plain join with `allow_insecure_admin_login = true`. Keep the admin port container-internal, or publish it on `127.0.0.1` only. Switch to pyOpenTTDAdmin if the port must cross a network.
+- **Protocol version 3.** `SERVER_PROTOCOL` frequency masks on 15.x are `{DATE:0x3f, CLIENT_INFO:0x41, COMPANY_INFO:0x41, COMPANY_ECONOMY:0x3d, COMPANY_STATS:0x3d, CHAT:0x40, CONSOLE:0x40, CMD_NAMES:0x01, CMD_LOGGING:0x40, GAMESCRIPT:0x40}`. `AdminUpdateFrequency` is a bitset: Poll 0x01, Daily 0x02, …, Automatic 0x40.
+- **Plain `ADMIN_JOIN` (0).** It needs `network.allow_insecure_admin_login = true` (`src/network/network_admin.cpp:629`). Otherwise the server logs `made an error and has been disconnected: 'not authorized'`, and the client only sees the socket close. The setting can be flipped at runtime with `setting network.allow_insecure_admin_login …`. Both directions were verified.
+- **Secure join.** The client sends `ADMIN_JOIN_SECURE` (9). The server answers `SERVER_AUTH_REQUEST` (128), the client replies `ADMIN_AUTH_RESPONSE` (10), and the server sends `SERVER_ENABLE_ENCRYPTION` (129). Every later packet is AEAD-encrypted (X25519 PAKE or authorized keys, Monocypher incremental AEAD).
+- **Recommendation:** use plain join on a container-internal or loopback admin port.
 
-**Throwaway client** (stdlib only, about 200 lines): `$SCRATCH/client/probe_admin.py`, with scenarios `basic | speed | saveload | newgame | scale | determinism | disable_insecure | insecure_off`. Sample output:
+**Probe client:** `$SCRATCH/client/probe_admin.py`, stdlib only, about 200 lines. It was written from the packet enums in `src/network/core/tcp_admin.h` and the senders and receivers in `src/network/network_admin.cpp`. Scenarios are `basic | speed | saveload | newgame | scale | determinism | disable_insecure | insecure_off`. Helpers are `rcon_cli.py`, `probe_ffwd.py` and `probe_gs_tick.py`.
 
 ```
-joined in 37.5 ms: {'admin_protocol': 3, ..., 'server_name': 'railhead-probe', 'revision': '15.2', 'dedicated': True,
-                    'seed': 12345, 'landscape': 0, 'start_date': 712223, 'map_x': 64, 'map_y': 64}
+joined in 37.5 ms: {'admin_protocol': 3, ..., 'revision': '15.2', 'dedicated': True, 'seed': 12345, 'map_x': 64, 'map_y': 64}
 rcon 'getdate' (26.9 ms): ['Date: 1950-02-05']
-rcon 'getseed' (27.0 ms): ['Generation Seed: 12345']
 rcon save probe_a: 29.8 ms -> ['Saving map...', "Map successfully saved to 'probe_a.sav'."]
 ```
 
-**The user's `~/ottd-claude/src/ottd_claude/admin_client.py`** uses plain `ADMIN_JOIN`. It works on 15.2 only because the user's own `openttd.cfg` sets `allow_insecure_admin_login = true`. Its `GameState.date_to_str` uses 365-day years and 30-day months, so displayed dates drift. Correct conversion: date = days since 0000-01-01 in the proleptic Gregorian calendar, so `date(1,1,1) + timedelta(days=d-366)`.
-
 ---
 
-## 4. Linux / Docker
+## 4. Docker: patched 15.3 source build (the Railhead route)
 
-### 4.1 Distribution options (checked 2026-10-16)
+### 4.1 The Dockerfile
 
-| Route | Version | Arches | Build time (arm64, 4 vCPU) | Image | Notes |
-|---|---|---|---|---|---|
-| cdn.openttd.org `linux-generic` tarball | 15.2, 15.3 | **amd64 only** | download only | 23 MB tar.xz plus base | GUI build with bundled `lib/`. On trixie-slim it fails with `libgomp.so.1` / `libglib-2.0.so.0` not found unless run with `LD_LIBRARY_PATH=$PWD/lib`. Then `openttd -h` works under amd64 emulation. |
-| Debian sid / forky `apt install openttd openttd-opengfx` | **15.1** | amd64, arm64 | **55 s** | **728 MB** (186 MB compressed) | GUI build (SDL, OpenGL). OpenGFX package is 7.1. Version differs from the Mac's 15.2. |
-| Ubuntu 26.04 resolute | 15.1 | both | NOT RUN | — | same package |
-| Debian trixie / Ubuntu questing / noble | 14.1 / 14.1 / 13.4 | both | — | — | too old |
-| **Source, dedicated-only (recommended)** | exact 15.2 (or 15.3) | both, native | **192 s cold** (161 s compile); 173 s with cached deps (155 s compile) | **190 MB** (45 MB compressed) | `/opt/openttd` is 34 MB. Video drivers are `dedicated` and `null` only. Patchable. |
+`docs/research/assets/Dockerfile.openttd-probe` is self-contained, with the patch inlined via a BuildKit heredoc, so it needs no build context.
 
-OpenGFX URL: `https://cdn.openttd.org/opengfx-releases/8.0/opengfx-8.0-all.zip`. It contains `opengfx-8.0.tar`, which you drop into `baseset/`. `opengfx-releases/latest.yaml` reports 8.0, dated 2026-01-04. Source URL: `https://cdn.openttd.org/openttd-releases/15.2/openttd-15.2-source.tar.xz`, sha256 `d29ab617b7c0faa56ec4f8f13663c690a1b85e9212dd01717cc214c720d3ff76`, from `manifest.yaml`.
+- **Source:** `openttd-15.3-source.tar.xz` from cdn.openttd.org, with sha256 `5ea21eea…3be7` from the release `manifest.yaml`. It is identical to git tag 15.3 (`14ec60f…`).
+- **Build stage:** `debian:trixie-slim` (gcc 14, cmake 3.31). Configure, build and install:
 
-**Version note:** `openttd-releases/latest.yaml` lists **15.3** (2026-04-04) as stable and 16.0-beta4 as testing. 15.3 fixes a train-crash desync (#15338) and a script `IsBuildableRectangle` bug (#15357). The 15.3 source sha256 is `5ea21eea7d59c78a42071924ac18c6bc0116088f2e96b14cfee9369175973be7`. Pin **one** version on the Mac and in the containers, because game-client joins need an exact revision match and saves should round-trip. 15.3 everywhere is the better pin: the Dockerfile only needs `OPENTTD_VERSION` and `OPENTTD_SHA256` build args changed (**NOT RUN**).
-
-### 4.2 Dockerfile
-
-The working file is at `docs/research/assets/Dockerfile.openttd-probe` and is self-contained, with the patch inlined via a BuildKit heredoc. It builds with no context besides itself. Key choices:
-
-- **Multi-stage build.** The build stage is `debian:trixie-slim` with `build-essential cmake ninja-build zlib1g-dev liblzma-dev liblzo2-dev`. The runtime stage is `debian:trixie-slim` with `zlib1g liblzma5 liblzo2-2 netcat-openbsd`.
-- **cmake flags:** `-DOPTION_DEDICATED=ON -DOPTION_INSTALL_FHS=OFF -DCMAKE_INSTALL_PREFIX=/opt/openttd`, then `cmake --install --strip`. This drops the SDL, fontconfig, freetype and ICU dependencies and puts the binary next to `lang/`, `baseset/`, `ai/` and `game/`.
-- **`ARG GAMESPEED_PATCH=1`.** Set it to 0 for a vanilla build.
-- **Runtime user and health.** It runs as non-root `ottd` (uid 1000). A `HEALTHCHECK` runs `nc -z 127.0.0.1 3977`, and the admin port only opens when auth is configured.
-
-### 4.3 Running it (verified)
-
-```bash
-# no build context needed (patch is inlined); verified: cached rebuild in 2 s, image healthy
-docker build -t railhead/openttd:15.2 - < docs/research/assets/Dockerfile.openttd-probe
-docker run -d --name ottd -p 127.0.0.1:39771:3977 -e CFG="$(cat openttd.container.cfg)" \
-  --entrypoint sh railhead/openttd:15.2 \
-  -c 'mkdir -p ~/r && printf "%s\n" "$CFG" > ~/r/openttd.cfg && exec /opt/openttd/openttd -D -x -c ~/r/openttd.cfg -s null -m null -G 12345'
-python3 probe_admin.py 127.0.0.1 39771 railhead basic
+```
+cmake -S openttd -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DOPTION_DEDICATED=ON -DOPTION_INSTALL_FHS=OFF -DCMAKE_INSTALL_PREFIX=/opt/openttd
+cmake --build build -j$(nproc)
+cmake --install build --strip
 ```
 
-`openttd.container.cfg` is the §1.2 file with `server_port = 3979` and `server_admin_port = 3977`.
+- **`OPTION_INSTALL_FHS=OFF`** puts the binary next to `lang/`, `baseset/`, `ai/`, `game/` and `scripts/`, 34 MB in total.
+- **OpenGFX:** `https://cdn.openttd.org/opengfx-releases/8.0/opengfx-8.0-all.zip` provides `opengfx-8.0.tar` in `baseset/`.
+- **Runtime stage:** `debian:trixie-slim` as non-root `ottd` (uid 1000). `HEALTHCHECK` runs `nc -z 127.0.0.1 3977`, and `ENTRYPOINT` is the binary with `CMD -D -x`.
+- **`ARG RAILHEAD_PATCH=1`.** Set 0 for a vanilla build.
 
-- **Startup:** `docker run` to the first admin `SERVER_PROTOCOL` reply took **0.33 s**.
-- **Asset image end-to-end:** built from the asset file, the container reported `health=healthy` and ran as user `ottd`. `gamespeed 0` gave 5,564 days/s, with RCON latency at a 0.26 ms median.
-- **Config injection:** the config goes in through an env var because colima only shares `$HOME` with the VM. A bind mount from `/private/tmp/...` arrives empty, as `04-harbor.md` also found. Mounting from under `$HOME` works.
-- **Multi-arch:** build natively on each arch and join them with `docker buildx imagetools create`, for example a GitHub `ubuntu-24.04-arm` runner plus an amd64 runner. QEMU emulation of a 900-unit C++ build would be far slower (**NOT RUN**). The amd64 path is the same Dockerfile, unmodified.
+### 4.2 Exact apt dependencies for a dedicated-only build
+
+| Purpose | Packages (Debian trixie) |
+|---|---|
+| **Required to compile** | `build-essential cmake ninja-build zlib1g-dev liblzma-dev liblzo2-dev` |
+| Optional, included | `libpng-dev`, for PNG heightmap loading and PNG screenshots (otherwise BMP only) |
+| Optional, omitted | `libcurl4-openssl-dev`, needed only for in-game content download from BaNaNaS; bake GS libraries into the image instead |
+| Not needed | `pkg-config`, SDL2, freetype, fontconfig, harfbuzz, ICU, fluidsynth, OpenGL, which are skipped under `OPTION_DEDICATED` |
+| Fetch and patch only | `ca-certificates curl xz-utils unzip patch` |
+| **Runtime** | `zlib1g liblzma5 liblzo2-2 libpng16-16t64` (+ `netcat-openbsd` for the healthcheck) |
+
+CMake output for this set: `Found ZLIB 1.3.1, LibLZMA 5.8.1, LZO, PNG 1.6.48`. Not found, and harmless: CURL, Doxygen, Grfcodec, breakpad. A dedicated-only build compiles only the `null` blitter (`src/blitter/CMakeLists.txt`), and its video drivers are `dedicated` and `null`.
+
+### 4.3 Measured (linux/arm64, colima 4 vCPU)
+
+| Metric | Value |
+|---|---|
+| Cold build, `--no-cache` | **182 s** wall: apt 14 s, compile and install **163 s**, OpenGFX 1 s |
+| Cached rebuild from the asset file | 2 s |
+| Image | **191 MB** on disk, **45.1 MB** compressed (`docker image inspect` reports 45,067,361 bytes) |
+| `docker run` to admin port listening | 0.28–0.33 s |
+| RSS per server | 7.4–8.5 MiB (64²–256²) |
+| Verified from the asset | healthy, runs as `ottd`, `gamespeed 0` works, paused RCON in 1 ms |
+
+```bash
+docker build -t railhead/openttd:15.3 - < docs/research/assets/Dockerfile.openttd-probe
+docker run -d --name ottd -p 127.0.0.1:39771:3977 -e CFG="$(cat openttd.cfg)" --entrypoint sh railhead/openttd:15.3 \
+  -c 'mkdir -p ~/r && printf "%s\n" "$CFG" > ~/r/openttd.cfg && exec /opt/openttd/openttd -D -x -c ~/r/openttd.cfg -G 12345'
+```
+
+- **Config injection:** the config is passed through an env var because colima shares only `$HOME` with its VM. A bind mount from `/private/tmp` arrives empty, as `04-harbor.md` also found.
+- **Multi-arch:** build natively per arch, for example GitHub `ubuntu-24.04-arm` plus an amd64 runner, then `docker buildx imagetools create`. QEMU emulation of this C++ build was **NOT RUN**.
+- **Other routes, one line:** cdn.openttd.org ships only `linux-generic-amd64` tarballs (no arm64, and a GUI build that needs `LD_LIBRARY_PATH=./lib`). Distros lag at 15.1 (Debian sid/forky, Ubuntu 26.04), and the apt image is 728 MB.
 
 ---
 
-## 5. Prior art
+## 5. Visual observation channel
 
-### 5.1 Python admin-port libraries
+### 5.1 Server-side screenshots via RCON (no client needed)
 
-These were checked via the PyPI JSON API and the GitHub REST API on 2026-10-16, with code read but not executed.
-
-| Library | Latest | 15.x secure auth | Packaging | Status |
+| Server binary | `screenshot minimap` (1 px/tile) | `screenshot heightmap` | `screenshot giant` (whole map, isometric, zoom default) | RSS |
 |---|---|---|---|---|
-| **pyOpenTTDAdmin** (`liki-mc/pyOpenTTDAdmin`, PyPI `pyopenttdadmin`) | 1.1.0, 2026-06-12 (first 2024-05) | **Yes**: password PAKE and secret-key, encrypted session (`pyopenttdadmin/auth.py`, bundled Monocypher C extension); plain login via `secure=False` | wheels for cp39–cp314, manylinux/musllinux aarch64 and x86_64, macOS arm64/x86_64, Windows; no runtime deps; sync plus `aiopyopenttdadmin` | active; 7 stars |
-| **libottdadmin2** (`xaroth/libottdadmin2`) | 0.0.4a1 in `setup.py`; **not on PyPI** under that name | **Yes**: secure-auth commits 2024-03-30, merged PR #17 from `rubidium42/pubkey` 2024-07-02; uses `pymonocypher` (4.0.3.4 on PyPI, 2026-10-08) | git install | last push 2024-07-02. **License header: CC BY-NC-SA 3.0 (non-commercial)** |
-| python3-openttd (`horazont`) | 0.2.0, 2021-08-15 | No (pre-14) | PyPI | stale; plain-join only |
-| `openttd-protocol` (`OpenTTD/py-protocol`, official) | 1.7.1 (PyPI 2024-01; repo pushed 2026-01-01) | n/a | PyPI | only game/content/coordinator/STUN/TURN protocols, **no admin protocol** |
-| gopenttd (Go), suds and soap (Supybot), Joan (Java, link in `docs/admin_network.md` is dead) | — | — | — | not Python, or stale |
+| Dedicated-only build (Railhead image) | **works**: 256² → 256x256 PNG, 3.9 KB, 15–55 ms | works | **fails** ("Screenshot failed!", null blitter, no crash) | 7–9 MiB |
+| GUI build run as `-D -b 32bpp-optimized` (`-b` after `-D`) | works | works (NOT RUN) | **works**: 64² → 3969x2135, 1.5 MB in 0.34–0.43 s; 256² → 16257x8271, 28 MB in 4.8 s (macOS) | 58 MiB |
 
-**Recommendation:** Railhead's admin surface is small: join, RCON, poll, update-frequency and GameScript JSON. It is about 200 lines of stdlib Python, as the probe shows, using plain join on a private network. Use pyOpenTTDAdmin if encrypted auth is ever required.
+This was verified on the macOS app 15.2 and on the Linux GUI image 15.3 (64²: 335 ms, 1.5 MB). The dedicated driver allocates a real framebuffer whenever the blitter has a non-zero depth (`src/video/dedicated_v.cpp` `Start`).
 
-### 5.2 RL / LLM projects on OpenTTD
+- **`normal` and `big` screenshots:** these call `GetMainWindow()`, which asserts on a dedicated server (`src/screenshot.cpp:198,242`, `src/window.cpp:1182-1187`), so they are unusable server-side (**NOT RUN**).
+- **Where files land:** in `<personal dir>/screenshot/`. Read them via a volume or `docker exec cat`.
+- **Model-sized views:** crop or downscale the giant image client-side, or use §5.2.
 
-**NOT SURVEYED.** The session's shared web-search budget (200 calls across all agents) was exhausted before this step, and the tool forbids working around it. The only GitHub or PyPI lookups done were direct metadata fetches of known library names. The one OpenTTD-plus-LLM project verified locally is the user's own `~/ottd-claude`: Claude advisor over the admin port, a GameScript for signs, goals and story pages, and a game-port client for building. A proper sweep of GitHub, arXiv and the tt-forums for OpenTTD RL or LLM agents still needs doing.
+### 5.2 GUI client under Xvfb in Docker (the human view, plus computer-use input)
 
-### 5.3 `~/ottd-claude` `game_client.py`: joining as a network game client
+The probe image `railhead/openttd-gui:15.3` is the same Dockerfile with `-DOPTION_DEDICATED=OFF`. It adds these build deps: `libsdl2-dev libfreetype-dev libfontconfig-dev libharfbuzz-dev libicu-dev`. It adds these runtime packages: `libsdl2-2.0-0 libfreetype6 libfontconfig1 libharfbuzz0b libicu76 xvfb xauth scrot xdotool`. Build time was 234 s, 164 s of it compiling. The image is 709 MB on disk, 181 MB compressed. Client launch:
 
-What it does (1,215 lines, read in full where relevant):
+```bash
+rm -f /tmp/.X99-lock    # a restarted container otherwise fails: "Unable to load driver 'sdl'. ... x11 not available"
+Xvfb :99 -screen 0 1280x720x24 -nolisten tcp &
+DISPLAY=:99 SDL_VIDEODRIVER=x11 openttd -v sdl -b 32bpp-optimized -s null -m null -r 1280x720 -x -c ~/c/openttd.cfg -n rhsrv:3979
+#  -n host:port         -> joins as a NEW company (COMPANY_NEW_COMPANY, src/openttd.cpp:444)
+#  -n host:port#1       -> joins company 1;  #255 -> spectator  (src/network/network.cpp:476-500)
+#  client cfg needs [network] client_name = ...  (empty name aborts the join)
+```
 
-- **Join and crypto.** It joins the game port as a regular client with hard-coded `OPENTTD_REVISION = "15.2"` and NewGRF version `0x1F286D64`. It re-implements X25519 key exchange and Monocypher-style ratcheting XChaCha20-Poly1305 using PyNaCl plus a pure-Python HChaCha20.
-- **Map and frames.** It discards the map download (`SERVER_MAP_DATA: pass`) and ACKs frames from a heartbeat task.
-- **Commands.** It sends `CLIENT_COMMAND` packets with a hand-copied `Commands` enum (`CMD_BUILD_RAIL_LONG = 0`, …) and hand-serialized argument tuples.
+Measured, with the server and client in separate containers on one Docker network:
 
-Assessment against a GameScript bridge:
+| Step | Result |
+|---|---|
+| Client joins the dedicated server | **1.2 s** after `docker run`. The server lists `railhead-viewer` in company 1 and founds "railhead-viewer Transport" with £100,000. |
+| Frame capture | `docker exec … scrot` gives a 1280x720 PNG, about 850 KB, in **147 ms** including `docker exec` overhead. It shows the toolbar, viewport, money, date and news. |
+| Input | `xdotool` clicks drove the toolbar, then Road construction, Auto-road and a drag on the map. The road was **built at a cost of £673**, and the admin `companies` money went 100,000 → 99,327, confirming it executed on the server. |
+| Client RSS / CPU | 112–124 MiB, about 25–50% of one core |
+| Server fast-forward with a GUI client attached | 1000% gave 5.0 days/s and 5000% 25.0; 10000% gave 50.2, and 20000% gave **96 days/s, still in sync**. At **40000% the client was dropped**: "Client #3 … is dropped because the client's game state is more than 501 ticks behind". At unlimited speed it was dropped immediately. |
 
-| Concern | Game-client approach | GameScript bridge |
-|---|---|---|
-| Version coupling | The revision string must match exactly. Command IDs and argument layouts are internal C++ enums and tuples that change between releases (`CMD_NAMES` is documented as "not stable"). | The GS API is versioned, and `compat_*.nut` shims keep old scripts working (`Contents/Resources/game/compat_1.2…14.nut`). |
-| Action feedback | **None.** Commands run on every peer at a scheduled frame, and errors only surface in the issuing client's own simulation. A non-simulating ghost client cannot tell success from failure. | Synchronous return values plus `GSError.GetLastErrorString()`. |
-| Observations | None, because the map is discarded. It still needs admin or GS for state. | Full GS read API (tiles, stations, vehicles, cargo). |
-| Reset cost | `newgame`/`load` disconnects game clients. Every reset means reconnect, re-authenticate and re-download the full map. | Admin sessions survive `newgame`/`load` (verified). The GS restarts with the game. |
-| Fast-forward | **Breaks.** The server drops clients more than `max_lag_time` ticks behind (default 500, max 32,000; `src/network/network_server.cpp:1701-1710`). At 60k–400k ticks/s that is 0.1–0.5 s of slack at best. | Unaffected, since the GS runs inside the server tick. |
-| Company control | Occupies a client slot and company. | `GSCompanyMode(cid)` acts for any company (see `03-openttd-source.md` §2.1). |
-| Throughput limit | Network command queue (`commands_per_frame`) | GS opcode budget per tick (`script_max_opcode_till_suspend = 10000`), and the GS↔admin JSON size caps (see `03-openttd-source.md`) |
+### 5.3 Building while paused, which matters for any lockstep "act while paused" design
 
-**Verdict:** the game-client path is a fragile, version-locked, blind actuator, and it is incompatible with fast-forward. Use **Python ⇄ admin port ⇄ GameScript**. Lifecycle goes over admin RCON (`newgame`, `ls` + `load`, `save`, `pause`, `gamespeed`). Actions and observations go over `ADMIN_GAMESCRIPT` / `SERVER_GAMESCRIPT` JSON.
+| Server setting | GUI road build while paused |
+|---|---|
+| `construction.command_pause_level = 1` (default) | **refused**: red box "Can't build road here... Not allowed while paused"; money unchanged |
+| `= 3`, set in `openttd.cfg` at startup | **executed**: money 100,000 → 99,095, date frozen at 1950-01-02 |
+| `setting construction.command_pause_level 3` over RCON | **rejected**: "This command/variable is not available during network games." |
+
+nttd sets the same value (§6).
 
 ---
 
-## 6. Recommended ops recipe for Railhead
+## 6. Prior art: who lets an AI control a company directly
 
-1. **Image:** use the source build from `assets/Dockerfile.openttd-probe`, pinned to one version that also runs on the Mac (15.3 preferred). Keep the `gamespeed` patch.
-2. **One server per env.** Use a unique `-c` dir and ports, `-x`, `-s null -m null`, and plain admin join on a private network. RSS is 7–13 MiB per server.
-3. **Bootstrap once per server:** `setting pause_on_newgame true`.
-4. **Reset:** send `newgame <seed>`, or `ls` then `load <snapshot>`. Wait for admin `WELCOME`, which takes 65–130 ms. Then send `gamespeed 0`, or another chosen speed, because each reset puts it back to 100.
-5. **Step:** `unpause`, wait for the target `DATE` push (or a GS signal), then `pause`.
-6. **Snapshot or fork:** `save <name>` takes 27–86 ms. Run `ls` before any `load`.
-7. **Safety:** put a timeout on every process launch, which matters most on macOS (§1.1 `-X` hang), and never use `-X` on macOS.
+Searches were run on 2026-10-16. Metadata comes from the PyPI JSON API and the GitHub REST API, and code was read, not executed.
+
+| Project | Control channel | OpenTTD version | Status | Notes |
+|---|---|---|---|---|
+| **nttd** (`deepsaia/nttd`, PyPI `nttd` 0.0.7) | Dedicated server, **admin port** (`pyopenttdadmin`), a **GameScript bridge** (`ottd_config/game/nttd-gs/main.nut`, 5,682 lines, `GSCompanyMode(cid)`), plus an idle AI | 15.3 (macOS app) | Apache-2.0, 3 stars, created 2026-03-10, pushed 2026-09-05; "developed and tested on macOS only" | Agent-agnostic "long-horizon planning benchmark". REST, **MCP** (5 tools) and **Gym** (`NttdEnv`) surfaces. 76 participant actions bounded by **human parity, "the GUI"**. Real-time and **stepped** modes at 1x (about 1.97 s/day), with no speed control. Sets `command_pause_level = 3`. Scores to parquet. Reference agents in `deepsaia/nttd-workbench`. |
+| **pyttd** (`mssc89/pyttd`, PyPI 1.3.0) | **Network game client**: joins as a player, sends DoCommands, parses the map/savegame | "Tested with 14.1" | MIT, 0 stars, 2025-08 | Its packet enum is the pre-14 auth flow (`SERVER_NEED_GAME_PASSWORD`…). 15.3 uses `SERVER_AUTH_REQUEST`/`ENABLE_ENCRYPTION` (`src/network/core/tcp_game.h`), so it **will not join 15.x** as is. |
+| **OpenTTDLab** (`michalc/OpenTTDLab`) | Runs **NoAI** scripts headless, then parses savegames | ≤ 13.4 ("does not support 14.*") | GPL-2.0, 49 stars, pushed 2025-06 | Reproducible AI experiments and BaNaNaS download, not interactive control |
+| **RSI-bench "OpenTTD Transport AI"** task | The agent **improves a NoAI script**, which is replayed 20 game years on sealed seeds and scored by company value | unknown | site unreachable from here (DNS failure); details from the search snippet only, **unverified** | Indirect control: the model writes the policy, not the moves |
+| TycoonLE | JAX environment "inspired by" OpenTTD; not OpenTTD | — | one blog source, no repository found, **unverified** | |
+| Academic NoAI work | DTU 2011 thesis "SPRING"; Utrecht thesis on grammatical evolution and dynamic scripting AIs | old | — | |
+| GUI or computer-use agents playing OpenTTD | — | — | **none found** | §5.2 shows it is technically feasible |
+
+Admin-port Python libraries:
+
+| Library | 15.x secure auth | Status |
+|---|---|---|
+| **pyOpenTTDAdmin** (PyPI `pyopenttdadmin` 1.1.0, 2026-06-12) | Yes (bundled Monocypher C extension; wheels cp39–cp314, Linux aarch64/x86_64, macOS) | active; nttd depends on it |
+| libottdadmin2 (`xaroth`, 0.0.4a1, git only) | Yes (2024 PR from `rubidium42`), needs `pymonocypher` | last push 2024-07; **CC BY-NC-SA 3.0** licence header |
+| python3-openttd (`horazont`, 0.2.0, 2021) | No | stale |
+| `openttd-protocol` (official `OpenTTD/py-protocol`) | n/a, no admin protocol | backend services only |
+
+---
+
+## 7. Direct-control channels compared (with this session's measurements)
+
+| Channel | Same action set as a human? | Feedback | Survives fast-forward? | Version coupling | Cost |
+|---|---|---|---|---|---|
+| **GameScript bridge in company mode** (admin `ADMIN_GAMESCRIPT` ⇄ GS) | Close. `GSCompanyMode` covers rail, road, stations, vehicles, orders, loan and terraform (see `03-openttd-source.md` §2.1). GUI-only conveniences must be re-implemented. | Synchronous return plus `GSError` | **Yes.** It runs inside the server tick, and the GS loop reached 90k iterations/s at unlimited speed. | GS API versioned, with compat shims | about 8 MiB per env |
+| **NoAI script** (`start_ai`) | Same API family as GS, company-bound | In-script only | Yes | Same | The model writes code rather than playing |
+| **Network game client bot** (pyttd-style) | Yes: raw DoCommands, exactly what the GUI sends | None unless it simulates. Command errors surface only in the issuing client's own simulation. | **No.** It is dropped above `max_lag_time` (500, max 32,000 ticks) unless it simulates as fast as the server. | **Exact revision.** Internal command IDs and argument layouts change per release, and 15.x adds encryption (pyttd is already broken). | Must also handle the full map download per reset |
+| **GUI client plus computer use** (Xvfb, scrot, xdotool) | **Exactly the human action set** | Visual: error boxes, cost labels, money | Up to about 200x (96 days/s on 128²), dropped at 400x+ | Same revision as the server (same image recipe) | about 120 MiB, a 709 MB image, and per-frame screenshot plus model latency |
+
+**Recommendation:** use the GameScript company-mode bridge as the primary action and observation channel, since it is fast-forward safe. Offer the Xvfb GUI client as an optional visual channel, and as an optional pure computer-use control mode, run lockstep with the world paused (`command_pause_level = 3`) or at ≤200x. Server-side `minimap` (cheap) and `giant` (GUI build only) screenshots give a visual observation without any client.
+
+---
+
+## 8. Ops recipe
+
+1. **Image:** use `assets/Dockerfile.openttd-probe`, which is 15.3 plus the patch, dedicated-only, 191 MB. Pin the same 15.3 on any macOS dev box, because a GUI client must match the server revision exactly.
+2. **Per env:** one server with its own `-c` dir and ports, plus `-x`. Config: no `[version]` section, `allow_insecure_admin_login = true`, `[construction] command_pause_level = 3`, `autosave_interval = 0`.
+3. **Bootstrap once:** `setting pause_on_newgame true`.
+4. **Reset:** `newgame <seed>`, or `ls` then `load <snapshot>`. Wait for `WELCOME` (65–130 ms), then send `gamespeed 0` (or the chosen speed) again.
+5. **Step:** `unpause`, then wait for the target `DATE` or a GS signal, then `pause`. While paused at gamespeed 0, RCON and GS round trips take about 1–2 ms.
+6. **Snapshot:** `save <name>` takes 27–86 ms. Send `ls` before any `load`.
+7. **Visual (optional):** send `screenshot minimap <name>` over RCON, or attach an Xvfb GUI client and keep the speed at ≤200x while it is attached.
+8. **Safety:** put timeouts on every launch (macOS `-X` hang), and clear `/tmp/.X99-lock` before restarting an Xvfb client container.
 
 ### Files produced (scratchpad, not committed)
 
-- `$SCRATCH/client/probe_admin.py` — stdlib admin client with all scenarios
-- `$SCRATCH/client/probe_ffwd.py`, `probe_ffwd_save.py`, `rcon_cli.py` — fast-forward and RCON helpers
-- `$SCRATCH/ottd/launch_dedicated.sh`, `$SCRATCH/ottd/openttd.min.cfg`, `$SCRATCH/ottd/openttd.full-15.2.cfg` (the full 460-line 15.2 settings dump)
-- `$SCRATCH/docker/final/Dockerfile` (= asset), `$SCRATCH/docker/gamespeed.patch`
+`$SCRATCH` = `/private/tmp/claude-501/-Users-rachitt/a8c1f8a7-1e71-4e78-bc25-15b2761b9b4f/scratchpad`
 
-`$SCRATCH` = `/private/tmp/claude-501/-Users-rachitt/a8c1f8a7-1e71-4e78-bc25-15b2761b9b4f/scratchpad`.
+- **Clients:**
+  - `$SCRATCH/client/probe_admin.py` (stdlib admin client, written from the 15.x source)
+  - `rcon_cli.py`, `probe_ffwd.py`, `probe_ffwd_save.py`, `probe_gs_tick.py`
+- **GameScript:** `$SCRATCH/gs/RHTick/{info,main}.nut` (tick probe)
+- **Docker:**
+  - `$SCRATCH/docker/v2/Dockerfile` (= the asset)
+  - `$SCRATCH/docker/gui/Dockerfile` (GUI/Xvfb probe)
+  - `$SCRATCH/docker/railhead-gamespeed-15.3.patch`
+- **Configs:**
+  - `$SCRATCH/docker/*.cfg` (server and client configs)
+  - `$SCRATCH/ottd/openttd.full-15.2.cfg` (full 460-line settings dump)
+- **Frames:** `$SCRATCH/shots/*.png`, the Xvfb client frames and server-side screenshots referenced above
+- **Images kept locally:** `railhead/openttd:15.3` and `railhead/openttd-gui:15.3`

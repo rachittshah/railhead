@@ -26,7 +26,8 @@
 | Replay format | `SERVER_CMD_LOGGING` = (client_id, company, cmd_id, arg-buffer, exec frame). Native replay exists only behind compile flag `DEBUG_DUMP_COMMANDS` reading `commands.log` (from `-d desync=1` output `commands-out.log`) | §5 |
 | Seed | `-G <seed>` or console `newgame <seed>`; **cannot** be set in `openttd.cfg` (`NotInConfig`) | `openttd.cpp:637-643`, `world_settings.ini:200-208` |
 | **Human-parity command coverage via GS** | Of 145 commands, 100 are player-facing: **68 directly exposed, 11 reachable by other calls, 21 not reachable** (timetables, service interval, road waypoints, engine previews, mergers, …) | §7 |
-| **Map image on dedicated** | `screenshot minimap` / `screenshot heightmap` need no blitter and should work over RCON; rendered `giant`/`normal` fail with stock `-D` (null blitter) unless `-b 32bpp-simple` follows `-D` (UNVERIFIED) | §8 |
+| **Map image on dedicated** | **Yes** for `screenshot minimap` / `screenshot heightmap` (runtime-verified on 15.3, null blitter). **No** for `giant`/`normal`/`viewport` ("Screenshot failed!"); dedicated-only builds compile no 8/32 bpp blitters at all | §8, §13 |
+| **15.3 patches** | `gamespeed` (sticky on dedicated), 1 ms paused frames, GS→admin JSON ≤32,747 B with a clean refusal above. All pass `git apply --check` on tag 15.3, build cleanly, and pass the project's engine-patch tests | §12, `assets/patches/` |
 
 ---
 
@@ -183,6 +184,8 @@ Budgets are opcode counts, not wall time.
 `-v null:ticks=N` runs `GameLoop()` N times with no sleep, optional exit-save, then exits — `null_v.cpp:33,49-64`. It never sets `_is_network_server` (only `dedicated_v.cpp:204-205` and GUI code do), so `NetworkServerStart` is never called (`openttd.cpp:1031-1044`) and there is no admin port. It is usable only for offline batch rollouts where the GS itself is the policy.
 
 ### 3.3 Minimal patch (recommended)
+> Superseded by the verified 15.3 diffs in §12 and `assets/patches/`. The sketch below is kept for context.
+
 1. New console command, ~15 lines in `src/console_cmds.cpp` (register next to `pause`, `console_cmds.cpp:2977`; needs `#include "gfx_func.h"`):
 ```cpp
 static bool ConGameSpeed(std::span<std::string_view> argv)
@@ -529,10 +532,10 @@ Verified by listing every `static` function in the relevant `script_*.hpp` and g
 
 | Type (`screenshot <type> [<name>]`) | Content | Works with stock `-D`? | Evidence |
 |---|---|---|---|
-| `minimap` | 1 px per tile, 32 bpp. Owner view only: company colours, industries dark grey, houses/town roads dark red, water, else land; no vehicles; rail and road not distinguished | **Yes, from code.** No blitter needed; company colours come from recolour sprites loaded after generation and load (`genworld.cpp:341`, `afterload.cpp:249`, `main_gui.cpp:553-561`); legend rebuilt on company creation and load (`company_cmd.cpp:646`, `afterload.cpp:310`). Not run (UNVERIFIED at runtime) | `screenshot.cpp:473-503`, `smallmap_gui.cpp:580-607` |
-| `heightmap` | 8 bpp greyscale, 1 px per tile, normalized to highest peak | **Yes, from code** (UNVERIFIED at runtime) | `screenshot.cpp:314-333` |
+| `minimap` | 1 px per tile, 32 bpp. Owner view only: company colours, industries dark grey, houses/town roads dark red, water, else land; no vehicles; rail and road not distinguished | **Yes, from code.** No blitter needed; company colours come from recolour sprites loaded after generation and load (`genworld.cpp:341`, `afterload.cpp:249`, `main_gui.cpp:553-561`); legend rebuilt on company creation and load (`company_cmd.cpp:646`, `afterload.cpp:310`). **Runtime-verified on 15.3 (§13)** | `screenshot.cpp:473-503`, `smallmap_gui.cpp:580-607` |
+| `heightmap` | 8 bpp greyscale, 1 px per tile, normalized to highest peak | **Yes; runtime-verified on 15.3 (§13)** | `screenshot.cpp:314-333` |
 | `viewport`, `normal`, `big`, `giant` | Sprite-rendered isometric images; `giant` covers the whole map at normal zoom | **No** with stock `-D`. `-D` forces the `null` blitter (`openttd.cpp:540`), which reports depth 0 (`blitter/null.hpp:18`), and image writers accept only 8/32 bpp (`screenshot_png.cpp:44`; BMP switch at `screenshot_bmp.cpp:49`), so the result is "Screenshot failed!" | `screenshot.cpp:274-285` |
-| same, with `-D -b 32bpp-simple` (blitter flag **after** `-D`) | Full rendered image | **Plausible, UNVERIFIED.** Option parsing lets a later `-b` override `-D`'s blitter (`openttd.cpp:535-540`), and the dedicated driver allocates a video buffer when depth ≠ 0 (`dedicated_v.cpp:109-110`). Needs the base graphics set. `giant` is very large: whole map at `ZoomLevel::WorldScreenshot = Normal` (`zoom_type.h:42`), roughly 32·(X+Y) × 16·(X+Y) px, ≈16k×8k for 256×256 (estimate) | `screenshot.cpp:274-285`, `SetupScreenshotViewport` SC_WORLD branch |
+| same, with `-D -b 32bpp-simple` (blitter flag **after** `-D`) | Full rendered image | **Not with a dedicated-only build** (`-DOPTION_DEDICATED=ON` compiles no 8/32 bpp blitters, `src/blitter/CMakeLists.txt:1-16`; observed hang on a macOS error dialog, §13). With a full build it is plausible but UNVERIFIED: option parsing lets a later `-b` override `-D`'s blitter (`openttd.cpp:535-540`), and the dedicated driver allocates a video buffer when depth ≠ 0 (`dedicated_v.cpp:109-110`). Needs the base graphics set. `giant` is very large: whole map at `ZoomLevel::WorldScreenshot = Normal` (`zoom_type.h:42`), roughly 32·(X+Y) × 16·(X+Y) px, ≈16k×8k for 256×256 (estimate) | `screenshot.cpp:274-285`, `SetupScreenshotViewport` SC_WORLD branch |
 
 Operational notes:
 - **Availability:** `screenshot` has no console hook, so it works on a dedicated server and over RCON — `console_cmds.cpp:2895`.
@@ -592,4 +595,245 @@ Python env (Gymnasium) ──TCP 127.0.0.1:admin_port──► openttd -D (patch
 | 17 | Admin auth timeout 10 s; RCON content commands are async | Low | Connect promptly; avoid `content` over RCON |
 | 18 | **GS route lacks 21 of 100 player commands** (timetables, service intervals, road waypoints, semaphores/signal conversion, engine previews, mergers, force-proceed, give money, …) — violates "same action set as a human" | High | §7.5 option B (raw-command admin packet with client-equivalent validation) or option C (headless game client) |
 | 19 | Raw-command path (B/C) needs per-command argument encoders tied to the exact binary | Med | Generate encoders from `CommandTraits<>::Args` in the pinned source; cross-check against CMD_LOGGING bytes from GS-issued equivalents |
-| 20 | Rendered screenshots fail under stock `-D` (null blitter); screenshots complete asynchronously after RCON_END | Low | Use `minimap`/`heightmap`, or `-D -b 32bpp-simple` (UNVERIFIED); wait for the console "successfully saved" line |
+| 20 | Rendered screenshots fail under stock `-D` (null blitter) and are impossible in a dedicated-only build (no 8/32 bpp blitters compiled); screenshots complete asynchronously after RCON_END | Low | Use `minimap`/`heightmap` (runtime-verified, §13); wait for the console "successfully saved" line |
+| 21 | Dedicated-server stdin console reads lines through `std::cin` after a raw `select()`, so lines arriving together get stuck in the C++ buffer until more input arrives (observed at runtime) | Low | Drive the console only via admin RCON, never via stdin |
+| 22 | Project `wire.py` encoder allows outbound frames up to 65535 bytes, but the server drops any connection whose packet exceeds 32767 (`packet.cpp:267`, `tcp.cpp:126`) | Low | Cap outbound frames at 32767 in `wire.py` (admin→GS JSON is capped at 8999 anyway) |
+
+---
+
+## 11. (A) Player command coverage — re-verified on 15.3
+
+The full per-command table (all 100 player-facing commands, each with its GS function under `GSCompanyMode` or NOT EXPOSED) is **§7.2**. The non-player commands are in §7.3, the gaps in §7.4, and what a human sees that scripts cannot query in §7.6. This section re-checks it against **15.3** and adds the detail requested for signals, order flags, timetables, groups, autoreplace and autorenew, refit, town actions and company settings.
+
+**15.3 delta.** I diffed `src/` of 15.2 (c91185eb) against 15.3 (14ec60f2). The files that matter here are unchanged: `src/command_type.h`, every `*_cmd.h`, and every `src/script/api/*` file except one. That exception is `script_tile.cpp:51`, where `IsBuildableRectangle` now rejects 0×0 rectangles. Other 15.3 changes (aircraft, order condition clamping, the train-crash evaluation order, GUI) do not change the API. **The §7.2 counts hold for 15.3: 68 YES, 11 EQUIV, 21 NOT EXPOSED.** Line numbers in §7 are identical in 15.3 for all script API files except `script_tile.cpp`.
+
+### 11.1 Signals (`GSRail`)
+| Human option | Script | Evidence |
+|---|---|---|
+| Block, entry, exit, combo, path (PBS), one-way path signals | `BuildSignal(tile, front, SIGNALTYPE_NORMAL/ENTRY/EXIT/COMBO/PBS/PBS_ONEWAY)` | script_rail.hpp:70-75 |
+| Two-way variants | `SIGNALTYPE_*_TWOWAY` (bit 8) | script_rail.hpp:77-81 |
+| Semaphore vs electric | **NOT EXPOSED**: always `SIG_ELECTRIC` | script_rail.cpp:469 |
+| Convert or cycle an existing signal, drag with density, autofill | **NOT EXPOSED** (remove and rebuild, or loop per tile) | CMD_BUILD_SIGNAL_TRACK is not referenced in script api |
+| Remove signal | `RemoveSignal` | script_rail.cpp:488 |
+| Read signal type | `GetSignalType` | script_rail.hpp |
+| Read signal aspect or reservation | **NOT EXPOSED** | no getter |
+
+### 11.2 Order flags (`GSOrder`)
+Mapping from script flags to engine fields — script_order.hpp:46-81, script_order.cpp:484-530; engine enums at order_type.h:67-137.
+| Human GUI option | Script flag or call | Engine field |
+|---|---|---|
+| Non-stop | `OF_NON_STOP_INTERMEDIATE` | `OrderNonStopFlag::NoIntermediate` |
+| **Go via** ("Go via" / "Go non-stop via", english.txt:4638-4639) | `OF_NON_STOP_DESTINATION` (± `OF_NON_STOP_INTERMEDIATE`) | `OrderNonStopFlag::NoDestination` (script_order.cpp:527) |
+| Full load all / full load any | `OF_FULL_LOAD` / `OF_FULL_LOAD_ANY` | `OrderLoadType::FullLoad` / `FullLoadAny` |
+| No loading | `OF_NO_LOAD` | `OrderLoadType::NoLoad` |
+| Unload all / transfer / no unloading | `OF_UNLOAD` / `OF_TRANSFER` / `OF_NO_UNLOAD` | `OrderUnloadType::*` |
+| Go to depot / service at depot / stop in depot / nearest depot | `OF_*` depot flags with a depot tile, plus `OF_SERVICE_IF_NEEDED` / `OF_STOP_IN_DEPOT` / `OF_GOTO_NEAREST_DEPOT` | `OrderDepotTypeFlag::Service`, `OrderDepotActionFlag::Halt` / `NearestDepot` (script_order.cpp:487-492) |
+| **Unbunch at depot** | **NOT EXPOSED** (script only sets Halt/NearestDepot) | `OrderDepotActionFlag::Unbunch` (order_type.h:120) |
+| Platform stop location (near, middle, far) | `SetStopLocation` (new station orders default to far end, script_order.cpp:516) | `OrderStopLocation` |
+| Refit at station/depot | `SetOrderRefit(cargo)` | CMD_ORDER_REFIT |
+| Conditional orders: load %, reliability, max reliability, max speed, age, requires service, always, remaining lifetime | `OC_*` (all 8 engine variables) + `SetOrderCompareFunction/Value/JumpTo` | script_order.hpp:92-99 vs order_type.h:129-136 |
+| Waypoint order | `AppendOrder(waypoint tile, flags)` → `MakeGoToWaypoint` | script_order.cpp:520-521 |
+| Skip, move, delete, share, copy, unshare | `SkipToOrder`, `MoveOrder`, `RemoveOrder`, `ShareOrders`, `CopyOrders`, `UnshareOrders` | §7.2 |
+| **Timetable** (wait/travel times, max speed per order, autofill, start date, "on time") | **NOT EXPOSED** (no read, no write) | CMD_CHANGE_TIMETABLE, BULK_CHANGE_TIMETABLE, SET_VEHICLE_ON_TIME, AUTOFILL_TIMETABLE, SET_TIMETABLE_START are not referenced in script api |
+
+### 11.3 Groups, autoreplace, autorenew
+| Human option | Script | Notes / evidence |
+|---|---|---|
+| Create, rename, delete, nest groups | `GSGroup.CreateGroup`, `SetName`, `DeleteGroup`, `SetParent` | script_group.cpp:37-85 |
+| Move a vehicle to a group | `MoveVehicle` | :138. "Add shared vehicles" and "remove all" need loops |
+| Group livery | `SetPrimaryColour`/`SetSecondaryColour` | :228,236 |
+| Replace protection | `EnableAutoReplaceProtection` | :101 |
+| Autoreplace engine X→Y (per group, incl. all and ungrouped) | `SetAutoReplace(group, old, new)`; `GROUP_ALL`/`GROUP_DEFAULT` allowed | :157-161. The **"replace only when old" toggle is NOT EXPOSED**: always passes `when_old=false` (autoreplace_cmd.h:19) |
+| Stop autoreplace | `StopAutoReplace` | :177 |
+| Wagon removal | `EnableWagonRemoval` (company setting `renew_keep_length`) | :146 |
+| Autorenew on/off, months, money | `GSCompany.SetAutoRenewStatus/Months/Money` | script_company.cpp:319,335,351 |
+| Depot "autoreplace all now" | **NOT EXPOSED** | CMD_DEPOT_MASS_AUTOREPLACE |
+
+### 11.4 Refit
+| Human option | Script | Notes |
+|---|---|---|
+| Build with refit | `BuildVehicleWithRefit(depot, engine, cargo)` | |
+| Refit whole vehicle to cargo | `RefitVehicle(vehicle, cargo)` | Subtype fixed to 0, whole vehicle (script_vehicle.cpp:165). **NewGRF refit subtypes and refitting only part of a train are NOT EXPOSED** |
+| Refit capacity preview | `GetRefitCapacity`, `GetBuildWithRefitCapacity` | QueryCost run (script_vehicle.cpp:156) |
+| Refit as part of orders | `SetOrderRefit` | |
+
+### 11.5 Town actions (`GSTown.PerformTownAction`, company mode, script_town.cpp:276)
+All 8 local-authority actions are exposed: `TOWN_ACTION_ADVERTISE_SMALL/MEDIUM/LARGE`, `ROAD_REBUILD`, `BUILD_STATUE`, `FUND_BUILDINGS`, `BUY_RIGHTS`, `BRIBE` (script_town.hpp:35-77). Availability and state are readable via `IsActionAvailable`, `GetRating`, `GetDetailedRating`, `HasStatue`, `GetExclusiveRightsCompany/Duration`, `GetFundBuildingsDuration`, `GetRoadReworkDuration`.
+
+### 11.6 Company settings (`company_settings.ini`, 9 settings)
+| Setting | Script setter | Script getter |
+|---|---|---|
+| `engine_renew`, `engine_renew_months`, `engine_renew_money` | `SetAutoRenewStatus/Months/Money` | `GetAutoRenewStatus/Months/Money` |
+| `renew_keep_length` (wagon removal) | `GSGroup.EnableWagonRemoval` | `GSGroup.HasWagonRemoval` |
+| `vehicle.servint_ispercent`, `servint_trains`, `servint_roadveh`, `servint_ships`, `servint_aircraft` | **NOT EXPOSED** | **NOT EXPOSED** |
+
+Also not exposed: per-vehicle service interval (CMD_CHANGE_SERVICE_INT) and the full manager face (only gender via `SetPresidentGender`).
+
+### 11.7 What a human sees that scripts cannot query
+Unchanged in 15.3; see §7.6. In short: timetables and lateness, service intervals, the "lost" flag, signal aspects and PBS reservations, sub-tile vehicle position and heading, cargo source and age, finance categories, rating breakdowns, most news events (engine available or preview, unprofitable, waiting in depot, aircraft range, autoreplaced, merger offers), and all rendered imagery.
+
+---
+
+## 12. (B) Engine patches for 15.3 — exact diffs, verified
+
+**Files:** `docs/research/assets/patches/0001-gamespeed-console-command.patch`, `0002-paused-interval-unlimited-speed.patch`, `0003-gamescript-admin-json-32k.patch`.
+
+**Verification performed:**
+1. **Apply check.** `git apply --check` succeeded on a pristine `15.3` tag checkout (commit 14ec60f2), for each patch alone and for all three stacked. The patches touch disjoint files.
+2. **Build.** All three applied with `git apply`, then a Release build with `-DOPTION_DEDICATED=ON`, Ninja, Apple clang on macOS. Result: 857/857 targets, `BUILD_EXIT=0`, no errors, no warnings in any touched file.
+3. **Project integration tests.** I ran `tests/integration/test_engine_patches.py` with `RAILHEAD_OPENTTD` pointing at that binary, using the project venv. Four tests passed: `gamespeed` replies, a year (365 days) in under 15 s at speed 0, a 20,000-byte GS→admin message round-trips intact through `wire.py`, and a 40,000-byte message is refused with `ERR_SEND_FAILED` while the script survives. One test failed, `test_reseed_console_command_exists`; that `reseed` command belongs to the project's own patch set and is not part of this request.
+4. **Console runtime check** (stdin console, 64×64 map, seed 42):
+
+| Command | Logged result |
+|---|---|
+| `gamespeed` | `Game speed: 100` |
+| `gamespeed 0` | `Game speed: 0`. The date ran from 1950-01-07 to 2032-10-17 in about 13 s wall time on an empty map, so this is an upper bound |
+| `save t1`, `newgame 7`, `gamespeed` | `Game speed: 0` (kept across new game) |
+| `load t1.sav`, `gamespeed` | `Game speed: 0` (kept across load) |
+
+### 12.1 Patch 1 — `gamespeed` console command, sticky on dedicated servers
+```diff
+--- a/src/console_cmds.cpp
++++ b/src/console_cmds.cpp
+@@ -30,6 +30,7 @@
+ #include "window_func.h"
++#include "gfx_func.h"
+@@ -817,6 +818,33 @@
++static bool ConGameSpeed(std::span<std::string_view> argv)
++{
++	if (argv.empty()) {
++		IConsolePrint(CC_HELP, "Set the game speed in percent of normal speed, 0 means unlimited. Usage: 'gamespeed [<percent>]'.");
++		IConsolePrint(CC_HELP, "A dedicated server keeps a non-default speed when a new game is started or a savegame is loaded; 'gamespeed 100' restores the default.");
++		return true;
++	}
++	if (argv.size() == 1) {
++		IConsolePrint(CC_DEFAULT, "Game speed: {}", _game_speed);
++		return true;
++	}
++	if (argv.size() != 2) return false;
++	auto speed = ParseInteger<uint16_t>(argv[1]);
++	if (!speed.has_value()) {
++		IConsolePrint(CC_ERROR, "'{}' is not a valid game speed.", argv[1]);
++		return true;
++	}
++	_game_speed = *speed;
++	_game_speed_sticky = (_game_speed != 100);
++	IConsolePrint(CC_DEFAULT, "Game speed: {}", _game_speed);
++	return true;
++}
+@@ -2976,6 +3004,7 @@ void IConsoleStdLibRegister()
+ 	IConsole::CmdRegister("unpause",                 ConUnpauseGame,      ConHookServerOrNoNetwork);
++	IConsole::CmdRegister("gamespeed",               ConGameSpeed,        ConHookServerOrNoNetwork);
+--- a/src/gfx.cpp
++++ b/src/gfx.cpp
+ uint16_t _game_speed = 100; ///< Current game-speed; 100 is 1x, 0 is infinite.
++bool _game_speed_sticky = false; ///< Whether a dedicated server keeps #_game_speed when a game is (re)initialised; set by the 'gamespeed' console command.
+--- a/src/gfx_func.h
++++ b/src/gfx_func.h
+ extern uint16_t _game_speed;
++extern bool _game_speed_sticky;
+--- a/src/misc.cpp
++++ b/src/misc.cpp
++#include "network/network.h"
+ #include "network/network_func.h"
+@@ void InitializeGame(...)
+ 	_pause_mode = {};
+-	_game_speed = 100;
++	/* A dedicated server keeps the game speed set via the 'gamespeed' console command (e.g. over the admin port's rcon). */
++	if (!(_network_dedicated && _game_speed_sticky)) _game_speed = 100;
+```
+(Abridged hunks shown; the `.patch` file is the exact, applicable version.)
+- **Who can use it:** `ConHookServerOrNoNetwork` (`console_cmds.cpp:221-228`) refuses network clients, so only the server or a single-player game can change speed. RCON reaches it because admin RCON runs `IConsoleCmdExec` on the server (`network_admin.cpp:495-496`).
+- **Sticky condition:** the speed is kept only when `_network_dedicated` is true, which `dedicated_v.cpp:205` sets before any load, and the speed was set to something other than 100. `gamespeed 100` restores stock behaviour.
+- **Output format:** matches the project's existing test contract, `Game speed: N`, for both query and set.
+
+### 12.2 Patch 2 — 1 ms paused frames at unlimited speed
+```diff
+--- a/src/video/video_driver.hpp
++++ b/src/video/video_driver.hpp
+@@ -305,8 +305,9 @@ protected:
+ 		TicToc::Tick("GameTick");
+ 
+-		/* If we are paused, run on normal speed. */
+-		if (_pause_mode.Any()) return std::chrono::milliseconds(MILLISECONDS_PER_TICK);
++		/* If we are paused, run on normal speed; with unlimited game speed keep the
++		 * paused frames short so network/admin traffic is handled with low latency. */
++		if (_pause_mode.Any()) return _game_speed == 0 ? std::chrono::milliseconds(1) : std::chrono::milliseconds(MILLISECONDS_PER_TICK);
+```
+- **Effect:** the dedicated loop sleeps until `next_game_tick` (`video_driver.cpp:173-185`). While paused at speed 0, each frame now lasts about 1 ms instead of 27 ms. That frame is where admin packets are read, commands executed and the GS runs (§1.1, §2.2). The CPU cost is small because the loop still sleeps.
+- **Side effect:** a GUI single-player game paused while fast-forward is set to unlimited also spins paused frames at 1 kHz. Game state is unaffected; GS ticks and landscaping-limit refills per wall second rise.
+- **Verification:** compiled, and the lockstep `step` test passed. The 1 ms interval itself was not timed.
+
+### 12.3 Patch 3 — GS→admin JSON up to 32,747 bytes, refused cleanly above
+```diff
+--- a/src/network/core/config.h
++++ b/src/network/core/config.h
+ static const uint NETWORK_GAMESCRIPT_JSON_LENGTH    = 9000;           ///< ...
++static const size_t NETWORK_GAMESCRIPT_JSON_SEND_LENGTH = TCP_MTU - 20; ///< The maximum length of a gamescript json string sent to admins, in bytes excluding '\0': TCP_MTU minus packet size (2), packet type (1), encryption MAC (16) and '\0' (1).
+--- a/src/network/network_admin.cpp
++++ b/src/network/network_admin.cpp
+ NetworkRecvStatus ServerNetworkAdminSocketHandler::SendGameScript(std::string_view json)
+ {
+-	auto p = std::make_unique<Packet>(this, ADMIN_PACKET_SERVER_GAMESCRIPT);
++	/* GameScript JSON may be larger than COMPAT_MTU; allow up to TCP_MTU. */
++	auto p = std::make_unique<Packet>(this, ADMIN_PACKET_SERVER_GAMESCRIPT, TCP_MTU);
++	if (!p->CanWriteToPacket(json.size() + 1)) {
++		Debug(net, 1, "[admin] GameScript JSON of {} bytes does not fit in a packet for '{}' ({}); dropped", json.size(), this->admin_name, this->admin_version);
++		return NETWORK_RECV_STATUS_OKAY;
++	}
+ 
+ 	p->Send_string(json);
+--- a/src/script/api/script_admin.cpp
++++ b/src/script/api/script_admin.cpp
+-	NetworkAdminGameScript(json.dump());
++	/* Replace invalid UTF-8 instead of letting nlohmann throw from inside a script call. */
++	std::string data = json.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
++	if (data.size() > NETWORK_GAMESCRIPT_JSON_SEND_LENGTH) {
++		ScriptLog::Error(fmt::format("Send data is too large for the AdminPort ({} > {} bytes). No data sent.", data.size(), NETWORK_GAMESCRIPT_JSON_SEND_LENGTH));
++		sq_pushinteger(vm, 0);
++		return 1;
++	}
++
++	NetworkAdminGameScript(data);
+--- a/src/script/api/script_admin.hpp
++++ b/src/script/api/script_admin.hpp
+-	 * @note If the resulting JSON of your table is larger than 1450 bytes,
++	 * @note If the resulting JSON of your table is larger than 32747 bytes,
+```
+- **Why 32747:** a Packet's buffer starts with 2 size bytes, plus 16 MAC bytes if the admin session is encrypted, then 1 type byte (`packet.cpp:48-60`). `CanWriteToPacket` compares the total against the limit (`packet.cpp:90-93`). So the largest string that fits on an encrypted session is 32767 − 2 − 16 − 1 − 1 (NUL) = 32747. A single limit keeps the GS's success or failure independent of each admin's auth method. The extra `CanWriteToPacket` check in `SendGameScript` means a future caller can never hit the `Send_string` assert (`packet.cpp:174`).
+- **The `error_handler_t::replace` change** is a small hardening beyond the request. The stock `json.dump()` uses nlohmann's strict mode, which throws `type_error` on invalid UTF-8 in a Squirrel string. What that exception would do to the server was not tested (UNVERIFIED).
+- **Compatibility:** admin tools that assume server packets are at most 1460 bytes could break when a GS sends more. Any client that honours the 2-byte size field is fine.
+
+### 12.4 Can Python admin clients receive packets larger than 1460 bytes? **Yes, up to 32767.**
+- **Server side:** a packet of any size up to its limit is queued whole and written with partial-write handling. `SendPackets` loops `TransferOut` until the packet is drained (`tcp.cpp:76-113`); there is no 1460-byte segmentation. The size field is a 16-bit little-endian integer (`packet.cpp:71-72`). Values up to 32767 never set the high bit that is reserved for future larger packets (`config.h:31-45`), so the stock framing holds unchanged.
+- **Client side:** the project's `src/railhead/wire.py` `FrameDecoder` accepts any size from 3 to 65535 (`MAX_PACKET_SIZE = 0xFFFF`). It was runtime-proven with the 20,000-byte echo (§12, verification item 3). Other third-party admin libraries were not checked (UNVERIFIED).
+- **Caveat, other direction:** the server's *receive* limit is 32767 (`tcp.cpp:126`, `packet.cpp:267`). `wire.py`'s encoder allows up to 65535 outbound; a larger frame would make the server close the connection (risk 22).
+
+### 12.5 Differences from the project's `engine/patches/` (written in parallel)
+| Topic | `engine/patches` (project) | This deliverable |
+|---|---|---|
+| Speed across new game and load | Reset to 100 every time | Kept on dedicated servers when set via console or RCON |
+| GS JSON limit | `TCP_MTU - 32`, check only in `ScriptAdmin::Send` | `TCP_MTU - 20` (exact for encrypted sessions), plus a `CanWriteToPacket` guard in `SendGameScript`, plus a UTF-8-safe `dump` |
+| Extras | `reseed` console command | none |
+| Paused interval | Same 1 ms logic | Same |
+
+Adopting 12.1 makes the bridge's single `gamespeed 0` call survive the `load` used for forks.
+
+---
+
+## 13. (C) Map images from a dedicated server with the null blitter — **yes for `minimap` and `heightmap`, no for rendered views**
+
+Runtime-verified on the patched 15.3 dedicated build. The patches don't touch screenshot code, so stock 15.3 behaves the same. The server ran `-D` with the null blitter forced (`openttd.cpp:540`), a 64×64 map, seed 42 and `[misc] screenshot_format = png`.
+
+| Console command | Result logged | File produced | Why |
+|---|---|---|---|
+| `screenshot minimap rh_minimap` | `Screenshot successfully saved as 'rh_minimap.png'` | `screenshot/rh_minimap.png`, PNG 64×64, 8-bit RGB | Built from tile data, palette and recolour sprites; no blitter (`screenshot.cpp:473-503`) |
+| `screenshot heightmap` | `Heightmap successfully saved as 'heightmap.png'. Highest peak is 4` | `screenshot/heightmap.png`, PNG 64×64, 8-bit palette | Greyscale from `TileHeight` (`screenshot.cpp:314-333`) |
+| `screenshot giant rh_giant` | `Screenshot failed!` | none | Null blitter depth 0 (`blitter/null.hpp:18`); PNG writer accepts only 8 or 32 bpp (`screenshot_png.cpp:44`) |
+| `screenshot normal rh_normal` | `Screenshot failed!` | none | same |
+| `screenshot rh_viewport` | `Screenshot failed!` | none | same |
+
+- **Dedicated-only builds cannot render at all.** With `-DOPTION_DEDICATED=ON`, the project's `engine/build.sh:28`, the 8bpp and 32bpp blitters are not compiled (`src/blitter/CMakeLists.txt:1-16`). Running `-D -b 32bpp-simple` on such a build hits the "failed to select blitter" error; on macOS that opens a modal Cocoa dialog and the process hangs (observed). Rendered screenshots would need a full, non-dedicated build run as `-D -b 32bpp-simple`; that remains UNVERIFIED.
+- **Delivery:** the work is queued to the main loop (`screenshot.cpp:456-470`). Completion shows up only as a console line (`error_gui.cpp:314-330`), so subscribe to CONSOLE (type 6 @ 0x40) and wait for "successfully saved". Files land in `<cfg dir>/screenshot/`.
+- **Use RCON, not stdin.** The dedicated stdin console reads through `std::cin` after a raw `select()` (`dedicated_v.cpp:149-192`). Several lines delivered at once got stuck until more input arrived (observed: the queued screenshot commands only ran after extra newlines).
+- **What the minimap shows:** company colours, industries, towns, water and land, at one pixel per tile. There are no vehicles and rail is not distinguished from road (`smallmap_gui.cpp:580-607`). For model observations, combine it with GS tile scans.

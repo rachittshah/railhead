@@ -34,22 +34,26 @@ Done = (1) abstractions built + tested, (2) RL env built + tested, (3) code on G
 
 ## State
 - Done:
-  - [x] Phase 0a: workspace + scaffold (~/railhead, .venv, pyproject)
-- Now: [→] Phase 0b: SME research team (5 agents) → docs/research/*.md
-- Next: Phase 0c: design synthesis docs/DESIGN.md + adversarial critique
+  - [x] Phase 0: scaffold, SME research (docs/research/01-04), DESIGN.md (M1-M5)
+  - [x] Phase 1 core: wire/admin codec+client, server mgr, GS bridge (exact lockstep), World
+        (found company, save/load, fork+reseed, act/wait log), engine patches 0001-0003
+        (gamespeed/reseed, 1ms paused frames, 32KB GS JSON), event-driven waits, cargo-monitor
+        ledger, action log + replay (bit-exact), daemon railheadd (whitelist, horizon cap,
+        fork budget, kill -9 recovery by replay), rh/railhead CLIs, rewards (proper bid),
+        seal + proof-of-play verifier. Commits 365cb64..1f16b58 (+uncommitted since).
+- Now: [→] impl-queries (query.nut + observe.py) and impl-actions (action.nut + actions.py) agents
+- Next: Phase 2 generators + oracles per family (deliver/passengers/simops/tycoon/impossible)
 - Remaining:
-  - [ ] Phase 1: abstractions (admin protocol codec+client, server manager, GS bridge, world DB,
-        action API, action log/replay, clock, fork) + unit & integration tests
-  - [ ] Phase 2: RL env (scenarios/task families, rewards/verifiers, CLI `rh`, env API, experts/oracles)
-  - [ ] Phase 3: Harbor tasks + dataset (local `harbor run -a oracle` green)
-  - [ ] Phase 4: Docker image (multi-arch, GHCR) ; GitHub push ; Harbor publish ; HF dataset
-  - [ ] Phase 5: live demo on LG monitor (spectator client), final README
+  - [ ] Harbor task exporter (task.toml/instruction/tests/solve.sh) + local `harbor run -a oracle`
+  - [ ] Docker image (docker/Dockerfile written) + GH Actions multi-arch → GHCR
+  - [ ] GitHub push; harbor auth+publish; HF datasets (tasks + trajectories w/ credit)
+  - [ ] LG monitor demo: 15.3 GUI client spectating (Mac 15.2 app can't join 15.3)
 
 ## Open Questions
-- UNCONFIRMED: dedicated-server fast-forward possible without patching?
-- UNCONFIRMED: GS runs while paused? GSCompanyMode can build everything in 15.2?
-- UNCONFIRMED: max GS JSON payload size over admin port in 15.2.
-- UNCONFIRMED: Harbor container start — can a background OpenTTD server persist through agent + verifier?
+- RESOLVED: fast-forward needs patch 0001 (done, ~3-5k days/s).
+- RESOLVED: GS runs while paused; GS covers 79/100 player cmds (gaps: timetables, service intervals, semaphores...).
+- RESOLVED: 1456 B stock; 32 KB with patch 0003.
+- RESOLVED: yes (ENTRYPOINT/healthcheck). Use SHARED verifier mode (separate mode in 0.22 skips healthcheck + needs custom tests image). valid key must be int.
 - UNCONFIRMED: Harbor/HF auth — need user's GitHub OAuth (harbor) and HF token.
 
 ## Working Set

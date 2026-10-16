@@ -221,6 +221,7 @@ Fix: add `init: true` in compose, or `STOPSIGNAL SIGKILL` in the Dockerfile. Ope
 Only collected artifacts reach a fresh verifier container (`single_step.py:43-50`).
 That container **cannot** query the live game, so dump state with `[[verifier.collect]]` first.
 Use it only if the anti-tamper story needs it.
+In 0.22.0, separate mode never uploads `tests/`. See section 7.1 for the working configuration.
 
 ---
 
@@ -472,6 +473,143 @@ Run log (scratch jobs moved to the session scratchpad, `.../scratchpad/harbor-jo
 | toy-final | pass | from the assets path |
 
 Not run: `harbor check` and `harbor analyze` (they need an Anthropic key), `harbor publish`, and `harbor auth login` (excluded by brief).
+
+---
+
+## 7. Follow-ups
+
+These answers were added on 2026-10-16. The probe task `toy-sep` lives in the session scratchpad.
+It sets `[agent].user = "agent"` and `docker_image = "railhead/toy-sep:dev"` (a locally built tag), and uses a separate verifier.
+Jobs sep-1 to sep-5, inst-cc, inst-t2, and inst-codex were run with the oracle or `--install-only` on docker.
+
+### 7.1 Separate verifier: how files get there
+
+**Code path** (`H/trial/single_step.py:43-52`, `H/trial/trial.py:674-807`):
+
+1. The agent phase ends. `[[verifier.collect]]` hooks run in `main`.
+2. Every artifact entry is downloaded from `main` to the host directory `<trial>/artifacts/`.
+3. `main` is torn down **before** the verifier starts.
+4. A new compose project `<trial>__verifier__trial` is created. Its `environment_dir` is **always `tests/`** (or the step's tests directory).
+5. Its config comes from `resolve_effective_verifier_env_config` (`H/models/task/verifier_mode.py:43-64`). The order is `[steps.verifier.environment]`, then `[verifier.environment]`, then a deep copy of `[environment]`. The copy includes `docker_image`, `healthcheck`, and resources.
+6. Only `env.start(force_build=False)` is called. **The healthcheck never runs** in the verifier environment (`trial.py:774-779`).
+7. The verifier gets **one bind mount: `/logs/verifier`** (`trial.py:786-797`). There is no `/logs/agent` mount.
+8. `upload_artifacts` copies each entry back to its **original `source` path** (`H/trial/artifact_handler.py:210-254`). The agent's `/logs/artifacts` directory goes to the verifier's `/logs/artifacts`.
+9. The verifier runs with `skip_tests_upload=True` (`trial.py:723`). **In 0.22.0, `tests/` is never uploaded in separate mode.** The image must already contain `/tests/test.sh`.
+
+**`artifacts` config:**
+- It is set by the top-level `artifacts = [...]` in task.toml, plus `[[steps]].artifacts` and `--artifact` or JobConfig entries. These are merged at `trial.py:1138-1143`.
+- **Put the top-level `artifacts` key before the first `[table]` header.** Otherwise TOML scopes it into that table and Harbor silently ignores it. I hit this while writing the probe.
+- An entry is either an absolute path string or a table `{source, destination?, exclude?, service?}`. Directories are allowed, and `exclude` takes tar globs.
+- On the host, a source-only entry is mirrored at `<trial>/artifacts/<absolute source path>`. An entry with `destination` goes to `<trial>/artifacts/<destination>` (`artifact_handler.py:23-35`).
+- In the verifier, every entry goes to its original `source` path. `destination` is ignored there.
+- A missing file is recorded in `artifacts/manifest.json` and is not an error.
+
+**Verified (sep-4, reward 1.0):**
+
+| Probe | Result |
+|---|---|
+| `"/var/lib/railhead/run/actions.jsonl"` | Host copy at `artifacts/var/lib/railhead/run/actions.jsonl`. **Verifier copy at `/var/lib/railhead/run/actions.jsonl`, both lines intact.** |
+| `{source=".../state.json", destination="state.json"}` | Host copy at `artifacts/state.json`. Verifier copy at the original `/var/lib/railhead/run/state.json`. |
+| `/logs/agent` in the verifier | **Absent.** Declare `"/logs/agent/<file>"` as an artifact if the verifier needs it. |
+| `/logs/artifacts` in the verifier | Present but empty, because the agent published nothing. |
+| A file in the agent's `/tmp` | Absent. The verifier container is fresh. |
+| ENTRYPOINT in the verifier | **Ran**, as root. The image inherits the ENTRYPOINT and the base compose only overrides CMD. |
+| `[environment.healthcheck]` in the verifier | **Did not run.** |
+| Verifier user | root, the image default. Set `[verifier].user` to change it. |
+
+**Image selection in 0.22.0.** This differs from Harbor's current docs, which describe a newer fallback that uploads `tests/`.
+
+| Config | 0.22.0 behaviour | Evidence |
+|---|---|---|
+| `environment_mode="separate"` with only `[environment].docker_image` | The verifier reuses the agent's prebuilt image. `tests/` goes into the **workdir**, not `/tests` (`H/environments/definition.py:39-53`). Result: `/tests/test.sh: No such file`, then `RewardFileNotFoundError`. | sep-1 |
+| Same, plus `tests/Dockerfile` | The copied `docker_image` still wins, because prebuilt is preferred unless `--force-build` (`definition.py:26-36`). Same failure. | sep-2 |
+| **`[verifier.environment]` without `docker_image`, plus `tests/Dockerfile`** (`FROM <agent image>` + `COPY . /tests/`) | `tests/Dockerfile` is built and `/tests/test.sh` exists. **Works.** | sep-3 to sep-5 |
+| `[verifier.environment].docker_image` = an image with `/tests` baked in | Should work: prebuilt image, no upload needed. | source only |
+| Dockerfile-only agent environment and no `tests/Dockerfile` | `tests/` has no definition, so the verifier environment fails to start. | source only |
+
+**Same image as the agent?** Only if you make it the same, for example with `FROM` the agent image in `tests/Dockerfile`, or a verifier image derived from it.
+Resources come from `[verifier.environment]` when that table is set. The healthcheck is never applied, and the live game server from the agent phase is gone.
+
+**Railhead implications:**
+- For a published task with a pullable image, a separate verifier needs its own pullable image, `[verifier.environment].docker_image`, with `/tests` baked in. Tests then live in a public image, which is fine because the agent never sees them at runtime.
+- The verifier must grade from snapshots, such as `actions.jsonl` plus a savegame. It cannot query the live server.
+- Shared mode, which section 2 recommends, avoids all of this.
+
+### 7.2 `[agent].user` set to a non-root user
+
+| What | Runs as | Evidence |
+|---|---|---|
+| ENTRYPOINT, PID 1 | image `USER` | verified: root |
+| Start internals: mkdir and chmod of `/logs/*`, chown for the host | root | `docker.py:915-938` |
+| `[environment.healthcheck]` | image `USER` (see 7.3) | verified: root |
+| Installed agents, system packages via apt, dnf, yum, or apk | **root** (`exec_as_root`) | `H/agents/installed/base.py:600-660, 876-887` |
+| Installed agents, the CLI itself: claude-code bootstrap into `~/.local/bin`, codex nvm and npm into `~/.nvm` | **`[agent].user`** (`exec_as_agent`) | `claude_code.py:437-460`, `codex.py:345-385` |
+| terminus-2: tmux and asciinema install | root | `H/agents/terminus_2/tmux_session.py:122-185` |
+| terminus-2: tmux session and every command it types | `[agent].user` | `tmux_session.py:497-511`, `terminus_2.py:370-389` |
+| `agent.run()` and every exec inside it, including the oracle's solve.sh | `[agent].user` (`with_default_user`, `trial.py:447, 529`) | verified: `solve ran as agent home=/home/agent` |
+| `[[verifier.collect]]` hooks | `hook.user`, else the service's image `USER` | `trial.py:1224-1229` |
+| Verifier `test.sh` | `[verifier].user`, else image `USER`. `chmod +x` runs as root first. | `verifier.py:191-202`, verified root |
+
+`--install-only` results with `user = "agent"` on `python:3.12-slim`:
+
+| Agent | Result | Time |
+|---|---|---|
+| claude-code | Installed; v2.1.301 detected; no exception | 69s, including apt |
+| terminus-2 | tmux installed; session started; no exception | 8s |
+| codex | Installed; v0.163.0 detected; no exception. The nvm and npm install ran as `agent`. | 2m13s, including apt and nvm |
+
+Requirements for a non-root agent user:
+- The user must exist in the image with a **writable home** (`useradd -m agent`), because claude-code and codex install into `$HOME`.
+- Paths the agent must write need `chown`. In the probe that was `/var/lib/railhead`.
+- Task files are copied with `docker compose cp`, which **keeps host file modes**. This machine's umask is 027, so files are 640 and directories 750. That produced `/solution/solve.sh: Permission denied` for `agent` (sep-1).
+- `harbor publish` forces mode 0644 in the archive (`H/publisher/publisher.py:121-133`), so registry consumers are unaffected.
+- **For local runs, run `chmod -R a+rX <task>`**, or create task files with umask 022.
+
+### 7.3 Does the healthcheck run as root?
+
+**Not necessarily.** It runs as the image `USER`, which is root unless the Dockerfile sets `USER`.
+`run_healthcheck` calls `env.exec(cmd)` with `user=None` (`H/environments/base.py:1329-1381`). It runs at `trial.py:445`, before `with_default_user(agent.user)` at line 447, so `default_user` is still unset.
+The resulting `docker compose exec` has no `-u` flag. Verified: the healthcheck ran as `root`.
+If the Dockerfile ends with `USER agent`, the ENTRYPOINT, the healthcheck, and the default verifier user all become `agent`.
+
+**Recommendation:** keep the image `USER root` and set `[agent].user = "agent"`.
+Then the OpenTTD server, started by the root ENTRYPOINT or healthcheck, runs under a different UID than the agent.
+Under standard Unix rules the agent cannot signal or kill that process or overwrite root-owned state. That is a cheap anti-tamper boundary. It follows from Unix semantics and was not tested here.
+
+### 7.4 Booleans and non-numbers in `reward.json`
+
+`VerifierResult.rewards` is `dict[str, float | int]`, validated by pydantic in lax mode.
+I tested each case with Harbor's own interpreter, and the bool case end to end in sep-4.
+
+| Value in `reward.json` | Outcome |
+|---|---|
+| `true` / `false` | Accepted and **coerced to `1.0` / `0.0`**. Verified end to end: `"valid": true` became `1.0` in `result.json`. |
+| `1` / `0` | Kept as int |
+| `"0.5"` (numeric string) | Coerced to `0.5` |
+| `"abc"`, `null`, nested object, list | **`ValidationError`.** The whole verify step fails, the trial gets `exception_info`, and `verifier_result` is `None`. |
+| `NaN` | Accepted. This would poison means. |
+
+**Use `"valid": 1` or `0` as ints.** Write diagnostics such as strings or nested data to a separate file. For example, `/logs/verifier/details.json` is kept in `<trial>/verifier/`.
+In job means, a missing key counts as 0. A trial with no `verifier_result` also counts as 0 for every key (`H/metrics/base.py`).
+
+**Trainers ignore `valid`.** SkyRL uses only `rewards["reward"]`, and Prime turns other keys into metrics.
+SkyRL treats a trial with no `verifier_result` as a failure. It **retries**, then **loss-masks** the episode if every attempt fails (`harbor_generator.py`, roughly lines 80-125 and 398-420).
+So for Railhead:
+- An invalid episode that should be **excluded** from training should write **no** reward file.
+- An episode that should **count as a failure** should write `reward: 0`.
+
+### 7.5 Per-task maximum turns for terminus-2
+
+**There is no per-task setting in 0.22.0.**
+- terminus-2's `max_turns` (the deprecated alias is `max_episodes`; the default is 1,000,000) is a constructor kwarg (`terminus_2.py:160, 282-302`).
+- It is set only at run time. The routes are `--ak max_turns=N`, `agent.kwargs.max_turns` in a JobConfig or TrialConfig, or a trainer template. SkyRL's default is 32.
+- Task.toml `[agent]` accepts only `timeout_sec`, `user`, `network_mode`, and `allowed_hosts`.
+- **Unknown keys are silently dropped.** Tested: `[agent] max_turns = 5` and `[agent.kwargs] max_turns = 5` both parsed without error and were discarded.
+
+Per-task levers that do exist:
+- `[agent].timeout_sec` caps wall-clock time.
+- An action budget can be enforced **inside the environment**, for example by the Railhead CLI or bridge refusing actions after N. This works for every agent and trainer.
+- `[metadata]` can carry a hint such as `max_turns = 50`, but no Harbor code or known trainer reads it. A trainer would need custom code to map it into `agent.kwargs`.
 
 ## Sources
 
