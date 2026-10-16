@@ -113,6 +113,7 @@ class Railheadd:
             "forks_alive": sorted(self.forks), "max_forks": self.spec.max_forks,
             "submitted": self.submitted, "objective": self.spec.objective,
             "map_x": self.world.admin.welcome.map_x, "map_y": self.world.admin.welcome.map_y,
+            "game_port": self.world.server.game_port,
             "briefing": self.spec.briefing,
         }
 

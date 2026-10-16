@@ -123,8 +123,21 @@ class World:
             if until:
                 a["until"] = list(until)
             self.log.write({"kind": "wait", "ticks": t0, "end_ticks": out["ticks"], "a": a,
-                            "reason": out.get("reason"), "checksum": self.call("checksum")})
+                            "reason": out.get("reason"), "checksum": self.call("checksum"),
+                            "snap": self.snapshot()})
         return out
+
+    def snapshot(self) -> dict:
+        """Company KPIs at this instant (for growth curves; ignored by replay)."""
+        try:
+            c = self.call("company")
+            q = (c.get("quarters") or [{}])[0]
+            return {"date": self.state()["ymd"], "money": c.get("money"), "loan": c.get("loan"),
+                    "net_worth": int(c.get("money") or 0) - int(c.get("loan") or 0),
+                    "value": q.get("value"), "income_q": q.get("income"), "expenses_q": q.get("expenses"),
+                    "vehicles": len(self.call("vehicles")), "stations": len(self.call("stations"))}
+        except BridgeError:
+            return {}
 
     def note(self, method: str, **args: Any) -> None:
         """Log a non-world-changing meta decision (forecast, promise, abstain, flag, submit)."""

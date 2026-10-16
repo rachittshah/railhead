@@ -85,3 +85,15 @@ def view(task_id: str, days: int = 365, speed: int = 300, log: Path | None = Non
             print(f"{st['ymd']}  money £{c.get('money'):,}  loan £{c.get('loan'):,}", flush=True)
     finally:
         w.close()
+
+
+def attach(state_dir: Path, bounds: tuple[int, int, int, int] = LG_BOUNDS) -> None:
+    """Spectate the world a running daemon owns (e.g. a model playing live). Watch-only."""
+    from railhead.client import Client
+
+    info = Client(state_dir).request("info")
+    cfg = _viewer_config(REPO_DIR / ".cache" / "view" / f"attach-{Path(state_dir).parent.name}", bounds[2], bounds[3])
+    subprocess.run(["open", "-n", "-a", str(VIEWER_APP), "--args", "-c", str(cfg), "-x",
+                    "-n", f"127.0.0.1:{info['game_port']}#255", "-m", "null", "-s", "null"], check=True)
+    time.sleep(4)
+    print("window placed" if _place_window(bounds) else "could not place the window (accessibility)")

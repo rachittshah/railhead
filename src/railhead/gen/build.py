@@ -164,9 +164,17 @@ def deliver_text(spec: TaskSpec) -> tuple[str, str]:
 
 
 # ---------------------------------------------------------------------- tycoon
-def gen_tycoon(seed: int, split: str, out: Path) -> TaskSpec:
-    sc = sample_scenario(seed, split, "tycoon")
-    tid = task_id("tycoon", split, seed)
+def gen_arena(seed: int, split: str, out: Path) -> TaskSpec:
+    """Money-and-scale arena: 5 game years on a 256x256 map, 1-year run-off. Same scoring as tycoon."""
+    return gen_tycoon(seed, split, out, family="arena", horizon=1825, runoff=365, map_log2=8)
+
+
+def gen_tycoon(seed: int, split: str, out: Path, family: str = "tycoon", horizon: int = TYCOON_HORIZON,
+               runoff: int = 730, map_log2: int | None = None) -> TaskSpec:
+    sc = sample_scenario(seed, split, family)
+    if map_log2:
+        sc["map_log2"] = map_log2
+    tid = task_id(family, split, seed)
     tdir = out / tid
     work = Path(tempfile.mkdtemp(prefix=f"rh-gen-{tid}-"))
     try:
@@ -178,7 +186,7 @@ def gen_tycoon(seed: int, split: str, out: Path) -> TaskSpec:
                 raise Rejected("no profitable starter route")
             w.save(tdir / "start.sav")
         start = tdir / "start.sav"
-        spec = TaskSpec(task_id=tid, family="tycoon", horizon_days=TYCOON_HORIZON, runoff_days=730,
+        spec = TaskSpec(task_id=tid, family="tycoon", horizon_days=horizon, runoff_days=runoff,
                         limits={"max_forks": 2, "max_fork_days": 365},
                         objective={"w_idle": 0, "w_base": 1}, scenario=sc, split=split)
         _write(tdir, spec)
@@ -192,9 +200,9 @@ def gen_tycoon(seed: int, split: str, out: Path) -> TaskSpec:
         if base["valid"] != 1 or base["net_worth"] <= idle["net_worth"]:
             raise Rejected("baseline does not beat doing nothing")
         spec.objective = {"w_idle": int(idle["net_worth"]), "w_base": int(base["net_worth"])}
-        spec.title = "Build a transport empire"
+        spec.title = "Build a transport empire" if family == "tycoon" else "Arena: make money and scale"
         spec.briefing = (
-            f"You run a new transport company with a {TYCOON_HORIZON}-day mandate. Build whatever network you like "
+            f"You run a new transport company with a {horizon}-day mandate. Build whatever network you like "
             "(road, rail, air, water). When the mandate ends, your company keeps running **without you** for "
             f"{spec.runoff_days} more days; the reward is your **net worth (cash minus loan) after that run-off**, "
             f"scaled so that doing nothing scores 0, a simple scripted truck route scores 0.5 "
@@ -229,6 +237,7 @@ GENERATORS = {
     "deliver_bid": lambda s, sp, o: gen_deliver(s, sp, o, "deliver_bid"),
     "impossible": lambda s, sp, o: gen_deliver(s, sp, o, "impossible"),
     "tycoon": gen_tycoon,
+    "arena": gen_arena,
 }
 
 

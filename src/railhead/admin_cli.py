@@ -6,6 +6,8 @@
     railhead play <log.jsonl>    re-issue a recorded action log through the daemon (oracle solve.sh)
     railhead export <out> [ids]  write Harbor task dirs (run inside the image) [--image REF] [--version V]
     railhead gen <family> <split> <from> <to> [--out tasks] [--jobs N]   generate certified tasks
+    railhead arena <dir> [--json]  scoreboard of several players on one task (growth curves)
+    railhead view --attach <state_dir>  spectate a live daemon world
     railhead view <task_id> [--days N] [--speed PCT]   watch a task live in the GUI (macOS)
     railhead export-manifest <out>  add this CPU architecture's sealed manifest to exported tasks
     railhead hub build <tasks> <harbor> <out> [--credit] | railhead hub push <out> [--repo R]
@@ -87,6 +89,15 @@ def main(argv: list[str] | None = None) -> int:
         if cmd == "play":
             n = play(argv[1])
             print(json.dumps({"played": n}))
+            return 0
+        if cmd == "arena":
+            from railhead.arena import main as arena_main
+
+            return arena_main(argv[1:])
+        if cmd == "view" and len(argv) > 2 and argv[1] == "--attach":
+            from railhead.viewer import attach
+
+            attach(Path(argv[2]))
             return 0
         if cmd == "view":
             from railhead.viewer import view
