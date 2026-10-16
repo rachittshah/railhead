@@ -109,19 +109,19 @@ The result is the net worth after year 11, from the replay of the action log of 
 | gpt-6-sol | £27,232,656 | 148.4 | 639 | valid, 0 divergences |
 | gpt-6.1-sol | £22,371,463 | 122.0 | 286 | valid, 0 divergences |
 | gpt-5.6-sol | £13,130,503 | 71.7 | 349 | valid, 0 divergences |
+| claude-sonnet-5-5 | £3,930,521 | 21.6 | 1021 | valid, 0 divergences |
 | claude-haiku-5-5 | £2,757,221 | 15.2 | 832 | valid, 0 divergences |
 | gpt-5.6-terra | £335,998 | 2.0 | 241 | valid, 0 divergences |
 | gpt-6-luna | £236,701 | 1.5 | 239 | valid, 0 divergences |
 | gpt-5.6-luna | -£50,557 | -0.1 | 436 | valid, 0 divergences |
+| claude-opus-5-5 | not finished (reached 1961-10-30) | – | – | – |
 | claude-fable-5-1 | not finished (reached 1960-03-17) | – | – | – |
-| claude-opus-5-5 | not finished (reached 1961-04-03) | – | – | – |
-| claude-sonnet-5-5 | not finished (reached 1965-06-17) | – | – | – |
 | Scripted truck route (baseline) | £147,407 | 1.0 | – | certificate |
 | No play | -£36,300 | 0.0 | 0 | certificate |
 
 The three leaders built long-distance passenger air networks with 40 or more aircraft.
 The players that used mostly road vehicles stayed near the baseline.
-The Claude players needed much more time for each game year. Sonnet, Opus, and Fable had not reached year 10 when this table was made.
+The Claude players needed much more time for each game year. Opus and Fable had not reached year 10 when this table was made.
 
 Read these results with these limits:
 
