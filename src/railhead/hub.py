@@ -114,6 +114,37 @@ def write_parquet(rows: list[dict], path: Path) -> None:
     pq.write_table(pa.Table.from_pylist(rows), path, compression="zstd")
 
 
+def merge_games(old: list[dict], new: list[dict], aliases: dict[str, str] | None = None) -> list[dict]:
+    """Replace the rows with the same (task_id, policy), and the rows under an old alias of that policy.
+    Keep every other row. Safe to run again."""
+    aliases = aliases or {}
+    keys = {(r["task_id"], r["policy"]) for r in new}
+    keys |= {(r["task_id"], aliases[r["policy"]]) for r in new if r["policy"] in aliases}
+    return [r for r in old if (r["task_id"], r["policy"]) not in keys] + list(new)
+
+
+def add_games(out_dir: Path, arena_dir: Path, task_dir: Path, jobs: int = 8,
+              rename: dict[str, str] | None = None) -> list[dict]:
+    """Add the verified games of an arena (players with ``verify/reward.json``) to the trajectories.
+    The policy of each row is the player name (after ``rename``). The rows go to the split of the task."""
+    from concurrent.futures import ProcessPoolExecutor
+
+    import pyarrow.parquet as pq
+
+    rename = rename or {}
+    players = sorted(p for p in Path(arena_dir).iterdir() if (p / "verify" / "reward.json").exists())
+    items = [(str(task_dir), str(p / "state" / "run" / "actions.jsonl"), rename.get(p.name, p.name)) for p in players]
+    with ProcessPoolExecutor(max_workers=jobs) as ex:
+        new = list(ex.map(_trajectory_row, *zip(*items), [False] * len(items)))
+    path = Path(out_dir) / "trajectories" / f"{TaskSpec.load(Path(task_dir)).split}.parquet"
+    old = pq.read_table(path).to_pylist() if path.exists() else []
+    write_parquet(merge_games(old, new, aliases={v: k for k, v in rename.items()}), path)
+    counts = {c: {f.stem: pq.ParquetFile(f).metadata.num_rows for f in sorted((Path(out_dir) / c).glob("*.parquet"))}
+              for c in ("tasks", "trajectories")}
+    write_card(out_dir, counts)
+    return [{"policy": r["policy"], "reward": r["reward"], "valid": r["valid"]} for r in new]
+
+
 def build(tasks_dir: Path, harbor_dir: Path, out_dir: Path, credit: bool = False, jobs: int = 8,
           extra: list[tuple[str, str, str]] | None = None, image: str = DEFAULT_IMAGE) -> dict:
     out_dir = Path(out_dir)
@@ -140,7 +171,7 @@ def push(out_dir: Path, repo: str = "rachittshah/railhead", private: bool = Fals
     api = HfApi()
     api.create_repo(repo, repo_type="dataset", exist_ok=True, private=private)
     api.upload_folder(folder_path=str(out_dir), repo_id=repo, repo_type="dataset",
-                      commit_message="Railhead tasks + oracle trajectories")
+                      commit_message="Railhead tasks, oracle trajectories and model arena games")
     return f"https://huggingface.co/datasets/{repo}"
 
 
@@ -171,7 +202,7 @@ configs:
 Railhead is a reinforcement learning (RL) environment.
 In Railhead, a language model plays the transport game OpenTTD directly.
 The model controls one company with the same commands that a human player uses.
-This dataset contains the Railhead tasks and the oracle trajectories.
+This dataset contains the Railhead tasks, the oracle trajectories, and the games of the models in the arenas.
 The documents of Railhead follow ASD-STE100 Simplified Technical English.
 
 * Code: https://github.com/rachittshah/railhead
@@ -200,7 +231,10 @@ Each row is one task. The important columns are:
 
 ### Config `trajectories`
 
-Each row is one oracle trajectory.
+Each row is one trajectory.
+The `policy` column is `oracle` for the scripted oracle.
+For a game of a model in an arena, the `policy` column is the name of the model (for example `claude-opus-5-5` or `gpt-6-astra`).
+These games are in the `dev` split, for the tasks `arena-dev-0005` and `arena-dev-0100`.
 The `actions_jsonl` column is the action log.
 The verifier replays this log from `start_sav` and calculates the reward.
 The `components` column contains the reward and the diagnostic values.

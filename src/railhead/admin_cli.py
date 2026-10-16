@@ -12,6 +12,7 @@
     railhead view <task_id> [--days N] [--speed PCT]   watch a task live in the GUI (macOS)
     railhead export-manifest <out>  add this CPU architecture's sealed manifest to exported tasks
     railhead hub build <tasks> <harbor> <out> [--credit] | railhead hub push <out> [--repo R]
+    railhead hub add-games <out> <arena_dir> <task_dir> [--rename a=b,...]   add an arena's verified games
     railhead otel serve|summary [--port 4318] [--dir traces]   zero-dependency OTLP/HTTP trace sink
     railhead trace bundle <arena_dir> [--otel traces] [--out DIR]   per-player e2e trace bundles (scrubbed, local)
     railhead figures docs/data/<arena>.json ... [--out docs/img]   result charts (SVG, light and dark)
@@ -128,6 +129,10 @@ def main(argv: list[str] | None = None) -> int:
             if argv[1] == "build":
                 counts = hub.build(Path(argv[2]), Path(argv[3]), Path(argv[4]), credit="--credit" in argv)
                 print(json.dumps(counts))
+            elif argv[1] == "add-games":
+                names = dict(x.split("=", 1) for x in argv[argv.index("--rename") + 1].split(",")) \
+                    if "--rename" in argv else None
+                print(json.dumps(hub.add_games(Path(argv[2]), Path(argv[3]), Path(argv[4]), rename=names)))
             elif argv[1] == "push":
                 repo = argv[argv.index("--repo") + 1] if "--repo" in argv else "rachittshah/railhead"
                 print(hub.push(Path(argv[2]), repo=repo))
