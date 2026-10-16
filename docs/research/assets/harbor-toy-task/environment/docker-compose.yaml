@@ -1,0 +1,20 @@
+# Merged AFTER Harbor's base compose (docker-compose-build.yaml), so `main`
+# keeps Harbor's build + `sleep infinity` command; we only add a sidecar.
+services:
+  main:
+    # PID 1 would otherwise be `sh -c "sleep infinity"`, which ignores SIGTERM, so
+    # `compose down` waits the full 10s grace period per container. tini fixes that.
+    init: true
+    depends_on:
+      game:
+        condition: service_healthy
+  game:
+    init: true
+    build:
+      context: ./game
+    # Sidecar CMD is NOT overridden by Harbor; it runs as written.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:9000/state', timeout=2)"]
+      interval: 1s
+      timeout: 3s
+      retries: 30

@@ -1,0 +1,105 @@
+# syntax=docker/dockerfile:1.7
+# Railhead OpenTTD probe image: OpenTTD 15.2 dedicated-only build from source + OpenGFX 8.0.
+# Verified 2026-10-16 on linux/arm64 (colima, 4 vCPU): ~3 min build, 190 MB image (45 MB compressed).
+# Builds natively on linux/amd64 too (cdn.openttd.org ships no arm64 Linux binary, distros lag at 15.1).
+#
+#   docker build -t railhead/openttd:15.2 .                           # with the gamespeed patch (default)
+#   docker build --build-arg GAMESPEED_PATCH=0 -t railhead/openttd:15.2-vanilla .
+#   docker run --rm -p 127.0.0.1:3977:3977 -e CFG="$(cat openttd.cfg)" --entrypoint sh railhead/openttd:15.2 \
+#     -c 'mkdir -p ~/r && printf "%s\n" "$CFG" > ~/r/openttd.cfg && exec /opt/openttd/openttd -D -x -c ~/r/openttd.cfg -s null -m null -G 12345'
+ARG DEBIAN=trixie
+
+FROM debian:${DEBIAN}-slim AS build
+ARG OPENTTD_VERSION=15.2
+ARG OPENTTD_SHA256=d29ab617b7c0faa56ec4f8f13663c690a1b85e9212dd01717cc214c720d3ff76
+ARG OPENGFX_VERSION=8.0
+ARG GAMESPEED_PATCH=1
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential cmake ninja-build pkg-config ca-certificates curl xz-utils unzip patch \
+      zlib1g-dev liblzma-dev liblzo2-dev \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /src
+RUN curl -fsSLo openttd.tar.xz https://cdn.openttd.org/openttd-releases/${OPENTTD_VERSION}/openttd-${OPENTTD_VERSION}-source.tar.xz \
+    && echo "${OPENTTD_SHA256}  openttd.tar.xz" | sha256sum -c - \
+    && tar xJf openttd.tar.xz && rm openttd.tar.xz
+# Railhead patch: adds a `gamespeed <pct>` console/RCON command (0 = unlimited) so a dedicated
+# server can fast-forward. Stock 15.2 only changes _game_speed from the GUI toolbar.
+COPY <<'EOF' /patches/0001-gamespeed-console-command.patch
+--- a/src/console_cmds.cpp
++++ b/src/console_cmds.cpp
+@@ -45,6 +45,7 @@
+ #include "3rdparty/fmt/chrono.h"
+ #include "company_cmd.h"
+ #include "misc_cmd.h"
++#include "gfx_func.h"
+ 
+ #if defined(WITH_ZLIB)
+ #include "network/network_content.h"
+@@ -1659,6 +1660,32 @@
+ 	}
+ 
+ 	IConsolePrint(CC_DEFAULT, "Generation Seed: {}", _settings_game.game_creation.generation_seed);
++	return true;
++}
++
++/**
++ * Railhead patch: set the game speed from the console / admin RCON, so a
++ * dedicated server can fast-forward. 100 = normal speed, 0 = as fast as possible.
++ */
++static bool ConGameSpeed(std::span<std::string_view> argv)
++{
++	if (argv.empty()) {
++		IConsolePrint(CC_HELP, "Get/set the game speed in percent; 100 is normal, 0 is unlimited. Usage: 'gamespeed [<percentage>]'.");
++		return true;
++	}
++
++	if (argv.size() > 2) return false;
++
++	if (argv.size() == 2) {
++		auto speed = ParseInteger<uint16_t>(argv[1]);
++		if (!speed.has_value()) {
++			IConsolePrint(CC_ERROR, "'{}' is not a valid game speed.", argv[1]);
++			return true;
++		}
++		_game_speed = *speed;
++	}
++
++	IConsolePrint(CC_DEFAULT, "Game speed: {}%", _game_speed);
+ 	return true;
+ }
+ 
+@@ -2887,6 +2914,7 @@
+ 	IConsole::CmdRegister("reload",                  ConReload);
+ 	IConsole::CmdRegister("getseed",                 ConGetSeed);
+ 	IConsole::CmdRegister("getdate",                 ConGetDate);
++	IConsole::CmdRegister("gamespeed",               ConGameSpeed,        ConHookServerOrNoNetwork);
+ 	IConsole::CmdRegister("getsysdate",              ConGetSysDate);
+ 	IConsole::CmdRegister("quit",                    ConExit);
+ 	IConsole::CmdRegister("resetengines",            ConResetEngines,     ConHookNoNetwork);
+EOF
+RUN if [ "${GAMESPEED_PATCH}" = "1" ]; then patch -p1 -d openttd-${OPENTTD_VERSION} < /patches/0001-gamespeed-console-command.patch; fi
+# OPTION_DEDICATED=ON: no SDL/fontconfig/freetype/ICU; dedicated + null video drivers only.
+# OPTION_INSTALL_FHS=OFF: binary and data (lang/, baseset/, ai/, game/) side by side in one prefix.
+RUN cmake -S openttd-${OPENTTD_VERSION} -B build -G Ninja \
+      -DCMAKE_BUILD_TYPE=Release -DOPTION_DEDICATED=ON -DOPTION_INSTALL_FHS=OFF \
+      -DOPTION_USE_ASSERTS=OFF -DCMAKE_INSTALL_PREFIX=/opt/openttd \
+    && cmake --build build -j"$(nproc)" \
+    && cmake --install build --strip
+RUN curl -fsSLo /tmp/ogfx.zip https://cdn.openttd.org/opengfx-releases/${OPENGFX_VERSION}/opengfx-${OPENGFX_VERSION}-all.zip \
+    && unzip -o /tmp/ogfx.zip -d /opt/openttd/baseset/ && rm /tmp/ogfx.zip
+
+FROM debian:${DEBIAN}-slim
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      zlib1g liblzma5 liblzo2-2 netcat-openbsd \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd -m -u 1000 ottd
+COPY --from=build /opt/openttd /opt/openttd
+USER ottd
+WORKDIR /home/ottd
+# Without -c: XDG dirs (~/.config/openttd for cfg, ~/.local/share/openttd for save/, content_download/).
+# With -c /x/openttd.cfg: /x becomes config AND personal dir (save/, game/, ai/ resolved under /x).
+EXPOSE 3979/tcp 3979/udp 3977/tcp
+# Admin port only listens when admin_password (or admin_authorized_keys) is set.
+HEALTHCHECK --interval=5s --timeout=2s --start-period=5s CMD nc -z 127.0.0.1 3977 || exit 1
+ENTRYPOINT ["/opt/openttd/openttd"]
+CMD ["-D", "-x", "-s", "null", "-m", "null"]
