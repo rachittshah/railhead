@@ -122,7 +122,7 @@ Action <- {
 
 	/* Parse `a` against spec = [[name, type(, default)], ...]; a 3rd element marks the param optional.
 	 * Types: "tile" "int" "str" "bool" "vehicle" "engine" "town" "cargo" "flags" or an enum table.
-	 * Throws {rh_bad=msg}. Unknown keys are rejected (dry_run is always allowed). */
+	 * Throws {bad_arg=msg}. Unknown keys are rejected (dry_run is always allowed). */
 	function Parse(a, spec) {
 		local p = {};
 		local known = { dry_run = true };
@@ -211,17 +211,18 @@ Action <- {
 		return s;
 	}
 
-	function Bad(msg) { throw { rh_bad = msg }; }
+	function Bad(msg) { throw { bad_arg = msg }; }
 
 	/* Enter the company (and test) mode and start counting cost. Returns ctx or null after replying.
 	 * Keep the returned table in a local for the whole handler: its members own the modes. */
 	function Begin(br, id, a, spec) {
 		if (br.company < 0) { Proto.Err(id, "ERR_NO_COMPANY", "no company is bound to the model"); return null; }
-		local ctx = { id = id, company = br.company, dry = false, p = null, cm = GSCompanyMode(br.company), tm = null, acc = null };
+		local ctx = { id = id, company = br.company, dry = false, p = null, cm = GSCompanyMode(br.company), tm = null, acc = null,
+			extra_cost = 0 };
 		try {
 			ctx.p = Action.Parse(a, spec);
 		} catch (e) {
-			if (typeof e == "table" && ("rh_bad" in e)) { Proto.Err(id, "ERR_BAD_ARG", e.rh_bad); return null; }
+			if (typeof e == "table" && ("bad_arg" in e)) { Proto.Err(id, "ERR_BAD_ARG", e.bad_arg); return null; }
 			throw e;
 		}
 		ctx.dry = ("dry_run" in a) && a.dry_run == true;
@@ -234,7 +235,7 @@ Action <- {
 	function Reject(ctx, msg) { Proto.Err(ctx.id, "ERR_BAD_ARG", msg); return true; }
 
 	function Ok(ctx, extra) {
-		local cost = ctx.acc.GetCosts();
+		local cost = ctx.acc.GetCosts() + ctx.extra_cost;
 		if (ctx.dry) {
 			return Proto.Ok(ctx.id, { dry_run = true, cost = cost,
 				affordable = cost <= GSCompany.GetBankBalance(GSCompany.COMPANY_SELF) });
@@ -250,7 +251,7 @@ Action <- {
 		if (code == null || code == "ERR_NONE") code = "ERR_UNKNOWN";
 		local hint = (code in Action.HINTS) ? Action.HINTS[code] : "the engine refused this command";
 		if (code == "ERR_UNKNOWN" || code == "ERR_AREA_NOT_CLEAR" || code == "ERR_PRECONDITION_FAILED") {
-			foreach (k in ["tile", "from_tile", "start", "depot_tile"]) {
+			foreach (k in ["tile", "from_tile", "start_tile", "depot_tile"]) {
 				if ((k in ctx.p) && ctx.p[k] != null) { hint += " [" + k + " " + Action.Describe(ctx.p[k]) + "]"; break; }
 			}
 		}
@@ -310,7 +311,7 @@ Action <- {
 		return GSMap.IsValidTile(t) ? t : null;
 	}
 
-	/* Station to join: null -> adjacent own station (GUI default), -1 -> force new, id -> that station. */
+	/* join_station: null -> adjacent own station (GUI default), -1 -> force new, id -> that station. */
 	function JoinId(join) {
 		if (join == null) return GSStation.STATION_JOIN_ADJACENT;
 		if (join == -1) return GSStation.STATION_NEW;
@@ -387,6 +388,71 @@ Action <- {
 		return null;
 	}
 
+	/* ------------------------------------------------------------ GUI follow-ups (auto-connect)
+	 * The GUI connects a new structure's entrance to adjacent infrastructure in its command callbacks
+	 * (road_gui.cpp CcRoadDepot/CcRoadStop -> ConnectRoadToStructure, rail_gui.cpp CcRailDepot). A model
+	 * plays the same commands, so the same follow-ups run here after a successful build. */
+
+	/* DiagDirection (NE=0, SE=1, SW=2, NW=3) from tile `a` toward its neighbour `b`. */
+	function DiagDir(a, b) {
+		local dx = Action.X(b) - Action.X(a), dy = Action.Y(b) - Action.Y(a);
+		return dx < 0 ? 0 : (dy > 0 ? 1 : (dx > 0 ? 2 : 3));
+	}
+
+	/* ConnectRoadToStructure: if `outside` (the tile beyond an entrance of `structure`) is a plain road
+	 * of our road kind, add the missing road piece toward the structure. Returns true if a piece was added.
+	 * A dry run cannot test-build toward a structure that does not exist yet, so it adds the price of one
+	 * road piece instead. */
+	function ConnectRoad(ctx, structure, outside) {
+		if (outside == null || !GSRoad.IsRoadTile(outside)) return false;
+		if (GSRoad.IsDriveThroughRoadStationTile(outside) || GSRail.IsLevelCrossingTile(outside)) return false;
+		if (!GSRoad.HasRoadType(outside, Action.road_type)) return false;
+		if (GSRoad.AreRoadTilesConnected(outside, structure)) return false;  // e.g. drive-through on an existing road
+		if (ctx.dry) {
+			ctx.extra_cost += GSRoad.GetBuildCost(Action.road_type, GSRoad.BT_ROAD);
+			return true;
+		}
+		return GSRoad.BuildRoad(outside, structure);
+	}
+
+	/* Tracks (RailTrack bits) entered when moving in DiagDirection d (table/track_data.h _exitdir_reaches_trackdirs). */
+	RAIL_REACH = [
+		GSRail.RAILTRACK_NE_SW | GSRail.RAILTRACK_SW_SE | GSRail.RAILTRACK_NW_SW,  // NE
+		GSRail.RAILTRACK_NW_SE | GSRail.RAILTRACK_NW_SW | GSRail.RAILTRACK_NW_NE,  // SE
+		GSRail.RAILTRACK_NE_SW | GSRail.RAILTRACK_NW_NE | GSRail.RAILTRACK_NE_SE,  // SW
+		GSRail.RAILTRACK_NW_SE | GSRail.RAILTRACK_NE_SE | GSRail.RAILTRACK_SW_SE   // NW
+	],
+	/* rail_gui.cpp _place_depot_extra_track / _place_depot_extra_dir, indexed by depot direction (+4, +8). */
+	DEPOT_EXTRA_TRACK = [
+		GSRail.RAILTRACK_NW_SW, GSRail.RAILTRACK_NW_NE, GSRail.RAILTRACK_NW_NE, GSRail.RAILTRACK_NE_SE,
+		GSRail.RAILTRACK_NE_SW, GSRail.RAILTRACK_NW_SE, GSRail.RAILTRACK_NE_SW, GSRail.RAILTRACK_NW_SE,
+		GSRail.RAILTRACK_SW_SE, GSRail.RAILTRACK_NW_SW, GSRail.RAILTRACK_NE_SE, GSRail.RAILTRACK_SW_SE
+	],
+	DEPOT_EXTRA_DIR = [1, 2, 1, 2, 2, 3, 0, 1, 3, 0, 3, 0],
+
+	/* CcRailDepot: on a plain rail front tile (no signals: auto_remove_signals defaults off), add the
+	 * curves/straight that join the depot to the track already there. Returns true if a piece was added. */
+	function ConnectRailDepot(ctx, depot, front) {
+		if (!GSRail.IsRailTile(front) || GSRail.IsRailStationTile(front) || GSRail.IsRailWaypointTile(front) ||
+				GSRail.IsLevelCrossingTile(front)) return false;
+		foreach (n in [Action.At(Action.X(front) + 1, Action.Y(front)), Action.At(Action.X(front) - 1, Action.Y(front)),
+				Action.At(Action.X(front), Action.Y(front) + 1), Action.At(Action.X(front), Action.Y(front) - 1)]) {
+			if (n != null && GSRail.GetSignalType(front, n) != GSRail.SIGNALTYPE_NONE) return false;
+		}
+		local d = Action.DiagDir(depot, front);
+		local tracks = GSRail.GetRailTracks(front);  // as seen when the GUI posts its follow-ups
+		local across = Action.At(2 * Action.X(front) - Action.X(depot), 2 * Action.Y(front) - Action.Y(depot));
+		local double_depot = across != null && GSRail.IsRailDepotTile(across);
+		local added = false;
+		foreach (k in [0, 4, 8]) {
+			if (k == 4 && double_depot) continue;
+			local track = Action.DEPOT_EXTRA_TRACK[d + k];
+			if ((tracks & Action.RAIL_REACH[Action.DEPOT_EXTRA_DIR[d + k]]) == 0 || (tracks & track) != 0) continue;
+			if (GSRail.BuildRailTrack(front, track)) added = true;
+		}
+		return added;
+	}
+
 	/* ------------------------------------------------------------ rail */
 	function H_rail_set_type(br, id, a) {
 		local ctx = Action.Begin(br, id, a, [["railtype", "int"]]);
@@ -443,13 +509,13 @@ Action <- {
 
 	function H_rail_station(br, id, a) {
 		local ctx = Action.Begin(br, id, a, [["tile", "tile"], ["axis", Action.AXES], ["platforms", "int"],
-			["length", "int"], ["join", "int", null]]);
+			["length", "int"], ["join_station", "int", null]]);
 		if (ctx == null) return;
 		local p = ctx.p;
 		if (p.platforms < 1 || p.platforms > 255) return Action.Reject(ctx, "platforms must be 1..255");
 		if (p.length < 1 || p.length > 255) return Action.Reject(ctx, "length must be 1..255");
-		local join = Action.JoinId(p.join);
-		if (join == null) return Action.Reject(ctx, "join " + p.join + " is not one of your stations (omit to join an adjacent one, -1 for a new station)");
+		local join = Action.JoinId(p.join_station);
+		if (join == null) return Action.Reject(ctx, "join_station " + p.join_station + " is not one of your stations (omit to join an adjacent one, -1 for a new station)");
 		Action.UseRailType();
 		local ok = GSRail.BuildRailStation(p.tile, p.axis, p.platforms, p.length, join);
 		Action.Done(ctx, ok, ok && !ctx.dry ? { station = GSStation.GetStationID(p.tile) } : null);
@@ -460,7 +526,9 @@ Action <- {
 		if (ctx == null) return;
 		if (!Action.Adjacent(ctx.p.tile, ctx.p.front_tile)) return Action.Reject(ctx, "front_tile must be a direct neighbour of tile");
 		Action.UseRailType();
-		Action.Done(ctx, GSRail.BuildRailDepot(ctx.p.tile, ctx.p.front_tile), { depot = ctx.p.tile });
+		if (!GSRail.BuildRailDepot(ctx.p.tile, ctx.p.front_tile)) return Action.Fail(ctx);
+		local connected = Action.ConnectRailDepot(ctx, ctx.p.tile, ctx.p.front_tile);
+		Action.Ok(ctx, ctx.dry ? null : { depot_tile = ctx.p.tile, connected = connected });
 	}
 
 	function H_rail_signal(br, id, a) {
@@ -531,47 +599,55 @@ Action <- {
 		if (ctx == null) return;
 		if (!Action.Adjacent(ctx.p.tile, ctx.p.front_tile)) return Action.Reject(ctx, "front_tile must be a direct neighbour of tile");
 		Action.UseRoadType();
-		Action.Done(ctx, GSRoad.BuildRoadDepot(ctx.p.tile, ctx.p.front_tile), { depot = ctx.p.tile });
+		if (!GSRoad.BuildRoadDepot(ctx.p.tile, ctx.p.front_tile)) return Action.Fail(ctx);
+		local connected = Action.ConnectRoad(ctx, ctx.p.tile, ctx.p.front_tile);
+		Action.Ok(ctx, ctx.dry ? null : { depot_tile = ctx.p.tile, connected = connected });
 	}
 
 	function H_road_stop(br, id, a) {
 		local ctx = Action.Begin(br, id, a, [["tile", "tile"], ["front_tile", "tile"], ["kind", Action.STOP_KINDS, GSRoad.ROADVEHTYPE_BUS],
-			["drive_through", "bool", false], ["join", "int", null]]);
+			["drive_through", "bool", false], ["join_station", "int", null]]);
 		if (ctx == null) return;
 		local p = ctx.p;
 		if (!Action.Adjacent(p.tile, p.front_tile)) return Action.Reject(ctx, "front_tile must be a direct neighbour of tile");
-		local join = Action.JoinId(p.join);
-		if (join == null) return Action.Reject(ctx, "join " + p.join + " is not one of your stations (omit to join an adjacent one, -1 for a new station)");
+		local join = Action.JoinId(p.join_station);
+		if (join == null) return Action.Reject(ctx, "join_station " + p.join_station + " is not one of your stations (omit to join an adjacent one, -1 for a new station)");
 		Action.UseRoadType();
 		local ok = p.drive_through ? GSRoad.BuildDriveThroughRoadStation(p.tile, p.front_tile, p.kind, join)
 			: GSRoad.BuildRoadStation(p.tile, p.front_tile, p.kind, join);
-		Action.Done(ctx, ok, ok && !ctx.dry ? { station = GSStation.GetStationID(p.tile) } : null);
+		if (!ok) return Action.Fail(ctx);
+		local connected = Action.ConnectRoad(ctx, p.tile, p.front_tile);
+		if (p.drive_through) {
+			local back = Action.At(2 * Action.X(p.tile) - Action.X(p.front_tile), 2 * Action.Y(p.tile) - Action.Y(p.front_tile));
+			connected = Action.ConnectRoad(ctx, p.tile, back) || connected;
+		}
+		Action.Ok(ctx, ctx.dry ? null : { station = GSStation.GetStationID(p.tile), connected = connected });
 	}
 
 	/* ------------------------------------------------------------ air / water */
 	function H_air_airport(br, id, a) {
-		local ctx = Action.Begin(br, id, a, [["tile", "tile"], ["type", Action.AIRPORTS], ["join", "int", null]]);
+		local ctx = Action.Begin(br, id, a, [["tile", "tile"], ["type", Action.AIRPORTS], ["join_station", "int", null]]);
 		if (ctx == null) return;
 		local p = ctx.p;
 		if (!GSAirport.IsValidAirportType(p.type)) {
 			return Proto.Err(id, "ERR_TYPE_NOT_AVAILABLE", "airport type " + a.type + " is not available yet: try small, or wait for later years");
 		}
-		local join = Action.JoinId(p.join);
-		if (join == null) return Action.Reject(ctx, "join " + p.join + " is not one of your stations");
+		local join = Action.JoinId(p.join_station);
+		if (join == null) return Action.Reject(ctx, "join_station " + p.join_station + " is not one of your stations");
 		local ok = GSAirport.BuildAirport(p.tile, p.type, join);
 		local extra = null;
 		if (ok && !ctx.dry) {
 			local hangar = GSAirport.GetHangarOfAirport(p.tile);
-			extra = { station = GSStation.GetStationID(p.tile), hangar = GSMap.IsValidTile(hangar) ? hangar : -1 };
+			extra = { station = GSStation.GetStationID(p.tile), hangar_tile = GSMap.IsValidTile(hangar) ? hangar : -1 };
 		}
 		Action.Done(ctx, ok, extra);
 	}
 
 	function H_water_dock(br, id, a) {
-		local ctx = Action.Begin(br, id, a, [["tile", "tile"], ["join", "int", null]]);
+		local ctx = Action.Begin(br, id, a, [["tile", "tile"], ["join_station", "int", null]]);
 		if (ctx == null) return;
-		local join = Action.JoinId(ctx.p.join);
-		if (join == null) return Action.Reject(ctx, "join " + ctx.p.join + " is not one of your stations");
+		local join = Action.JoinId(ctx.p.join_station);
+		if (join == null) return Action.Reject(ctx, "join_station " + ctx.p.join_station + " is not one of your stations");
 		local ok = GSMarine.BuildDock(ctx.p.tile, join);
 		Action.Done(ctx, ok, ok && !ctx.dry ? { station = GSStation.GetStationID(ctx.p.tile) } : null);
 	}
@@ -592,17 +668,17 @@ Action <- {
 		local ctx = Action.Begin(br, id, a, [["tile", "tile"], ["toward_tile", "tile"]]);
 		if (ctx == null) return;
 		if (!Action.Adjacent(ctx.p.tile, ctx.p.toward_tile)) return Action.Reject(ctx, "toward_tile must be a direct neighbour of tile (sets the depot axis)");
-		Action.Done(ctx, GSMarine.BuildWaterDepot(ctx.p.tile, ctx.p.toward_tile), { depot = ctx.p.tile });
+		Action.Done(ctx, GSMarine.BuildWaterDepot(ctx.p.tile, ctx.p.toward_tile), { depot_tile = ctx.p.tile });
 	}
 
 	/* ------------------------------------------------------------ bridges / tunnels */
 	function H_bridge_build(br, id, a) {
-		local ctx = Action.Begin(br, id, a, [["start", "tile"], ["end", "tile"], ["vehicle", Action.VEHICLE_TYPES, GSVehicle.VT_ROAD],
+		local ctx = Action.Begin(br, id, a, [["start_tile", "tile"], ["end_tile", "tile"], ["vehicle", Action.VEHICLE_TYPES, GSVehicle.VT_ROAD],
 			["type", "int", null]]);
 		if (ctx == null) return;
 		local p = ctx.p;
-		if (!Action.Straight(p.start, p.end)) return Action.Reject(ctx, "start and end must differ and share x or y");
-		local length = GSMap.DistanceManhattan(p.start, p.end) + 1;
+		if (!Action.Straight(p.start_tile, p.end_tile)) return Action.Reject(ctx, "start_tile and end_tile must differ and share x or y");
+		local length = GSMap.DistanceManhattan(p.start_tile, p.end_tile) + 1;
 		local bt = p.type;
 		if (bt == null) {
 			local l = GSBridgeList_Length(length);
@@ -614,17 +690,17 @@ Action <- {
 		}
 		if (p.vehicle == GSVehicle.VT_RAIL) Action.UseRailType();
 		else if (p.vehicle == GSVehicle.VT_ROAD) Action.UseRoadType();
-		Action.Done(ctx, GSBridge.BuildBridge(p.vehicle, bt, p.start, p.end), { bridge_type = bt, length = length });
+		Action.Done(ctx, GSBridge.BuildBridge(p.vehicle, bt, p.start_tile, p.end_tile), { bridge_type = bt, length = length });
 	}
 
 	function H_bridge_tunnel(br, id, a) {
-		local ctx = Action.Begin(br, id, a, [["start", "tile"], ["vehicle", Action.VEHICLE_TYPES, GSVehicle.VT_ROAD]]);
+		local ctx = Action.Begin(br, id, a, [["start_tile", "tile"], ["vehicle", Action.VEHICLE_TYPES, GSVehicle.VT_ROAD]]);
 		if (ctx == null) return;
 		local p = ctx.p;
 		if (p.vehicle == GSVehicle.VT_WATER) return Action.Reject(ctx, "tunnels are for rail or road");
 		if (p.vehicle == GSVehicle.VT_RAIL) Action.UseRailType(); else Action.UseRoadType();
-		local ok = GSTunnel.BuildTunnel(p.vehicle, p.start);
-		Action.Done(ctx, ok, ok && !ctx.dry ? { other_end = GSTunnel.GetOtherTunnelEnd(p.start) } : null);
+		local ok = GSTunnel.BuildTunnel(p.vehicle, p.start_tile);
+		Action.Done(ctx, ok, ok && !ctx.dry ? { other_end_tile = GSTunnel.GetOtherTunnelEnd(p.start_tile) } : null);
 	}
 
 	/* ------------------------------------------------------------ land */
@@ -790,10 +866,10 @@ Action <- {
 	}
 
 	function H_order_share(br, id, a) {
-		local ctx = Action.Begin(br, id, a, [["vehicle", "vehicle"], ["other", "vehicle"]]);
+		local ctx = Action.Begin(br, id, a, [["vehicle", "vehicle"], ["other_vehicle", "vehicle"]]);
 		if (ctx == null) return;
-		if (ctx.p.vehicle == ctx.p.other) return Action.Reject(ctx, "a vehicle cannot share orders with itself");
-		local ok = GSOrder.ShareOrders(ctx.p.vehicle, ctx.p.other);
+		if (ctx.p.vehicle == ctx.p.other_vehicle) return Action.Reject(ctx, "a vehicle cannot share orders with itself");
+		local ok = GSOrder.ShareOrders(ctx.p.vehicle, ctx.p.other_vehicle);
 		Action.Done(ctx, ok, ok && !ctx.dry ? { orders = GSOrder.GetOrderCount(ctx.p.vehicle) } : null);
 	}
 
@@ -831,108 +907,5 @@ Action <- {
 				"not available now: too little money, a statue already stands, exclusive rights are held, or the rating is too high to bribe");
 		}
 		Action.Done(ctx, GSTown.PerformTownAction(p.town, p.kind), { town = p.town, kind = a.kind });
-	}
-
-	/* ------------------------------------------------------------ private test probes (not player actions; not in the replay whitelist) */
-	function H_rh_tile(br, id, a) {
-		local t = Util.Tile(a, "tile");
-		if (t == null) return Proto.Err(id, "ERR_BAD_ARG", "tile required");
-		Proto.Ok(id, {
-			tile = t, x = GSMap.GetTileX(t), y = GSMap.GetTileY(t), slope = GSTile.GetSlope(t),
-			height = GSTile.GetMinHeight(t), max_height = GSTile.GetMaxHeight(t), buildable = GSTile.IsBuildable(t),
-			water = GSTile.IsWaterTile(t), coast = GSTile.IsCoastTile(t), road = GSRoad.IsRoadTile(t),
-			rail = GSRail.IsRailTile(t), tracks = GSRail.GetRailTracks(t), station = GSTile.IsStationTile(t),
-			owner = GSTile.GetOwner(t), house = GSTile.IsHouseTile(t)
-		});
-	}
-
-	/* First w x h rectangle (scanning rows from (x0,y0)) that is buildable, flat and level. */
-	function H_rh_find_site(br, id, a) {
-		local w = a.w, h = a.h;
-		local x0 = ("x0" in a) ? a.x0 : 2, y0 = ("y0" in a) ? a.y0 : 2;
-		for (local y = y0; y + h < GSMap.GetMapSizeY() - 1; y++) {
-			for (local x = x0; x + w < GSMap.GetMapSizeX() - 1; x++) {
-				local t = GSMap.GetTileIndex(x, y);
-				if (!GSTile.IsBuildableRectangle(t, w, h)) continue;
-				local z = GSTile.GetMinHeight(t);
-				local good = true;
-				for (local dy = 0; good && dy < h; dy++) {
-					for (local dx = 0; good && dx < w; dx++) {
-						local u = GSMap.GetTileIndex(x + dx, y + dy);
-						good = GSTile.GetSlope(u) == GSTile.SLOPE_FLAT && GSTile.GetMinHeight(u) == z;
-					}
-				}
-				if (good) return Proto.Ok(id, t);
-			}
-		}
-		Proto.Ok(id, -1);
-	}
-
-	/* First tile (row scan) where a test-mode build of `kind` succeeds (and costs <= max_cost if given):
-	 * dock | lock | tunnel_road | tunnel_rail. */
-	function H_rh_probe_site(br, id, a) {
-		local max_cost = ("max_cost" in a) ? a.max_cost : null;
-		local cm = GSCompanyMode(br.company);
-		local tm = GSTestMode();
-		local acc = GSAccounting();
-		Action.UseRailType();
-		Action.UseRoadType();
-		for (local y = 2; y < GSMap.GetMapSizeY() - 2; y++) {
-			for (local x = 2; x < GSMap.GetMapSizeX() - 2; x++) {
-				local t = GSMap.GetTileIndex(x, y);
-				local s = GSTile.GetSlope(t);
-				if (s == GSTile.SLOPE_FLAT) continue;
-				acc.ResetCosts();
-				local ok = false;
-				if (a.kind == "dock") ok = GSTile.IsCoastTile(t) && GSMarine.BuildDock(t, GSStation.STATION_NEW);
-				else if (a.kind == "lock") ok = GSMarine.BuildLock(t);
-				else if (a.kind == "tunnel_road") ok = GSTunnel.BuildTunnel(GSVehicle.VT_ROAD, t);
-				else if (a.kind == "tunnel_rail") ok = GSTunnel.BuildTunnel(GSVehicle.VT_RAIL, t);
-				if (ok && (max_cost == null || acc.GetCosts() <= max_cost)) return Proto.Ok(id, t);
-				acc.ResetCosts();
-			}
-		}
-		Proto.Ok(id, -1);
-	}
-
-	function H_rh_engines(br, id, a) {
-		local cm = GSCompanyMode(br.company);
-		local vt = Action.VEHICLE_TYPES.road;
-		if ("vehicle_type" in a) vt = (a.vehicle_type == "air") ? GSVehicle.VT_AIR : Action.VEHICLE_TYPES[a.vehicle_type];
-		local cargo = ("cargo" in a) ? Action.CargoOf("cargo", a.cargo) : null;
-		local rows = [];
-		local el = GSEngineList(vt);
-		el.Sort(GSList.SORT_BY_ITEM, GSList.SORT_ASCENDING);
-		foreach (e, _ in el) {
-			if (!GSEngine.IsBuildable(e)) continue;
-			if (cargo != null && GSEngine.GetCargoType(e) != cargo && !GSEngine.CanRefitCargo(e, cargo)) continue;
-			rows.append({ id = e, name = GSEngine.GetName(e), cargo = GSEngine.GetCargoType(e), capacity = GSEngine.GetCapacity(e),
-				price = GSEngine.GetPrice(e), wagon = GSEngine.IsWagon(e) });
-		}
-		Proto.Rows(id, rows);
-	}
-
-	function H_rh_vehicle(br, id, a) {
-		local cm = GSCompanyMode(br.company);
-		local v = a.vehicle;
-		if (!GSVehicle.IsValidVehicle(v)) return Proto.Err(id, "ERR_BAD_ARG", "no such vehicle");
-		local orders = [];
-		for (local i = 0; i < GSOrder.GetOrderCount(v); i++) {
-			orders.append({ tile = GSOrder.GetOrderDestination(v, i), flags = GSOrder.GetOrderFlags(v, i) });
-		}
-		Proto.Ok(id, { vehicle = v, state = GSVehicle.GetState(v), location = GSVehicle.GetLocation(v),
-			profit_this_year = GSVehicle.GetProfitThisYear(v), profit_last_year = GSVehicle.GetProfitLastYear(v),
-			engine = GSVehicle.GetEngineType(v), shared = GSVehicle.HasSharedOrders(v), orders = orders,
-			in_depot = GSVehicle.IsStoppedInDepot(v) });
-	}
-
-	function H_rh_finance(br, id, a) {
-		local c = br.company;
-		local out = { income = 0, delivered = 0 };
-		for (local q = GSCompany.CURRENT_QUARTER; q <= GSCompany.CURRENT_QUARTER + 1; q++) {
-			out.income += GSCompany.GetQuarterlyIncome(c, q);
-			out.delivered += GSCompany.GetQuarterlyCargoDelivered(c, q);
-		}
-		Proto.Ok(id, out);
 	}
 };

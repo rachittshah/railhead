@@ -20,10 +20,6 @@ pytestmark = pytest.mark.integration
 W = 128  # fixture map width
 
 
-def xy(t: int) -> str:
-    return f"{t % W},{t // W}"
-
-
 def at(x: int, y: int) -> str:
     return f"{x},{y}"
 
@@ -58,10 +54,69 @@ def dry(world, action: str, **args) -> int:
     return out["cost"]
 
 
+BUILDABLE = set(".t^f")  # `tiles` kinds a building can go on (trees/rough/farmland are cleared)
+
+
+def tile_info(world, x: int, y: int) -> dict:
+    return world.call("tile", tile=idx(x, y), radius=0)
+
+
+def map_rows(world) -> tuple[list[str], list[str]]:
+    """Per-row kind and height strings of the whole map (query `tiles`, in strips of <= 4096 tiles)."""
+    sy = world.call("map_info")["size_y"]
+    kind, height = [""] * sy, [""] * sy
+    for y0 in range(0, sy, 4096 // W):
+        for r in world.call("tiles", x=0, y=y0, w=W, h=min(4096 // W, sy - y0)):
+            kind[r["y"]], height[r["y"]] = r["kind"], r["height"]
+    return kind, height
+
+
 def site(world, w: int, h: int) -> tuple[int, int]:
-    t = world.call("rh_find_site", w=w, h=h)
-    assert t >= 0, f"no flat {w}x{h} site on the fixture map"
-    return t % W, t // W
+    """First (row-major) w x h rectangle of buildable (clear/trees/rough/farm), flat, level land — queries only."""
+    kind, height = map_rows(world)
+    flat: dict[tuple[int, int], bool] = {}
+
+    def is_flat(x: int, y: int) -> bool:
+        if (x, y) not in flat:
+            flat[(x, y)] = tile_info(world, x, y)["slope"] == 0
+        return flat[(x, y)]
+
+    for y in range(2, len(kind) - h - 2):
+        for x in range(2, W - w - 2):
+            z = height[y][x]
+            if all(set(kind[y + dy][x:x + w]) <= BUILDABLE and height[y + dy][x:x + w] == z * w for dy in range(h)) and \
+                    all(is_flat(x + dx, y + dy) for dy in range(h) for dx in range(w)):
+                return x, y
+    raise AssertionError(f"no flat {w}x{h} site on the fixture map")
+
+
+def probe(world, action: str, key: str, kinds: str, max_cost: int | None = None, **args) -> tuple[int, int]:
+    """First tile of the given map kinds where a dry run of `action` succeeds (what a model would do)."""
+    kind, _ = map_rows(world)
+    for y in range(2, len(kind) - 2):
+        for x in range(2, W - 2):
+            if kind[y][x] not in kinds:
+                continue
+            try:
+                out = act(world, action, dry_run=True, **{key: at(x, y)}, **args)
+            except BridgeError:
+                continue
+            if max_cost is None or out["cost"] <= max_cost:
+                return x, y
+    raise AssertionError(f"no site for {action} on the fixture map")
+
+
+def cargo_id(world, label: str) -> int:
+    return next(c["id"] for c in world.call("cargos") if c["label"] == label)
+
+
+def vehicle_row(world, v: int) -> dict:
+    return next(r for r in world.call("vehicles") if r["id"] == v)
+
+
+def quarters(world, n: int = 2) -> dict:
+    qs = world.call("company")["quarters"][:n]
+    return {"income": sum(q["income"] for q in qs), "delivered": sum(q["delivered"] for q in qs)}
 
 
 # ------------------------------------------------------------------------------------------- basics
@@ -100,6 +155,18 @@ def test_dry_run_cost_matches_the_real_build(world):
     assert money(world) == before - cost
 
 
+def test_chosen_rail_type_survives_save_and_load(tmp_path):
+    """rail.set_type is session state in the GS; Save()/Load() must carry it so forks build the same track."""
+    cfg = ServerConfig(seed=3, map_x_log2=7, map_y_log2=7, starting_year=2010)
+    with World.create(tmp_path / "a", cfg) as w:
+        assert act(w, "rail.set_type", railtype=1)["railtype"] == 1  # electrified rail
+        save = w.save(tmp_path / "s.sav")
+    with World.load(tmp_path / "b", save) as w2:
+        x, y = site(w2, 1, 1)
+        act(w2, "rail.track", tile=at(x, y), track="ne_sw")
+        assert tile_info(w2, x, y)["rail_type"] == 1
+
+
 # ------------------------------------------------------------------------------------------- rail
 def test_rail_family(world):
     x, y = site(world, 12, 8)
@@ -110,16 +177,16 @@ def test_rail_family(world):
     # line (straight), dry run first, then the engine's own refusal to build it twice
     assert dry(world, "rail.line", from_tile=at(x, y + 1), to_tile=at(x + 5, y + 1)) > 0
     assert act(world, "rail.line", from_tile=at(x, y + 1), to_tile=at(x + 5, y + 1))["cost"] > 0
-    for i in range(6):
-        assert world.call("rh_tile", tile=idx(x + i, y + 1))["tracks"] == 1  # RAILTRACK_NE_SW
-    assert world.call("rh_tile", tile=idx(x + 6, y + 1))["rail"] is False
+    for i in range(6):  # a dry-run removal only passes if that exact piece is there
+        dry(world, "rail.remove", tile=at(x + i, y + 1), track="ne_sw")
+    assert tile_info(world, x + 6, y + 1)["rail"] is False
     fails(world, "rail.line", "ERR_ALREADY_BUILT", from_tile=at(x, y + 1), to_tile=at(x + 5, y + 1))
     fails(world, "rail.line", "ERR_BAD_ARG", from_tile=at(x, y + 1), to_tile=at(x + 5, y + 3))  # neither straight nor diagonal
 
     # diagonal drag x+8..x+11, y..y+3
     assert act(world, "rail.line", from_tile=at(x + 8, y), to_tile=at(x + 11, y + 3))["cost"] > 0
     for i in range(4):
-        assert world.call("rh_tile", tile=idx(x + 8 + i, y + i))["rail"] is True
+        assert tile_info(world, x + 8 + i, y + i)["rail"] is True
 
     # single pieces
     act(world, "rail.track", tile=at(x, y + 7), track="nw_se")
@@ -141,12 +208,12 @@ def test_rail_family(world):
     st = act(world, "rail.station", tile=at(x, y + 3), axis="x", platforms=2, length=4)
     assert st["station"] >= 0 and st["cost"] > 0
     # the engine has no script error code for "remove the station first": ERR_UNKNOWN + what is there
-    e = fails(world, "rail.station", "ERR_UNKNOWN", tile=at(x + 1, y + 3), axis="x", platforms=1, length=2, join=-1)
+    e = fails(world, "rail.station", "ERR_UNKNOWN", tile=at(x + 1, y + 3), axis="x", platforms=1, length=2, join_station=-1)
     assert f"station {st['station']}" in e.message and "yours" in e.message
     fails(world, "rail.signal", "ERR_UNSUITABLE_TRACK", tile=at(x + 1, y + 3), front_tile=at(x + 2, y + 3))
     act(world, "rail.line", from_tile=at(x + 4, y + 3), to_tile=at(x + 6, y + 3))
     dep = act(world, "rail.depot", tile=at(x + 7, y + 3), front_tile=at(x + 6, y + 3))
-    assert dep["depot"] == idx(x + 7, y + 3)
+    assert dep["depot_tile"] == idx(x + 7, y + 3)
 
 
 # ------------------------------------------------------------------------------------------- road
@@ -158,11 +225,11 @@ def test_road_family(world):
     fails(world, "road.line", "ERR_BAD_ARG", from_tile=at(x, y + 1), to_tile=at(x + 2, y + 2))
 
     assert dry(world, "road.depot", tile=at(x + 1, y), front_tile=at(x + 1, y + 1)) > 0
-    assert act(world, "road.depot", tile=at(x + 1, y), front_tile=at(x + 1, y + 1))["depot"] == idx(x + 1, y)
-    act(world, "road.line", from_tile=at(x + 1, y + 1), to_tile=at(x + 1, y))
+    assert act(world, "road.depot", tile=at(x + 1, y), front_tile=at(x + 1, y + 1))["depot_tile"] == idx(x + 1, y)
 
     bay = act(world, "road.stop", tile=at(x + 3, y + 2), front_tile=at(x + 3, y + 1), kind="bus")
-    dt = act(world, "road.stop", tile=at(x + 5, y + 1), front_tile=at(x + 6, y + 1), kind="truck", drive_through=True, join=-1)
+    dt = act(world, "road.stop", tile=at(x + 5, y + 1), front_tile=at(x + 6, y + 1), kind="truck", drive_through=True,
+             join_station=-1)
     assert bay["station"] >= 0 and dt["station"] >= 0 and bay["station"] != dt["station"]
     fails(world, "road.stop", "ERR_AREA_NOT_CLEAR", tile=at(x + 1, y), front_tile=at(x + 1, y + 1))
     fails(world, "road.stop", "ERR_ROAD_DRIVE_THROUGH_WRONG_DIRECTION",
@@ -170,7 +237,56 @@ def test_road_family(world):
 
     act(world, "road.one_way", from_tile=at(x, y + 4), to_tile=at(x + 4, y + 4))
     act(world, "road.remove", from_tile=at(x, y + 4), to_tile=at(x + 4, y + 4))
-    assert world.call("rh_tile", tile=idx(x + 2, y + 4))["road"] is False
+    assert tile_info(world, x + 2, y + 4)["road"] is False
+
+
+# ------------------------------------------------------------------------------------------- GUI auto-connect parity
+def test_road_depot_and_stops_connect_to_adjacent_road_like_the_gui(world):
+    """CcRoadDepot / CcRoadStop -> ConnectRoadToStructure: the entrance is joined to a plain road outside it."""
+    x, y = site(world, 9, 4)
+    act(world, "road.line", from_tile=at(x, y + 1), to_tile=at(x + 8, y + 1))
+
+    # depot beside the road: the missing piece is added; the dry run prices it exactly
+    cost = dry(world, "road.depot", tile=at(x + 1, y), front_tile=at(x + 1, y + 1))
+    out = act(world, "road.depot", tile=at(x + 1, y), front_tile=at(x + 1, y + 1))
+    assert out["connected"] is True and out["cost"] == cost
+    fails(world, "road.line", "ERR_ALREADY_BUILT", from_tile=at(x + 1, y + 1), to_tile=at(x + 1, y))  # proof
+
+    # depot facing bare land: nothing to connect to (same as the GUI)
+    assert act(world, "road.depot", tile=at(x + 3, y + 3), front_tile=at(x + 4, y + 3))["connected"] is False
+
+    # bay stop beside the road
+    assert act(world, "road.stop", tile=at(x + 3, y), front_tile=at(x + 3, y + 1), join_station=-1)["connected"] is True
+    fails(world, "road.line", "ERR_ALREADY_BUILT", from_tile=at(x + 3, y + 1), to_tile=at(x + 3, y))
+
+    # drive-through stop on the existing road: already connected, nothing added, dry run exact
+    cost = dry(world, "road.stop", tile=at(x + 6, y + 1), front_tile=at(x + 7, y + 1), drive_through=True, join_station=-1)
+    out = act(world, "road.stop", tile=at(x + 6, y + 1), front_tile=at(x + 7, y + 1), drive_through=True, join_station=-1)
+    assert out["connected"] is False and out["cost"] == cost
+
+
+def test_drive_through_stop_in_a_road_gap_connects_both_ends(world):
+    x, y = site(world, 7, 1)
+    act(world, "road.line", from_tile=at(x, y), to_tile=at(x + 2, y))      # ends at the centre of x+2
+    act(world, "road.line", from_tile=at(x + 4, y), to_tile=at(x + 6, y))  # starts at the centre of x+4
+    out = act(world, "road.stop", tile=at(x + 3, y), front_tile=at(x + 4, y), kind="truck", drive_through=True)
+    assert out["connected"] is True
+    for end in (x + 2, x + 4):  # both neighbours now have their piece into the stop
+        fails(world, "road.line", "ERR_ALREADY_BUILT", from_tile=at(end, y), to_tile=at(x + 3, y))
+
+
+def test_rail_depot_beside_a_line_gets_the_gui_curves(world):
+    """CcRailDepot: a depot facing a straight line gets both curves onto it (not a straight stub)."""
+    x, y = site(world, 6, 3)
+    act(world, "rail.line", from_tile=at(x, y + 1), to_tile=at(x + 5, y + 1))
+    cost = dry(world, "rail.depot", tile=at(x + 2, y), front_tile=at(x + 2, y + 1))
+    out = act(world, "rail.depot", tile=at(x + 2, y), front_tile=at(x + 2, y + 1))
+    assert out["connected"] is True and out["cost"] == cost
+    dry(world, "rail.remove", tile=at(x + 2, y + 1), track="nw_ne")  # curve toward north-east
+    dry(world, "rail.remove", tile=at(x + 2, y + 1), track="nw_sw")  # curve toward south-west
+    fails(world, "rail.remove", "ERR_UNSUITABLE_TRACK", tile=at(x + 2, y + 1), track="nw_se", dry_run=True)
+    # facing bare land: nothing to connect
+    assert act(world, "rail.depot", tile=at(x + 4, y + 2), front_tile=at(x + 5, y + 2))["connected"] is False
 
 
 # ------------------------------------------------------------------------------------------- air / water
@@ -179,8 +295,8 @@ def test_air_family(world):
     fails(world, "air.airport", "ERR_TYPE_NOT_AVAILABLE", tile=at(x, y), type="metropolitan")  # 1950: not yet
     assert dry(world, "air.airport", tile=at(x, y), type="small") > 0
     out = act(world, "air.airport", tile=at(x, y), type="small")
-    assert out["station"] >= 0 and out["hangar"] >= 0
-    fails(world, "air.airport", "ERR_AREA_NOT_CLEAR", tile=at(x + 1, y), type="small", join=-1)
+    assert out["station"] >= 0 and out["hangar_tile"] >= 0
+    fails(world, "air.airport", "ERR_AREA_NOT_CLEAR", tile=at(x + 1, y), type="small", join_station=-1)
 
 
 def test_water_family(world):
@@ -190,49 +306,47 @@ def test_water_family(world):
     act(world, "water.canal", tile=at(x + 1, y + 1))
     fails(world, "water.canal", "ERR_ALREADY_BUILT", tile=at(x, y + 1))
     dep = act(world, "water.ship_depot", tile=at(x, y + 1), toward_tile=at(x + 1, y + 1))
-    assert dep["depot"] == idx(x, y + 1)
+    assert dep["depot_tile"] == idx(x, y + 1)
     fails(world, "water.dock", "ERR_SITE_UNSUITABLE", tile=at(x + 2, y))  # flat land, no water
 
-    dock = world.call("rh_probe_site", kind="dock")
-    lock = world.call("rh_probe_site", kind="lock")
-    assert dock >= 0 and lock >= 0
-    assert act(world, "water.dock", tile=xy(dock))["station"] >= 0
-    act(world, "water.lock", tile=xy(lock))
+    dock = probe(world, "water.dock", "tile", kinds=",")
+    assert act(world, "water.dock", tile=at(*dock))["station"] >= 0
+    lock = probe(world, "water.lock", "tile", kinds=".,")
+    act(world, "water.lock", tile=at(*lock))
 
 
 # ------------------------------------------------------------------------------------------- bridges / tunnels / land
 def test_bridge_and_tunnel(world):
     act(world, "company.loan", amount=300_000)
-    t = world.call("rh_probe_site", kind="tunnel_road", max_cost=50_000)
-    assert t >= 0
-    assert dry(world, "bridge.tunnel", start=xy(t), vehicle="road") > 0
-    out = act(world, "bridge.tunnel", start=xy(t), vehicle="road")
-    assert out["other_end"] != t
-    fails(world, "bridge.tunnel", "ERR_AREA_NOT_CLEAR", start=xy(t), vehicle="road")
+    tx, ty = probe(world, "bridge.tunnel", "start_tile", kinds=".", max_cost=50_000, vehicle="road")
+    assert dry(world, "bridge.tunnel", start_tile=at(tx, ty), vehicle="road") > 0
+    out = act(world, "bridge.tunnel", start_tile=at(tx, ty), vehicle="road")
+    assert out["other_end_tile"] not in (-1, idx(tx, ty))
+    fails(world, "bridge.tunnel", "ERR_AREA_NOT_CLEAR", start_tile=at(tx, ty), vehicle="road")
 
     x, y = site(world, 6, 2)
-    fails(world, "bridge.tunnel", "ERR_TUNNEL_START_SITE_UNSUITABLE", start=at(x, y), vehicle="rail")
-    fails(world, "bridge.build", "ERR_BAD_ARG", start=at(x, y), end=at(x, y))
+    fails(world, "bridge.tunnel", "ERR_TUNNEL_START_SITE_UNSUITABLE", start_tile=at(x, y), vehicle="rail")
+    fails(world, "bridge.build", "ERR_BAD_ARG", start_tile=at(x, y), end_tile=at(x, y))
     act(world, "road.line", from_tile=at(x + 2, y), to_tile=at(x + 2, y + 1))  # something to span
-    assert dry(world, "bridge.build", start=at(x, y), end=at(x + 4, y), vehicle="road") > 0
-    br = act(world, "bridge.build", start=at(x, y), end=at(x + 4, y), vehicle="road")
+    assert dry(world, "bridge.build", start_tile=at(x, y), end_tile=at(x + 4, y), vehicle="road") > 0
+    br = act(world, "bridge.build", start_tile=at(x, y), end_tile=at(x + 4, y), vehicle="road")
     assert br["length"] == 5 and br["bridge_type"] >= 0
-    fails(world, "bridge.build", "ERR_ALREADY_BUILT", start=at(x, y), end=at(x + 4, y), vehicle="road")
+    fails(world, "bridge.build", "ERR_ALREADY_BUILT", start_tile=at(x, y), end_tile=at(x + 4, y), vehicle="road")
 
 
 def test_land_family(world):
     x, y = site(world, 4, 4)
     fails(world, "land.level", "ERR_AREA_ALREADY_FLAT", from_tile=at(x, y), to_tile=at(x + 3, y + 3))
-    h0 = world.call("rh_tile", tile=idx(x + 1, y + 1))["max_height"]
+    h0 = tile_info(world, x + 1, y + 1)["max_height"]
     assert dry(world, "land.raise", tile=at(x + 1, y + 1), corner="all") > 0
     act(world, "land.raise", tile=at(x + 1, y + 1), corner="all")
-    assert world.call("rh_tile", tile=idx(x + 1, y + 1))["max_height"] == h0 + 1
+    assert tile_info(world, x + 1, y + 1)["max_height"] == h0 + 1
     act(world, "land.lower", tile=at(x + 1, y + 1), corner="n")
     act(world, "land.level", from_tile=at(x, y), to_tile=at(x + 3, y + 3))
-    assert world.call("rh_tile", tile=idx(x + 1, y + 1))["slope"] == 0
+    assert tile_info(world, x + 1, y + 1)["slope"] == 0
     act(world, "road.line", from_tile=at(x, y), to_tile=at(x + 2, y))
     act(world, "land.demolish", tile=at(x + 1, y))
-    assert world.call("rh_tile", tile=idx(x + 1, y))["road"] is False
+    assert tile_info(world, x + 1, y)["road"] is False
 
 
 # ------------------------------------------------------------------------------------------- vehicles / orders
@@ -240,15 +354,14 @@ def _bus_yard(world):
     """Road with two bay bus stops and a depot on a flat site; returns (depot, stop_a, stop_b) tiles as "x,y"."""
     x, y = site(world, 10, 3)
     act(world, "road.line", from_tile=at(x, y + 1), to_tile=at(x + 9, y + 1))
-    act(world, "road.depot", tile=at(x + 4, y), front_tile=at(x + 4, y + 1))
-    act(world, "road.line", from_tile=at(x + 4, y + 1), to_tile=at(x + 4, y))
+    assert act(world, "road.depot", tile=at(x + 4, y), front_tile=at(x + 4, y + 1))["connected"] is True
     act(world, "road.stop", tile=at(x + 1, y + 2), front_tile=at(x + 1, y + 1))
-    act(world, "road.stop", tile=at(x + 8, y + 2), front_tile=at(x + 8, y + 1), join=-1)
+    act(world, "road.stop", tile=at(x + 8, y + 2), front_tile=at(x + 8, y + 1), join_station=-1)
     return at(x + 4, y), at(x + 1, y + 2), at(x + 8, y + 2)
 
 
 def bus_engine(world) -> int:
-    return world.call("rh_engines", vehicle_type="road", cargo="PASS")[0]["id"]
+    return next(e["id"] for e in world.call("engines", vtype="road", cargo=cargo_id(world, "PASS")) if e["carries"])
 
 
 def test_vehicle_and_order_family(world):
@@ -268,18 +381,22 @@ def test_vehicle_and_order_family(world):
     fails(world, "order.append", "ERR_BAD_ARG", vehicle=v, tile=a, flags=["full_load", "no_load"])
     fails(world, "order.append", "ERR_BAD_ARG", vehicle=v, tile=at(0, 0))  # not a destination
     assert act(world, "order.remove", vehicle=v, index=1)["orders"] == 2
-    orders = world.call("rh_vehicle", vehicle=v)["orders"]
+    orders = world.call("orders", vehicle=v)
     assert [o["tile"] for o in orders] == [to_gs("land.demolish", {"tile": a}, W)[1]["tile"],
                                            to_gs("land.demolish", {"tile": b}, W)[1]["tile"]]
+    assert orders[0]["flags"] == ["non_stop"]
 
-    # clone sharing orders, then clear/share
+    # clone sharing orders (proof of sharing: an order appended to one shows up on the other), then clear/share
     c = act(world, "vehicle.clone", depot_tile=depot, vehicle=v, share_orders=True)["vehicle"]
-    assert world.call("rh_vehicle", vehicle=c)["shared"] is True
+    act(world, "order.append", vehicle=v, tile=depot)
+    assert vehicle_row(world, c)["orders"] == 3
+    act(world, "order.remove", vehicle=c, index=2)
+    assert vehicle_row(world, v)["orders"] == 2
     assert dry(world, "order.clear", vehicle=c) == 0
     assert act(world, "order.clear", vehicle=c)["orders"] == 0
-    assert len(world.call("rh_vehicle", vehicle=v)["orders"]) == 2  # the original keeps its list
-    assert act(world, "order.share", vehicle=c, other=v)["orders"] == 2
-    fails(world, "order.share", "ERR_BAD_ARG", vehicle=c, other=c)
+    assert vehicle_row(world, v)["orders"] == 2  # the original keeps its list
+    assert act(world, "order.share", vehicle=c, other_vehicle=v)["orders"] == 2
+    fails(world, "order.share", "ERR_BAD_ARG", vehicle=c, other_vehicle=c)
 
     # start/stop are idempotent, sell needs a stopped-in-depot vehicle
     assert act(world, "vehicle.start", vehicle=v)["changed"] is True
@@ -287,6 +404,8 @@ def test_vehicle_and_order_family(world):
     act(world, "vehicle.skip_order", vehicle=v, index=1)
     fails(world, "vehicle.skip_order", "ERR_BAD_ARG", vehicle=v, index=5)
     world.step(days=3)
+    row = vehicle_row(world, v)
+    assert row["tile"] != to_gs("land.demolish", {"tile": depot}, W)[1]["tile"], "bus left the auto-connected depot"
     fails(world, "vehicle.sell", "ERR_VEHICLE_NOT_IN_DEPOT", vehicle=v)
     act(world, "vehicle.depot", vehicle=v)
     assert act(world, "vehicle.stop", vehicle=c)["changed"] is False  # bought vehicles start stopped
@@ -348,7 +467,8 @@ def _stop_near(world, end: tuple[int, int], toward: tuple[int, int]) -> tuple[in
     sx, sy = (toward[0] > end[0]) - (toward[0] < end[0]), (toward[1] > end[1]) - (toward[1] < end[1])
     for t in _walk(end, toward, 5):
         try:
-            act(world, "road.stop", tile=at(*t), front_tile=at(t[0] + sx, t[1] + sy), kind="bus", drive_through=True, join=-1)
+            act(world, "road.stop", tile=at(*t), front_tile=at(t[0] + sx, t[1] + sy), kind="bus", drive_through=True,
+                join_station=-1)
             return t
         except BridgeError:
             continue
@@ -362,16 +482,16 @@ def _depot_beside(world, p: tuple[int, int], q: tuple[int, int], avoid: tuple[in
             continue
         for side in ((t[0] + sy, t[1] + sx), (t[0] - sy, t[1] - sx)):  # perpendicular neighbours
             try:
-                act(world, "road.depot", tile=at(*side), front_tile=at(*t))
+                out = act(world, "road.depot", tile=at(*side), front_tile=at(*t))
             except BridgeError:
                 continue
-            if _seg(world, t, side):
-                return at(*side)
+            assert out["connected"] is True  # the GUI follow-up joined it to the route
+            return at(*side)
     return None
 
 
 def _bus_line(world) -> dict:
-    """Only player actions + the towns query: road, stops, depot, two buses, orders, start, 90 days."""
+    """Player actions + read-only queries only: road, stops, depot, two buses, orders, start, 90 days."""
     towns = world.call("towns")
     pairs = sorted((abs(s["x"] - t["x"]) + abs(s["y"] - t["y"]), s["id"], t["id"])
                    for s in towns for t in towns if s["id"] < t["id"])
@@ -402,8 +522,8 @@ def _bus_line(world) -> dict:
 
     world.step(days=90)
 
-    built["finance"] = world.call("rh_finance")
-    built["profits"] = [world.call("rh_vehicle", vehicle=v)["profit_this_year"] for v in buses]
+    built["finance"] = quarters(world)
+    built["profits"] = [vehicle_row(world, v)["profit_this_year"] for v in buses]
     built["checksum"] = world.call("checksum")
     return built
 

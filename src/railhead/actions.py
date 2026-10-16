@@ -93,7 +93,7 @@ def _bool(name: str, doc: str, default: bool = False) -> Param:
 
 
 VEHICLE = _int("vehicle", "Vehicle id (one of your primary vehicles).", minimum=0)
-JOIN = _int("join", "Station to join: omit to join an adjacent own station (GUI default), a station id to "
+JOIN = _int("join_station", "Station to join: omit to join an adjacent own station (GUI default), a station id to "
             "join that station, or -1 to force a new station.", required=False, minimum=-1)
 
 TRACKS = ("ne_sw", "nw_se", "nw_ne", "sw_se", "nw_sw", "ne_se")
@@ -135,8 +135,9 @@ _SPECS: list[ActionSpec] = [
           _enum("axis", ("x", "y"), "Platform direction: x (north-east to south-west) or y (north-west to south-east)."),
           _int("platforms", "Number of parallel platforms.", minimum=1, maximum=255),
           _int("length", "Platform length in tiles.", minimum=1, maximum=255), JOIN),
-    _spec("rail.depot", "Build a train depot whose entrance faces front_tile.",
-          _tile("tile", "Depot tile (flat, clear)."), _tile("front_tile", "Neighbour the entrance faces; connect track to it.")),
+    _spec("rail.depot", "Build a train depot whose entrance faces front_tile. Like the GUI, if front_tile already has "
+          "track, the pieces joining the depot to it are added (reply: connected).",
+          _tile("tile", "Depot tile (flat, clear)."), _tile("front_tile", "Neighbour the entrance faces.")),
     _spec("rail.signal", "Build a signal on a rail tile, facing trains that head toward front_tile.",
           _tile("tile", "Rail tile for the signal."), _tile("front_tile", "Neighbour in front of the signal."),
           _enum("type", SIGNALS, "Signal type (always electric).", default="pbs_oneway")),
@@ -153,10 +154,12 @@ _SPECS: list[ActionSpec] = [
           _tile("from_tile", "Start tile."), _tile("to_tile", "End tile (same x or same y).")),
     _spec("road.remove", "Remove road between the centres of from_tile and to_tile.",
           _tile("from_tile", "Start tile."), _tile("to_tile", "End tile (same x or same y).")),
-    _spec("road.depot", "Build a road depot facing front_tile (then road.line front_tile->tile to connect).",
+    _spec("road.depot", "Build a road depot facing front_tile. Like the GUI, if front_tile is a road the missing "
+          "piece into the depot is added (reply: connected); otherwise build road to front_tile yourself.",
           _tile("tile", "Depot tile (flat, clear)."), _tile("front_tile", "Neighbour the entrance faces.")),
     _spec("road.stop", "Build a bus or truck stop. Bay stops open toward front_tile; drive-through stops sit on a "
-          "straight road along the tile->front_tile axis.",
+          "straight road along the tile->front_tile axis. Like the GUI, adjacent roads at the entrance(s) are joined "
+          "to the stop (reply: connected).",
           _tile("tile", "Stop tile."), _tile("front_tile", "Neighbour giving the entrance/axis."),
           _enum("kind", ("bus", "truck"), "Stop for buses (passengers) or trucks (cargo).", default="bus"),
           _bool("drive_through", "Drive-through stop on a road instead of a bay stop."), JOIN),
@@ -171,11 +174,11 @@ _SPECS: list[ActionSpec] = [
           _tile("tile", "Water tile for the depot."), _tile("toward_tile", "Neighbour on the depot's axis.")),
     # ---------------------------------------------------------------- bridges / tunnels
     _spec("bridge.build", "Build a bridge between two tiles in a straight line (road bridges add road on both ends).",
-          _tile("start", "First bridge head."), _tile("end", "Second bridge head (same x or same y)."),
+          _tile("start_tile", "First bridge head."), _tile("end_tile", "Second bridge head (same x or same y)."),
           _enum("vehicle", ("rail", "road", "water"), "What the bridge carries.", default="road"),
           _int("type", "Bridge type id; default: the lowest id that spans this length.", required=False, minimum=0)),
     _spec("bridge.tunnel", "Build a tunnel starting at a straight sloped tile; it runs into the hill to the other side.",
-          _tile("start", "Tunnel entrance (sloped tile facing into the hill)."),
+          _tile("start_tile", "Tunnel entrance (sloped tile facing into the hill)."),
           _enum("vehicle", ("rail", "road"), "What the tunnel carries.", default="road")),
     # ---------------------------------------------------------------- land
     _spec("land.raise", "Raise corner(s) of a tile by one height level.",
@@ -214,7 +217,7 @@ _SPECS: list[ActionSpec] = [
     _spec("order.remove", "Remove the order at position index.", VEHICLE, _int("index", "Order index (0-based).", minimum=0)),
     _spec("order.clear", "Delete all orders of a vehicle (a vehicle sharing orders just stops sharing).", VEHICLE),
     _spec("order.share", "Make vehicle share the order list of other.", VEHICLE,
-          _int("other", "Vehicle whose orders to share.", minimum=0)),
+          _int("other_vehicle", "Vehicle whose orders to share.", minimum=0)),
     # ---------------------------------------------------------------- company / town
     _spec("company.loan", "Set the loan to amount (a multiple of the loan interval, at most the max loan).",
           _int("amount", "New total loan.", minimum=0)),

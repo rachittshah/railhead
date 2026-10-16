@@ -40,7 +40,7 @@ def test_gs_method_is_group_underscore_verb():
 
 def test_whitelist_is_exactly_the_player_actions():
     assert WHITELIST == frozenset(s.gs_method for s in REGISTRY.values())
-    for m in ("step", "companies", "towns", "checksum", "bind_company", "rh_tile", "rh_engines"):
+    for m in ("step", "companies", "towns", "checksum", "bind_company", "tile", "tiles", "engines", "vehicles"):
         assert m not in WHITELIST
 
 
@@ -65,10 +65,47 @@ def _nut_params(handlers: dict[str, str], name: str) -> set[str]:
     return set(re.findall(r'\["(\w+)", ', spec))
 
 
+def test_action_table_holds_only_player_actions():
+    """No env-side helpers (site finders, probes) may hide in the action table or the replay whitelist."""
+    handlers = _nut_handlers()
+    assert {n[2:] for n in handlers if n.startswith("H_")} == set(WHITELIST)
+    for names in (set(REGISTRY), {s.gs_method for s in REGISTRY.values()}, set(WHITELIST)):
+        assert not [n for n in names if n.startswith("rh") or "rh_" in n]
+
+
+# Pinned by the core/queries teams (method, args); tests elsewhere rely on these exact names.
+CONTRACT = {
+    "road_line": {"from_tile", "to_tile"},
+    "road_depot": {"tile", "front_tile"},
+    "road_stop": {"tile", "front_tile", "kind", "drive_through", "join_station"},
+    "vehicle_buy": {"depot_tile", "engine", "cargo"},
+    "vehicle_start": {"vehicle"},
+    "order_append": {"vehicle", "tile", "flags"},
+    "rail_line": {"from_tile", "to_tile", "start_dir_tile"},
+    "rail_station": {"tile", "axis", "platforms", "length", "join_station"},
+    "rail_depot": {"tile", "front_tile"},
+    "air_airport": {"tile", "type", "join_station"},
+}
+
+
+def test_naming_contract():
+    for m, params in CONTRACT.items():
+        assert {p.name for p in actions.get(m).params} == params, m
+    assert actions.get("road_stop").param("kind").default == "bus"
+    assert actions.get("road_stop").param("drive_through").default is False
+
+
+def test_naming_style_tiles_end_in_tile_and_vehicle_ids_in_vehicle():
+    for spec in REGISTRY.values():
+        for p in spec.params:
+            if p.type == actions.TILE:
+                assert p.name == "tile" or p.name.endswith("_tile"), (spec.name, p.name)
+            if "vehicle" in p.name and p.type == actions.INT:
+                assert p.name == "vehicle" or p.name.endswith("_vehicle"), (spec.name, p.name)
+
+
 def test_every_action_has_a_gs_handler_with_the_same_params():
     handlers = _nut_handlers()
-    gs_actions = {n[2:] for n in handlers if n.startswith("H_") and not n.startswith("H_rh_")}
-    assert gs_actions == set(WHITELIST)
     for spec in REGISTRY.values():
         assert _nut_params(handlers, "H_" + spec.gs_method) == {p.name for p in spec.params}, spec.name
 
