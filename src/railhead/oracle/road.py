@@ -135,7 +135,13 @@ class RoadOracle:
                     break
                 bad = self.build_path(path)
                 if bad is None:
-                    return self.finish(path, cargo, source, max_trucks)
+                    try:
+                        return self.finish(path, cargo, source, max_trucks)
+                    except (BridgeError, OracleFailed):
+                        # stop/depot site refused (e.g. slope): never use these endpoints again
+                        for t in (pick, drop):
+                            self.tiles[t].build = False
+                        break
                 for t in bad:  # replan around tiles the engine refused
                     if t in self.tiles:
                         self.tiles[t].build = False

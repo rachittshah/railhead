@@ -65,12 +65,50 @@ def _print(result: Any, as_json: bool, formatter=None) -> None:
         print(formatter(result))
 
 
-def _formatter(name: str):
+def _labels(c: Client) -> dict[int, str]:
+    from railhead.observe import cargo_labels
+
+    return cargo_labels(c.request("query", m="cargos"))
+
+
+def _status(c: Client, info: dict) -> str:
+    from railhead.observe import format_status, money
+
+    q = lambda m: c.request("query", m=m)  # noqa: E731
+    text = format_status(q("map_info"), q("company"), q("vehicles"), q("stations"), labels=_labels(c))
+    obj = info.get("objective") or {}
+    lines = [text, "",
+             f"task {info['task_id']} ({info['family']}): {info.get('title', '')}",
+             f"days left {info['days_left']} of {info['horizon_days']} | run-off after: {info['runoff_days']} days | "
+             f"fork-days left {info['fork_days_left']} | forks {info['forks_alive'] or '-'}"]
+    if "monitor" in obj:
+        done = next((m["total"] for m in c.request("query", m="monitor_read") if m["id"] == obj["monitor"]), 0)
+        target = obj.get("quantity")
+        lines.append(f"objective: {done:,} delivered to {obj.get('dest_name', obj.get('dest'))}"
+                     + (f" / contract {target:,}" if target else ""))
+    if "w_base" in obj:
+        lines.append(f"baseline run-off net worth to beat: {money(obj['w_base'])}")
+    if info.get("submitted"):
+        lines.append("submitted: the world now runs without you")
+    return "\n".join(lines)
+
+
+def _render(cmd: str, result: Any, c: Client, args: dict) -> str | None:
     try:
         from railhead import observe
     except ImportError:
         return None
-    return getattr(observe, f"format_{name}", None)
+    if cmd == "map":
+        return observe.render_map(result, layer=args.get("layer", "kind"))
+    if cmd == "vehicles":
+        return observe.format_vehicles(result, _labels(c), page=int(args.get("page", 1)))
+    if cmd == "industries":
+        return observe.format_industries(result, _labels(c), page=int(args.get("page", 1)))
+    if cmd == "tile":
+        return observe.format_tile(result, _labels(c))
+    if isinstance(result, list) and result and isinstance(result[0], dict):
+        return observe.format_table(result, list(result[0].keys())[:10], page=int(args.get("page", 1)))
+    return None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -96,13 +134,16 @@ def _run(argv: list[str], as_json: bool) -> int:
     mx = int(info.get("map_x", 256))
     cmd, rest = argv[0], argv[1:]
 
-    if cmd in ("status", "info", "brief"):
-        if cmd == "status":
-            fmt = _formatter("status_report")
-            data = {"info": info, "company": c.request("query", m="companies")}
-            _print(data, as_json, fmt)
-        else:
+    if cmd == "status":
+        print(json.dumps(info) if as_json else _status(c, info))
+        return 0
+    if cmd in ("info", "brief"):
+        if as_json or cmd == "info":
             _print(info, as_json)
+        else:
+            print(f"# {info.get('title') or info['task_id']}\n\n{info.get('briefing', '')}\n\n"
+                  f"horizon {info['horizon_days']} days, run-off {info['runoff_days']} days, "
+                  f"fork budget {info['fork_days_left']} days")
         return 0
     if cmd == "history":
         _print(c.request("history", **parse_kv(rest, mx)), as_json)
@@ -135,13 +176,17 @@ def _run(argv: list[str], as_json: bool) -> int:
         else:
             raise ValueError(f"unknown fork subcommand {sub!r}")
         return 0
-    if cmd == "map":
+    if cmd == "map" or cmd in QUERY_COMMANDS:
         a = parse_kv(rest, mx)
-        rows = c.request("query", m="tiles", a=a)
-        _print(rows, as_json, _formatter("map"))
-        return 0
-    if cmd in QUERY_COMMANDS:
-        _print(c.request("query", m=cmd, a=parse_kv(rest, mx)), as_json, _formatter(cmd))
+        view = {k: a.pop(k) for k in ("layer", "page") if k in a}
+        if cmd == "map":
+            a.setdefault("x", 0)
+            a.setdefault("y", 0)
+            a.setdefault("w", 48)
+            a.setdefault("h", 24)
+        result = c.request("query", m="tiles" if cmd == "map" else cmd, a=a)
+        text = None if as_json else _render(cmd, result, c, view)
+        print(text if text is not None else json.dumps(result, indent=None if as_json else 1, default=str))
         return 0
     # rh <group> <verb> k=v ...  ->  registry action
     if rest:

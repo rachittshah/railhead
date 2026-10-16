@@ -87,7 +87,7 @@ def test_format_table_truncates_to_byte_budget():
 # ---------------------------------------------------------------------------------------------- format_status
 def test_format_status_shows_date_money_fleet_and_stations():
     vehicles = [vehicle(1), vehicle(2, state="at_station"), vehicle(3, state="in_depot", in_depot=True, stopped=True)]
-    out = ob.format_status(MAP_INFO, COMPANY, vehicles, [station(7)])
+    out = ob.format_status(MAP_INFO, COMPANY, vehicles, [station(7)], labels=LABELS)
     assert "1950-02-10" in out and "Fedborough Transport" in out and "128x128 temperate" in out
     assert "£95,123" in out and "£100,000" in out and "£300,000" in out
     assert "income £7,000" in out and "rating 87" in out
@@ -102,7 +102,7 @@ def test_format_status_raises_alerts_for_problems():
                 vehicle(5, state="stopped", stopped=True)]
     stations = [station(7, cargo=[{"cargo": 0, "waiting": 600, "rating": 31}])]
     company = dict(COMPANY, money=-5_000)
-    out = ob.format_status(MAP_INFO, company, vehicles, stations)
+    out = ob.format_status(MAP_INFO, company, vehicles, stations, labels=LABELS)
     alerts = out[out.index("Alerts"):]
     assert "cash negative" in alerts
     assert "crashed: 1" in alerts
@@ -128,10 +128,15 @@ def test_format_status_without_vehicles_or_stations():
 
 # ---------------------------------------------------------------------------------------------- render_map
 TILES = [
-    {"y": 9, "x": 5, "kind": "..~~==", "height": "112000", "owner": "..**.o"},
-    {"y": 10, "x": 5, "kind": ".TT=I ", "height": "1234a0", "owner": "......"},
-    {"y": 11, "x": 5, "kind": "t^#SDB", "height": "zz1111", "owner": ".**..*"},
+    {"y": 9, "x": 5, "kind": "..~~==", "height": "112000", "owner": "..**.o", "slope": "010000", "build": "110011"},
+    {"y": 10, "x": 5, "kind": ".TT=I ", "height": "1234a0", "owner": "......", "slope": "0s1000", "build": "100100"},
+    {"y": 11, "x": 5, "kind": "t^#SDB", "height": "zz1111", "owner": ".**..*", "slope": "110000", "build": "110000"},
 ]
+
+
+def test_kind_legend_covers_every_kind_char_the_gamescript_emits():
+    assert set(ob.KIND_LEGEND) == set(" .^ft~,LTI=#+SWDBO")
+    assert ob.KIND_LEGEND["="] == "road" and ob.KIND_LEGEND[" "] == "off-map"
 
 
 def test_render_map_has_rulers_labels_and_rows():
@@ -160,6 +165,10 @@ def test_render_map_height_and_owner_layers():
     assert "1234a0" in h and "base-36" in h
     o = ob.render_map(TILES, layer="owner")
     assert "..**.o" in o and "yours" in o and "other company" in o
+    s = ob.render_map(TILES, layer="slope")
+    assert "0s1000" in s and "steep" in s
+    b = ob.render_map(TILES, layer="build")
+    assert "100100" in b and "buildable" in b
     with pytest.raises(ValueError):
         ob.render_map(TILES, layer="weather")
 

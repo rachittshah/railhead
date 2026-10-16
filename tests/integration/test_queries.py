@@ -200,10 +200,31 @@ def test_tiles_returns_one_compact_row_per_y(world):
     assert [r["y"] for r in rows] == list(range(32))
     for r in rows:
         assert r["x"] == 0
-        assert len(r["kind"]) == len(r["height"]) == len(r["owner"]) == MAP
+        assert len(r["kind"]) == len(r["height"]) == len(r["owner"]) == len(r["slope"]) == len(r["build"]) == MAP
         assert set(r["kind"]) <= KIND_CHARS
         assert set(r["height"]) <= HEIGHT_CHARS
         assert set(r["owner"]) <= set("*o.")
+        assert set(r["slope"]) <= set("01s")
+        assert set(r["build"]) <= set("01")
+
+
+def test_tiles_slope_and_build_layers_agree_with_the_tile_query(world):
+    rows = full_map(world)
+    slope = "".join(r["slope"] for r in rows)
+    build = "".join(r["build"] for r in rows)
+    assert "0" in slope and "1" in slope, "a generated map has flat and sloped land"
+    assert "1" in build and "0" in build
+    assert rows[MAP - 1]["slope"] == "0" * MAP and rows[MAP - 1]["build"] == "0" * MAP, "off-map edge"
+    picks = {}
+    for r in rows[1:-1]:
+        for i in range(1, MAP - 1):
+            picks.setdefault((r["slope"][i], r["build"][i], r["kind"][i]), (i, r["y"]))
+    for (s, b, k), (x, y) in picks.items():
+        t = world.call("tile", x=x, y=y, radius=0)
+        assert t["kind"] == k
+        assert (b == "1") == t["buildable"], (x, y)
+        expected = "0" if t["slope"] == 0 else "s" if t["slope"] & 16 else "1"
+        assert s == expected, (x, y, t["slope"])
 
 
 def test_tiles_full_map_shows_towns_roads_industries_and_void_edges(world):

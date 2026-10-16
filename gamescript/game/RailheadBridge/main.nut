@@ -178,8 +178,10 @@ class RailheadBridge extends GSController {
 		// Squirrel cannot suspend through a native call frame (the script would die silently).
 		local where = (name in this) ? 0 : (name in Query) ? 1 : (name in Action) ? 2 : -1;
 		if (where < 0) return Proto.Err(id, "ERR_UNKNOWN_METHOD", "unknown method " + req.m);
-		if (this.step_mode != 0 && where == 2) {
-			return Proto.Err(id, "ERR_BUSY", "world is stepping; only queries are allowed");
+		// While a step is in flight only O(1) meta calls are served: a multi-tick query would make the
+		// GS skip CountTick for those ticks and the replay clock would drift.
+		if (this.step_mode != 0 && name != "H_hello" && name != "H_ping" && name != "H_state") {
+			return Proto.Err(id, "ERR_BUSY", "world is stepping; only state/ping are served until it pauses");
 		}
 		try {
 			if (where == 0) this[name](id, a);

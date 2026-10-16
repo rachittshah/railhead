@@ -6,6 +6,7 @@
     railhead play <log.jsonl>    re-issue a recorded action log through the daemon (oracle solve.sh)
     railhead export <out> [ids]  write Harbor task dirs (run inside the image) [--image REF] [--version V]
     railhead gen <family> <split> <from> <to> [--out tasks] [--jobs N]   generate certified tasks
+    railhead recheck <tasks_dir> [ids]   re-verify oracle logs against certificates (cross-platform check)
 """
 
 from __future__ import annotations
@@ -18,6 +19,27 @@ from pathlib import Path
 from railhead.actionlog import read_log
 from railhead.client import Client, DaemonError
 from railhead.daemon import ensure_up, shutdown
+
+
+def recheck(tasks_dir: Path, ids: list[str] | None = None) -> int:
+    """Re-score every task's oracle log and compare with the stored certificate (determinism check)."""
+    import tempfile
+
+    from railhead.verify import verify
+
+    bad = 0
+    dirs = sorted(p for p in tasks_dir.iterdir() if (p / "certificates.json").exists())
+    for tdir in dirs:
+        if ids and tdir.name not in ids:
+            continue
+        cert = json.loads((tdir / "certificates.json").read_text())
+        out = verify(tdir, tdir / "start.sav", tdir / "oracle.jsonl", Path(tempfile.mkdtemp(prefix="rh-recheck-")))
+        same = out["valid"] == 1 and abs(out["reward"] - cert["oracle_reward"]) < 1e-9
+        bad += 0 if same else 1
+        print(json.dumps({"task": tdir.name, "match": same, "reward": out["reward"], "cert": cert["oracle_reward"],
+                          "delivered": out.get("delivered"), "valid": out["valid"]}), flush=True)
+    print(json.dumps({"checked": len(dirs), "mismatches": bad}))
+    return 1 if bad else 0
 
 
 def play(log_path: str) -> int:
@@ -63,6 +85,8 @@ def main(argv: list[str] | None = None) -> int:
             n = play(argv[1])
             print(json.dumps({"played": n}))
             return 0
+        if cmd == "recheck":
+            return recheck(Path(argv[1]), argv[2:] or None)
         if cmd == "gen":
             from railhead.gen.build import main as gen_main
 

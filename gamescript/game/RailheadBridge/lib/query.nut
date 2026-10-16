@@ -75,8 +75,6 @@ QH <- {
 		return out;
 	}
 
-	function Pct(part, whole) { return whole > 0 ? (part * 100 / whole) : 0; }
-
 	/* Cargo id or -1 (the API's INVALID_CARGO is 0xFF). */
 	function Cargo(c) { return GSCargo.IsValidCargo(c) ? c : -1; }
 
@@ -100,7 +98,7 @@ QH <- {
 	}
 
 	/* ---------------------------------------------------------------- tiles
-	 * Map kind alphabet (one char per tile; docs in src/railhead/observe.py MAP_LEGEND):
+	 * Map kind alphabet (one char per tile; mirrored in src/railhead/observe.py KIND_LEGEND):
 	 *   ' ' off-map edge  . clear  ^ rough/rocks  f farmland  t trees  ~ water  , coast  L lock
 	 *   T house  I industry  = road  # rail  + level crossing  S station  W rail waypoint
 	 *   D depot  B bridge head / tunnel portal  O other structure (HQ, transmitter, lighthouse...) */
@@ -125,15 +123,16 @@ QH <- {
 		return x >= GSMap.GetMapSizeX() - 1 || y >= GSMap.GetMapSizeY() - 1 || (freeform && (x == 0 || y == 0));
 	}
 
-	/* Kind char for a non-void tile; cheap checks for the common terrain first (opcode budget). */
-	function Kind(t) {
+	/* Kind char for a non-void tile; `buildable` = GSTile.IsBuildable(t), passed in because the tiles
+	 * scan also emits it as a layer. Cheap checks for the common terrain first (opcode budget). */
+	function Kind(t, buildable) {
 		if (GSTile.HasTreeOnTile(t)) return "t";
 		if (GSTile.IsWaterTile(t)) {
 			if (GSMarine.IsWaterDepotTile(t)) return "D";
 			return GSMarine.IsLockTile(t) ? "L" : "~";
 		}
 		if (GSTile.IsCoastTile(t)) return ",";
-		if (GSTile.IsBuildable(t)) { // clear land, or a single plain road piece
+		if (buildable) { // clear land, or a single plain road piece
 			if (GSRoad.IsRoadTile(t)) return "=";
 			if (GSTile.IsFarmTile(t)) return "f";
 			if (GSTile.IsRockTile(t) || GSTile.IsRoughTile(t)) return "^";
@@ -148,6 +147,13 @@ QH <- {
 		if (GSRail.IsRailTile(t)) return "#";
 		if (GSRoad.IsRoadTile(t)) return "=";
 		return "O";
+	}
+
+	/* '0' flat, 's' steep, '1' any other slope (planners avoid 's'; '1' needs a foundation). */
+	function SlopeChar(s) {
+		if (s == GSTile.SLOPE_FLAT) return "0";
+		if (s == GSTile.SLOPE_INVALID) return "0";
+		return GSTile.IsSteepSlope(s) ? "s" : "1";
 	}
 
 	function HeightChar(h) {
@@ -426,8 +432,14 @@ Query <- {
 	/* ------------------------------------------------------------------ land */
 
 	/* Compact map strip. Args x, y, w, h (default 64x64), clipped to the map; clipped w*h <= 4096.
-	 * One row per y: {y, x (first column), kind, height (base-36 min corner height), owner
-	 * ('*' bound company, 'o' another company, '.' town/none)}; alphabet in QH.Kind. */
+	 * One row per y, one char per tile in each layer string:
+	 *   kind   alphabet in QH.Kind (observe.KIND_LEGEND)
+	 *   height base-36 min corner height
+	 *   owner  '*' bound company, 'o' another company, '.' town/none
+	 *   slope  '0' flat, 's' steep, '1' any other slope
+	 *   build  '1' if GSTile.IsBuildable (clear, trees, coast, a single plain road piece), else '0'
+	 * Off-map edge tiles are kind ' ', height/slope/build '0', owner '.'.
+	 * Consumers (oracle planner, CLI map) rely on these exact keys: y, x, kind, height, owner, slope, build. */
 	function H_tiles(br, id, a) {
 		local sx = GSMap.GetMapSizeX(), sy = GSMap.GetMapSizeY();
 		local x0 = QH.Int(a, "x", 0), y0 = QH.Int(a, "y", 0);
@@ -443,20 +455,25 @@ Query <- {
 		local freeform = QH.FreeformEdges();
 		local rows = [];
 		for (local y = y0; y < y1; y++) {
-			local kind = "", height = "", owner = "";
+			local kind = "", height = "", owner = "", slope = "", build = "";
 			for (local x = x0; x < x1; x++) {
 				if (QH.IsVoid(x, y, freeform)) {
 					kind += " ";
 					height += "0";
 					owner += ".";
+					slope += "0";
+					build += "0";
 					continue;
 				}
 				local t = y * sx + x;
-				kind += QH.Kind(t);
+				local b = GSTile.IsBuildable(t);
+				kind += QH.Kind(t, b);
 				height += QH.HeightChar(GSTile.GetMinHeight(t));
 				owner += QH.OwnerChar(t, br.company);
+				slope += QH.SlopeChar(GSTile.GetSlope(t));
+				build += b ? "1" : "0";
 			}
-			rows.append({ y = y, x = x0, kind = kind, height = height, owner = owner });
+			rows.append({ y = y, x = x0, kind = kind, height = height, owner = owner, slope = slope, build = build });
 		}
 		Proto.Rows(id, rows);
 	}
@@ -476,7 +493,7 @@ Query <- {
 		local terrain = GSTile.GetTerrainType(t);
 		local v = {
 			tile = t, x = x, y = y,
-			kind = QH.IsVoid(x, y, QH.FreeformEdges()) ? " " : QH.Kind(t),
+			kind = QH.IsVoid(x, y, QH.FreeformEdges()) ? " " : QH.Kind(t, GSTile.IsBuildable(t)),
 			height = GSTile.GetMinHeight(t), max_height = GSTile.GetMaxHeight(t), slope = GSTile.GetSlope(t),
 			buildable = GSTile.IsBuildable(t),
 			terrain = (terrain >= 0 && terrain < QH.TERRAINS.len()) ? QH.TERRAINS[terrain] : "normal",
