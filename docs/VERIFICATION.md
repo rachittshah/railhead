@@ -17,6 +17,8 @@ This rule is proof-of-play.
 
 ## 2. Verifier procedure
 
+Refer to the flowchart in [DIAGRAMS.md, 3](DIAGRAMS.md#3-verifier).
+
 In a Harbor trial, `tests/test.sh` runs after the agent stops.
 It does these steps:
 

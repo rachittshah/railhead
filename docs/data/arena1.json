@@ -1,0 +1,723 @@
+{
+ "task": "arena-dev-0005",
+ "results": [
+  {
+   "player": "claude-sonnet-5-5",
+   "status": "verified",
+   "net_worth": 2574034,
+   "net_worth_horizon": 1829833,
+   "gain_x_baseline": 13.0,
+   "score_k50": 0.671,
+   "score_k1000": 0.382,
+   "actions": 524,
+   "failed_actions": 43,
+   "waits": 28,
+   "divergences": 0,
+   "valid": 1,
+   "vehicles": 152,
+   "stations": 14,
+   "reached": "1977-03-15"
+  },
+  {
+   "player": "claude-opus-5-5",
+   "status": "verified",
+   "net_worth": 1598757,
+   "net_worth_horizon": 1124479,
+   "gain_x_baseline": 8.1,
+   "score_k50": 0.561,
+   "score_k1000": 0.319,
+   "actions": 417,
+   "failed_actions": 45,
+   "waits": 16,
+   "divergences": 0,
+   "valid": 1,
+   "vehicles": 100,
+   "stations": 21,
+   "reached": "1977-06-13"
+  },
+  {
+   "player": "claude-haiku-5-5",
+   "status": "verified",
+   "net_worth": 749707,
+   "net_worth_horizon": 507568,
+   "gain_x_baseline": 3.8,
+   "score_k50": 0.4,
+   "score_k1000": 0.228,
+   "actions": 479,
+   "failed_actions": 4,
+   "waits": 23,
+   "divergences": 0,
+   "valid": 1,
+   "vehicles": 88,
+   "stations": 17,
+   "reached": "1980-01-31"
+  },
+  {
+   "player": "baseline",
+   "status": "certificate",
+   "net_worth": 185775,
+   "gain_x_baseline": 1.0
+  },
+  {
+   "player": "claude-fable-5-1",
+   "status": "verified",
+   "net_worth": -13800,
+   "net_worth_horizon": -11500,
+   "gain_x_baseline": 0.0,
+   "score_k50": 0.0,
+   "score_k1000": 0.0,
+   "actions": 0,
+   "failed_actions": 0,
+   "waits": 0,
+   "divergences": 0,
+   "valid": 1,
+   "vehicles": null,
+   "stations": null,
+   "reached": null
+  },
+  {
+   "player": "idle",
+   "status": "certificate",
+   "net_worth": -13800,
+   "gain_x_baseline": 0.0
+  }
+ ],
+ "curves": {
+  "claude-fable-5-1": [],
+  "claude-haiku-5-5": [
+   {
+    "date": "1975-03-03",
+    "net_worth": -261869,
+    "money": 38131,
+    "loan": 300000,
+    "vehicles": 34,
+    "stations": 9,
+    "acts": 201
+   },
+   {
+    "date": "1975-04-02",
+    "net_worth": -258987,
+    "money": 41013,
+    "loan": 300000,
+    "vehicles": 34,
+    "stations": 9,
+    "acts": 201
+   },
+   {
+    "date": "1975-05-17",
+    "net_worth": -261027,
+    "money": 38973,
+    "loan": 300000,
+    "vehicles": 38,
+    "stations": 10,
+    "acts": 218
+   },
+   {
+    "date": "1975-07-16",
+    "net_worth": -273341,
+    "money": 26659,
+    "loan": 300000,
+    "vehicles": 43,
+    "stations": 10,
+    "acts": 264
+   },
+   {
+    "date": "1975-09-14",
+    "net_worth": -258172,
+    "money": 41828,
+    "loan": 300000,
+    "vehicles": 46,
+    "stations": 10,
+    "acts": 276
+   },
+   {
+    "date": "1975-11-13",
+    "net_worth": -261355,
+    "money": 38645,
+    "loan": 300000,
+    "vehicles": 52,
+    "stations": 10,
+    "acts": 300
+   },
+   {
+    "date": "1975-11-23",
+    "net_worth": -285505,
+    "money": 14495,
+    "loan": 300000,
+    "vehicles": 52,
+    "stations": 12,
+    "acts": 308
+   },
+   {
+    "date": "1975-12-23",
+    "net_worth": -273442,
+    "money": 26558,
+    "loan": 300000,
+    "vehicles": 54,
+    "stations": 12,
+    "acts": 316
+   },
+   {
+    "date": "1976-02-01",
+    "net_worth": -267156,
+    "money": 32844,
+    "loan": 300000,
+    "vehicles": 57,
+    "stations": 12,
+    "acts": 328
+   },
+   {
+    "date": "1976-03-12",
+    "net_worth": -267756,
+    "money": 32244,
+    "loan": 300000,
+    "vehicles": 61,
+    "stations": 12,
+    "acts": 345
+   },
+   {
+    "date": "1976-04-16",
+    "net_worth": -277308,
+    "money": 22692,
+    "loan": 300000,
+    "vehicles": 63,
+    "stations": 14,
+    "acts": 361
+   },
+   {
+    "date": "1976-05-26",
+    "net_worth": -273067,
+    "money": 26933,
+    "loan": 300000,
+    "vehicles": 67,
+    "stations": 14,
+    "acts": 377
+   },
+   {
+    "date": "1976-06-07",
+    "net_worth": -280732,
+    "money": 19268,
+    "loan": 300000,
+    "vehicles": 70,
+    "stations": 14,
+    "acts": 398
+   },
+   {
+    "date": "1976-06-27",
+    "net_worth": -271052,
+    "money": 28948,
+    "loan": 300000,
+    "vehicles": 70,
+    "stations": 14,
+    "acts": 398
+   },
+   {
+    "date": "1976-07-27",
+    "net_worth": -270795,
+    "money": 29205,
+    "loan": 300000,
+    "vehicles": 73,
+    "stations": 14,
+    "acts": 410
+   },
+   {
+    "date": "1976-08-21",
+    "net_worth": -269886,
+    "money": 30114,
+    "loan": 300000,
+    "vehicles": 76,
+    "stations": 15,
+    "acts": 439
+   },
+   {
+    "date": "1976-12-19",
+    "net_worth": -197840,
+    "money": 102160,
+    "loan": 300000,
+    "vehicles": 80,
+    "stations": 15,
+    "acts": 455
+   },
+   {
+    "date": "1977-06-17",
+    "net_worth": -93690,
+    "money": 206310,
+    "loan": 300000,
+    "vehicles": 84,
+    "stations": 15,
+    "acts": 462
+   },
+   {
+    "date": "1977-08-16",
+    "net_worth": -81986,
+    "money": 218014,
+    "loan": 300000,
+    "vehicles": 88,
+    "stations": 17,
+    "acts": 477
+   },
+   {
+    "date": "1977-08-17",
+    "net_worth": -81392,
+    "money": 18608,
+    "loan": 100000,
+    "vehicles": 88,
+    "stations": 17,
+    "acts": 478
+   },
+   {
+    "date": "1978-02-13",
+    "net_worth": 47639,
+    "money": 147639,
+    "loan": 100000,
+    "vehicles": 88,
+    "stations": 17,
+    "acts": 478
+   },
+   {
+    "date": "1979-02-08",
+    "net_worth": 280130,
+    "money": 280130,
+    "loan": 0,
+    "vehicles": 88,
+    "stations": 17,
+    "acts": 479
+   },
+   {
+    "date": "1980-01-31",
+    "net_worth": 507568,
+    "money": 507568,
+    "loan": 0,
+    "vehicles": 88,
+    "stations": 17,
+    "acts": 479
+   }
+  ],
+  "claude-opus-5-5": [
+   {
+    "date": "1975-03-03",
+    "net_worth": -111207,
+    "money": 68793,
+    "loan": 180000,
+    "vehicles": 14,
+    "stations": 6,
+    "acts": 88
+   },
+   {
+    "date": "1975-04-17",
+    "net_worth": -164999,
+    "money": 75001,
+    "loan": 240000,
+    "vehicles": 22,
+    "stations": 9,
+    "acts": 120
+   },
+   {
+    "date": "1975-06-16",
+    "net_worth": -188090,
+    "money": 51910,
+    "loan": 240000,
+    "vehicles": 27,
+    "stations": 10,
+    "acts": 137
+   },
+   {
+    "date": "1975-06-17",
+    "net_worth": -213530,
+    "money": 86470,
+    "loan": 300000,
+    "vehicles": 27,
+    "stations": 10,
+    "acts": 149
+   },
+   {
+    "date": "1975-09-15",
+    "net_worth": -208661,
+    "money": 91339,
+    "loan": 300000,
+    "vehicles": 35,
+    "stations": 10,
+    "acts": 168
+   },
+   {
+    "date": "1975-12-14",
+    "net_worth": -207503,
+    "money": 92497,
+    "loan": 300000,
+    "vehicles": 47,
+    "stations": 10,
+    "acts": 192
+   },
+   {
+    "date": "1976-03-13",
+    "net_worth": -201833,
+    "money": 98167,
+    "loan": 300000,
+    "vehicles": 56,
+    "stations": 12,
+    "acts": 218
+   },
+   {
+    "date": "1976-03-15",
+    "net_worth": -234934,
+    "money": 65066,
+    "loan": 300000,
+    "vehicles": 60,
+    "stations": 14,
+    "acts": 236
+   },
+   {
+    "date": "1976-03-18",
+    "net_worth": -232917,
+    "money": 67083,
+    "loan": 300000,
+    "vehicles": 60,
+    "stations": 14,
+    "acts": 236
+   },
+   {
+    "date": "1976-03-19",
+    "net_worth": -232108,
+    "money": 67892,
+    "loan": 300000,
+    "vehicles": 60,
+    "stations": 14,
+    "acts": 241
+   },
+   {
+    "date": "1976-07-17",
+    "net_worth": -174779,
+    "money": 125221,
+    "loan": 300000,
+    "vehicles": 64,
+    "stations": 16,
+    "acts": 272
+   },
+   {
+    "date": "1976-07-18",
+    "net_worth": -217931,
+    "money": 82069,
+    "loan": 300000,
+    "vehicles": 70,
+    "stations": 18,
+    "acts": 293
+   },
+   {
+    "date": "1976-10-16",
+    "net_worth": -167460,
+    "money": 132540,
+    "loan": 300000,
+    "vehicles": 75,
+    "stations": 18,
+    "acts": 307
+   },
+   {
+    "date": "1977-02-13",
+    "net_worth": -126706,
+    "money": 173294,
+    "loan": 300000,
+    "vehicles": 85,
+    "stations": 19,
+    "acts": 334
+   },
+   {
+    "date": "1977-04-14",
+    "net_worth": -223545,
+    "money": 76455,
+    "loan": 300000,
+    "vehicles": 94,
+    "stations": 21,
+    "acts": 383
+   },
+   {
+    "date": "1977-06-13",
+    "net_worth": -188338,
+    "money": 111662,
+    "loan": 300000,
+    "vehicles": 100,
+    "stations": 21,
+    "acts": 395
+   }
+  ],
+  "claude-sonnet-5-5": [
+   {
+    "date": "1975-02-02",
+    "net_worth": -192,
+    "money": 99808,
+    "loan": 100000,
+    "vehicles": 0,
+    "stations": 0,
+    "acts": 3
+   },
+   {
+    "date": "1975-02-22",
+    "net_worth": -77227,
+    "money": 22773,
+    "loan": 100000,
+    "vehicles": 10,
+    "stations": 2,
+    "acts": 57
+   },
+   {
+    "date": "1975-03-19",
+    "net_worth": -233812,
+    "money": 66188,
+    "loan": 300000,
+    "vehicles": 34,
+    "stations": 5,
+    "acts": 135
+   },
+   {
+    "date": "1975-04-08",
+    "net_worth": -284133,
+    "money": 15867,
+    "loan": 300000,
+    "vehicles": 40,
+    "stations": 6,
+    "acts": 160
+   },
+   {
+    "date": "1975-05-08",
+    "net_worth": -277340,
+    "money": 22660,
+    "loan": 300000,
+    "vehicles": 40,
+    "stations": 6,
+    "acts": 160
+   },
+   {
+    "date": "1975-06-07",
+    "net_worth": -294743,
+    "money": 5257,
+    "loan": 300000,
+    "vehicles": 43,
+    "stations": 6,
+    "acts": 166
+   },
+   {
+    "date": "1975-07-07",
+    "net_worth": -274654,
+    "money": 25346,
+    "loan": 300000,
+    "vehicles": 43,
+    "stations": 6,
+    "acts": 166
+   },
+   {
+    "date": "1975-08-06",
+    "net_worth": -284538,
+    "money": 15462,
+    "loan": 300000,
+    "vehicles": 46,
+    "stations": 6,
+    "acts": 182
+   },
+   {
+    "date": "1975-09-10",
+    "net_worth": -290902,
+    "money": 9098,
+    "loan": 300000,
+    "vehicles": 48,
+    "stations": 6,
+    "acts": 186
+   },
+   {
+    "date": "1975-10-05",
+    "net_worth": -280151,
+    "money": 19849,
+    "loan": 300000,
+    "vehicles": 48,
+    "stations": 7,
+    "acts": 201
+   },
+   {
+    "date": "1975-11-09",
+    "net_worth": -259996,
+    "money": 40004,
+    "loan": 300000,
+    "vehicles": 51,
+    "stations": 7,
+    "acts": 207
+   },
+   {
+    "date": "1975-12-14",
+    "net_worth": -255099,
+    "money": 44901,
+    "loan": 300000,
+    "vehicles": 58,
+    "stations": 7,
+    "acts": 214
+   },
+   {
+    "date": "1976-01-23",
+    "net_worth": -258624,
+    "money": 41376,
+    "loan": 300000,
+    "vehicles": 62,
+    "stations": 7,
+    "acts": 229
+   },
+   {
+    "date": "1976-03-03",
+    "net_worth": -287890,
+    "money": 12110,
+    "loan": 300000,
+    "vehicles": 69,
+    "stations": 7,
+    "acts": 243
+   },
+   {
+    "date": "1976-03-28",
+    "net_worth": -236558,
+    "money": 63442,
+    "loan": 300000,
+    "vehicles": 69,
+    "stations": 7,
+    "acts": 248
+   },
+   {
+    "date": "1976-04-27",
+    "net_worth": -236312,
+    "money": 63688,
+    "loan": 300000,
+    "vehicles": 73,
+    "stations": 9,
+    "acts": 315
+   },
+   {
+    "date": "1976-05-27",
+    "net_worth": -269333,
+    "money": 30667,
+    "loan": 300000,
+    "vehicles": 82,
+    "stations": 9,
+    "acts": 337
+   },
+   {
+    "date": "1976-06-26",
+    "net_worth": -284607,
+    "money": 15393,
+    "loan": 300000,
+    "vehicles": 86,
+    "stations": 10,
+    "acts": 351
+   },
+   {
+    "date": "1976-06-27",
+    "net_worth": -292104,
+    "money": 7896,
+    "loan": 300000,
+    "vehicles": 87,
+    "stations": 12,
+    "acts": 367
+   },
+   {
+    "date": "1976-07-22",
+    "net_worth": -265894,
+    "money": 34106,
+    "loan": 300000,
+    "vehicles": 87,
+    "stations": 12,
+    "acts": 371
+   },
+   {
+    "date": "1976-08-21",
+    "net_worth": -238760,
+    "money": 61240,
+    "loan": 300000,
+    "vehicles": 92,
+    "stations": 12,
+    "acts": 381
+   },
+   {
+    "date": "1976-09-20",
+    "net_worth": -234107,
+    "money": 65893,
+    "loan": 300000,
+    "vehicles": 103,
+    "stations": 12,
+    "acts": 403
+   },
+   {
+    "date": "1976-10-20",
+    "net_worth": -253722,
+    "money": 46278,
+    "loan": 300000,
+    "vehicles": 115,
+    "stations": 12,
+    "acts": 427
+   },
+   {
+    "date": "1976-10-21",
+    "net_worth": -253970,
+    "money": 46030,
+    "loan": 300000,
+    "vehicles": 115,
+    "stations": 12,
+    "acts": 439
+   },
+   {
+    "date": "1976-11-20",
+    "net_worth": -249034,
+    "money": 50966,
+    "loan": 300000,
+    "vehicles": 119,
+    "stations": 14,
+    "acts": 457
+   },
+   {
+    "date": "1976-12-30",
+    "net_worth": -215912,
+    "money": 84088,
+    "loan": 300000,
+    "vehicles": 128,
+    "stations": 14,
+    "acts": 475
+   },
+   {
+    "date": "1977-02-08",
+    "net_worth": -248601,
+    "money": 51399,
+    "loan": 300000,
+    "vehicles": 143,
+    "stations": 14,
+    "acts": 505
+   },
+   {
+    "date": "1977-03-15",
+    "net_worth": -212829,
+    "money": 87171,
+    "loan": 300000,
+    "vehicles": 152,
+    "stations": 14,
+    "acts": 523
+   }
+  ]
+ },
+ "fleet_mix": {
+  "claude-fable-5-1": {
+   "road": 0,
+   "rail": 0,
+   "air": 0,
+   "water": 0
+  },
+  "claude-haiku-5-5": {
+   "road": 88,
+   "rail": 0,
+   "air": 0,
+   "water": 0
+  },
+  "claude-opus-5-5": {
+   "road": 102,
+   "rail": 2,
+   "air": 3,
+   "water": 0
+  },
+  "claude-sonnet-5-5": {
+   "road": 152,
+   "rail": 0,
+   "air": 0,
+   "water": 0
+  }
+ }
+}

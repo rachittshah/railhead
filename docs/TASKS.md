@@ -69,6 +69,8 @@ The generator calculates these map settings from the seed:
 
 ### 1.5 Certificates
 
+Refer to the flowchart in [DIAGRAMS.md, 4](DIAGRAMS.md#4-task-generation-and-certification).
+
 For each task, the generator runs two logs through the verifier:
 
 1. The do-nothing log. It has only a header.

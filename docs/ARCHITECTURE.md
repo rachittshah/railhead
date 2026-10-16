@@ -5,16 +5,21 @@ The text follows ASD-STE100. Refer to [STE.md](STE.md).
 
 ## Overview
 
+```mermaid
+flowchart LR
+    M["Model<br/>claude -p, codex exec,<br/>or a Harbor agent"] -->|"bash: rh ..."| RH["rh CLI"]
+    RH -->|"unix socket"| D["railheadd daemon<br/>task rules and budgets"]
+    D --> W["World<br/>OpenTTDServer, AdminClient, Bridge"]
+    W -->|"admin port"| E["openttd -D<br/>patched 15.3"]
+    E --- GS["GameScript RailheadBridge<br/>company mode, lockstep"]
+    D -->|"append"| LOG[("actions.jsonl")]
+    D -->|"save, load, reseed"| F["Forks<br/>other engines"]
+    SAV[("start.sav<br/>sealed")] --> V["Verifier<br/>replay, horizon, run-off"]
+    LOG --> V
+    V --> R[("reward.json")]
 ```
- agent (bash) --> rh CLI --unix socket--> railheadd (daemon)
-                                            |  World: OpenTTDServer + AdminClient + Bridge
-                                            |  ActionLog (JSONL)
-                                            |  forks (save, load in a new server, reseed)
-                                            v
-                                 openttd -D (patched) -- GameScript RailheadBridge (company mode)
 
- verifier: start.sav + actions.jsonl --> replay in a new engine --> horizon --> run-off --> reward.json
-```
+Refer to [DIAGRAMS.md](DIAGRAMS.md) for the sequence of one action and one wait, the verifier, the task generator, the Harbor trial, the forks, and the arena.
 
 | Layer | Location | Function |
 |---|---|---|
@@ -30,6 +35,8 @@ The text follows ASD-STE100. Refer to [STE.md](STE.md).
 | Generator | `src/railhead/gen/` | Makes tasks from seeds |
 | Oracle | `src/railhead/oracle/` | A scripted player that solves tasks |
 | Packages | `src/railhead/harbor_export.py`, `hub.py`, `docker/` | Harbor tasks, the image, and the dataset |
+| Arenas and telemetry | `src/railhead/arena.py`, `arena_run.py`, `otel.py`, `trace.py` | Runs several players on one task, records the LLM traces, and joins them with the game |
+| Charts and maps | `src/railhead/figures.py`, `render.py` | Makes the result charts and the route maps in `docs/img/` |
 
 ## 1. Engine and patches
 
@@ -101,6 +108,8 @@ The GameScript calls each handler directly, never through `.call`.
 A command suspends the script, and the script cannot suspend through a native call frame.
 
 ### 3.1 The lockstep invariant
+
+Refer to the sequence diagram in [DIAGRAMS.md, 2](DIAGRAMS.md#2-one-action-and-one-wait-lockstep).
 
 The lockstep invariant makes the tick of each action a function of the action log only:
 
@@ -268,6 +277,8 @@ Because of this, the image entry point, the Harbor healthcheck, and `rh` can all
 
 ## 9. Forks
 
+Refer to the flowchart in [DIAGRAMS.md, 6](DIAGRAMS.md#6-forks).
+
 A fork is a copy of the world in a different engine process.
 
 | Property | Value |
@@ -355,6 +366,8 @@ The entry point starts `railhead-up` in the background if `RAILHEAD_TASK` is set
 The image stops with `SIGKILL`, because a trial does not keep data after it stops.
 
 ### 13.2 Harbor task
+
+Refer to the sequence diagram in [DIAGRAMS.md, 5](DIAGRAMS.md#5-harbor-trial).
 
 `railhead export` writes one directory for each task:
 

@@ -654,15 +654,21 @@ It writes each export to a JSONL file.
    export CLAUDE_CODE_ENABLE_TELEMETRY=1 OTEL_LOGS_EXPORTER=otlp OTEL_METRICS_EXPORTER=otlp
    export OTEL_TRACES_EXPORTER=otlp CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1
    export OTEL_EXPORTER_OTLP_PROTOCOL=http/json OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318
-   export OTEL_LOG_USER_PROMPTS=1 OTEL_LOG_TOOL_DETAILS=1
+   export OTEL_LOG_USER_PROMPTS=1 OTEL_LOG_TOOL_DETAILS=1 OTEL_LOG_TOOL_CONTENT=1
+   export OTEL_RESOURCE_ATTRIBUTES=player=<name>
    ```
+
+   `OTEL_LOG_TOOL_CONTENT=1` records the full input and output of each tool call. `player` tags each record with the name of the player.
 
 3. Start a Codex player with telemetry. Use configuration overrides on the command line:
 
    ```bash
    codex exec -c 'otel.exporter={otlp-http={endpoint="http://127.0.0.1:4318/v1/logs",protocol="json"}}' \
-     -c otel.log_user_prompt=true "<prompt>"
+     -c 'otel.trace_exporter={otlp-http={endpoint="http://127.0.0.1:4318/v1/traces",protocol="json"}}' \
+     -c otel.log_user_prompt=true -c otel.log_agent_responses=true "<prompt>"
    ```
+
+   `otel.trace_exporter` sends the spans. `otel.log_agent_responses` records the text of each response of the model. These keys are in Codex 0.162 and later.
 
 4. Show the requests, the tokens, and the cost for each model:
 
@@ -672,32 +678,89 @@ It writes each export to a JSONL file.
 
 CAUTION: Inside a Docker container, `127.0.0.1` is the container. Use `http://host.docker.internal:4318`.
 
+5. Make one trace bundle for each player of an arena:
+
+   ```bash
+   railhead trace bundle arena --otel traces
+   ```
+
+   The bundle of each player is in `traces/bundles/<arena>/<player>/`:
+
+   | File | Contents |
+   |---|---|
+   | `llm.jsonl` | The OTel log events of the player, in time order |
+   | `spans.jsonl` | The OTel spans of the player, in time order |
+   | `transcript.jsonl` or `transcript.txt` | The output stream of `claude -p` or `codex exec` |
+   | `actions.jsonl` | The action log that the verifier replays |
+   | `reward.json` | The result of the verifier, if the game has a result |
+   | `summary.json` | The requests, the tokens, the cost, the actions, and the result |
+
+CAUTION: The traces contain the e-mail address and the account IDs of the user of the model. The bundle removes these values and the home path. Do not publish the `traces/` directory. Git ignores it.
+
 ## Run an arena
 
 An arena puts several players on the same task.
 Each player has its own daemon and its own state directory.
+Refer to the flowchart in [DIAGRAMS.md, 7](DIAGRAMS.md#7-arena-traces-and-charts).
 
-1. Start one daemon for each player:
+1. Start the OTel receiver:
 
    ```bash
-   for p in a b c; do
-     RAILHEAD_TASKS="$PWD/tasks" RAILHEAD_STATE="$PWD/arena/$p/state" railhead up arena-dev-0005
-   done
+   railhead otel serve --port 4318 --dir traces &
    ```
 
-2. Give each player the same instruction. Set `RAILHEAD_STATE` to the directory of that player.
+2. Start the players. Each argument is `claude:<model>` or `codex:<model>`:
+
+   ```bash
+   railhead arena-run arena-dev-0100 arena claude:claude-opus-5-5 codex:gpt-6-astra
+   ```
+
+   The command starts one daemon for each player, and then `claude -p` or `codex exec` with the instruction of the arena.
+   Each agent finds `rh` on its `PATH`, bound to its own daemon.
+   The output of each agent is in `arena/<model>/agent.log`.
+
 3. Show the scoreboard:
 
    ```bash
    railhead arena arena
    ```
 
-4. Calculate the verified result of each player:
+4. When a player stops, calculate its verified result:
 
    ```bash
-   python -m railhead.verify tasks/arena-dev-0005 tasks/arena-dev-0005/start.sav \
-     arena/a/state/run/actions.jsonl arena/a/verify
+   python -m railhead.verify tasks/arena-dev-0100 tasks/arena-dev-0100/start.sav \
+     arena/claude-opus-5-5/state/run/actions.jsonl arena/claude-opus-5-5/verify
    ```
+
+5. Write the results, the growth curves, and the vehicles of each transport mode to one file:
+
+   ```bash
+   railhead arena arena --export docs/data/arena2.json --task tasks/arena-dev-0100
+   ```
+
+   Use `--rename a=b,c=d` to change the player names in the file.
+
+6. Make the charts. Each data file gives three charts, in a light and a dark version:
+
+   ```bash
+   railhead figures docs/data/arena2.json docs/data/arena1.json --out docs/img
+   ```
+
+   | Chart | Contents |
+   |---|---|
+   | `<name>-networth.svg` | The net worth after the run-off, for each player and for the two certified baselines |
+   | `<name>-growth.svg` | The net worth of each player during the mandate, one panel for each player |
+   | `<name>-fleet.svg` | The vehicles that each player bought, for each transport mode |
+
+7. Make the route map of a player. The daemon of the player must run:
+
+   ```bash
+   railhead render arena/claude-opus-5-5/state docs/img/arena2-map-claude-opus-5-5.png --title "claude-opus-5-5"
+   ```
+
+   The engine draws the terrain with `screenshot minimap`. Railhead then draws one line for each leg of the vehicle orders. These steps only read the world. They do not change the action log.
+
+The charts and the maps need matplotlib. Install it with `uv pip install -e ".[viz]"`.
 
 ## Watch a game
 

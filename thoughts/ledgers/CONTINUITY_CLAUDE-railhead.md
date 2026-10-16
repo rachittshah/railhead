@@ -42,11 +42,21 @@ Done = (1) abstractions built + tested, (2) RL env built + tested, (3) code on G
   - [x] Arena 1 (Claude, 5y) + Arena 2 (11 models incl. 7 Codex, 10y, 512^2, all modes) verified;
         dashboard https://claude.ai/artifact/CcYXpgQuqQEddZKweQwy3E ; OTel traces in traces/ (local only)
   - [x] HF dataset built at .cache/hf/out (tasks 1539 rows, trajectories 1547 incl. 11 model games)
-- Now: [→] Claude Sonnet/Opus/Fable still playing Arena 2 (.cache/arena2); verify when done
+  - [x] Arena 2 verified for 10/11 (Opus £45.76M leads; astra £27.9M). Visuals 2026-10-16:
+        docs/DIAGRAMS.md (7 Mermaid, browser-validated), docs/img charts (railhead figures, light+dark,
+        palette validated) + route maps (railhead render), docs/data/arena{1,2}.json (railhead arena --export)
+  - [x] E2E traces: OTEL_LOG_TOOL_CONTENT, Codex otel.trace_exporter + log_agent_responses;
+        `railhead trace bundle` -> traces/bundles/<arena>/<player> (scrubbed, local only)
+  - [x] README rewritten as techno-journalism feature (user 2026-10-16); docs/ stay STE
+- Now: [→] Fable 5.1 still playing Arena 2 (slow). When done: verify_one.sh, then
+        `railhead arena .cache/arena2 --export docs/data/arena2.json --task tasks/arena-dev-0100`,
+        `railhead figures ...`, refresh.py (README table + dashboard), update README §6 Fable text
 - Blocked: HF push needs the user's token: `hf auth login`, then
   `railhead hub push .cache/hf/out --repo rachittshah/railhead`
 
 ## Open Questions
+- UNCONFIRMED: rh still has open model-reported issues: misleading tunnel error for airport on water (astra);
+  heliports have no hangar so helicopters cannot be bought (5.6-luna; game rule, maybe a hint).
 - RESOLVED: fast-forward needs patch 0001 (done, ~3-5k days/s).
 - RESOLVED: GS runs while paused; GS covers 79/100 player cmds (gaps: timetables, service intervals, semaphores...).
 - RESOLVED: 1456 B stock; 32 KB with patch 0003.
