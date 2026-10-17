@@ -52,6 +52,10 @@ Done = (1) abstractions built + tested, (2) RL env built + tested, (3) code on G
         HF dataset at .cache/hf/out now has 15 model games (railhead hub add-games), card refreshed.
   - [x] HF dataset public: https://huggingface.co/datasets/rachittshah/railhead (2026-10-16;
         tasks 278/255/1006, trajectories 290/255/1006, 15 model games in dev, all valid)
+  - [x] Free-model round (2026-10-17): 5 OpenCode Zen 1M-context free models on arena-dev-0100 via
+        opencode run; beam-free £411k (9th/16), space-bunny last; 3 stopped by free-tier inference
+        (503 outages, 88-min stall, 429 quota). arena-run --supervise resumes sessions on infra errors.
+        docs/data/arena2-{free,all}.json, docs/model-economics-behaviour.md §7, HF dev trajectories 295.
 - Now: all six goal items done. Follow-ups only: open rh issues below; rerun arenas with full Codex spans.
 
 ## Open Questions

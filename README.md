@@ -205,6 +205,31 @@ The fine print, which matters:
 - Fable stopped in 1963 at a usage limit of its Claude session, not by choice. The rules let its company run on, as they did for Opus and Sonnet in Arena 1.
 - "Net worth" is cash minus loan. Vehicles and buildings count only for what they earn during the run-off year, so selling everything at the end does not help.
 
+### The free models
+
+Five free models from OpenCode Zen later played the same world: beam-free, longcat-2.5-preview-free, nemotron-3-ultra-free, nemotron-3.5-super-vl-free and space-bunny-free.
+They cost nothing, and it showed.
+beam-free played the whole decade in 9 minutes of wall-clock time and finished ninth of 16 models with £411,339, the only free model above the baseline.
+space-bunny-free measured vehicles at "~1–2.3 tiles/day regardless of speed or mode", concluded that "short routes beat long ones", built a 39-tile air route on a maxed-out loan, and finished last at −£425,249.
+
+The other three were stopped by the free tier, not by the game: Nvidia's endpoint returned 503 again and again, one stream stalled for 88 minutes, and one model hit the free usage limit.
+That is now handled by `railhead arena-run --supervise`, which resumes the same session after an outage, a stall or a quota error, and never restarts a model that stopped on its own.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/img/arena2-all-networth-dark.svg">
+  <img alt="Bar chart: net worth after the run-off year for all 16 models in Arena 2, including the five free OpenCode Zen models. beam-free is ninth with £411k; space-bunny-free is last at minus £425k." src="docs/img/arena2-all-networth.svg">
+</picture>
+
+| Model | Net worth after year 11 | How the game ended |
+|---|---|---|
+| beam-free | £411,339 | Played all 10 years |
+| longcat-2.5-preview-free | -£8,846 | Free-tier usage limit in 1962 |
+| nemotron-3-ultra-free | -£36,300 | Never acted (provider outages) |
+| nemotron-3.5-super-vl-free | -£129,949 | Stream stalls in 1963 |
+| space-bunny-free | -£425,249 | Played all 10 years |
+
+The inference numbers and each free model's behaviour are in [section 7 of the behaviour analysis](docs/model-economics-behaviour.md#7-the-free-models-opencode-zen).
+
 ## 8. Arena 1: the pilot episode
 
 Before the decade-long arena there was a shorter pilot: four Claude models, a 256 × 256 map, 1975, a five-year mandate and one run-off year (`arena-dev-0005`).

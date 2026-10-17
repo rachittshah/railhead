@@ -325,3 +325,56 @@ These are interpretations of one run per model, and they need more seeds to conf
 - **Visible narration is chosen by the model.** Silent players (Haiku, Fable) reveal less of their reasoning than narrators (Opus), so their profiles rest more on the action log.
 - **Forks are not in the action log.** Fork use comes from the commands the players ran, as recorded in their transcripts.
 - **Catchment diagnoses may be wrong.** Two players described a failed station as a catchment-radius problem, with different radii. The `rh catchment` probe uses one radius whatever the station type and does not show the 8/8 acceptance threshold. That probe could be clearer. It is not confirmed as a fault.
+
+## 7. The free models (OpenCode Zen)
+
+Five free models from OpenCode Zen later played the same world through `opencode run`.
+These were the free models with a 1M-token context window: beam-free, longcat-2.5-preview-free, nemotron-3-ultra-free, nemotron-3.5-super-vl-free and space-bunny-free.
+They played with two changes from the main arena: the corrected airport error and fork help, and an empty configuration directory, so none of the operator's settings reached them.
+
+Data: [`docs/data/arena2-free.json`](data/arena2-free.json), [`docs/data/arena2-free-econ.json`](data/arena2-free-econ.json), and the combined scoreboard [`docs/data/arena2-all.json`](data/arena2-all.json).
+
+### 7.1 Results
+
+| Rank of 16 | Model | Net worth after run-off | How the game ended | Capital spent | Bought (road / rail / air) | Mean leg |
+|---|---|---|---|---|---|---|
+| 9 | beam-free | £411,339 | Played all 10 years and submitted | £289,037 | 41 / 0 / 0 | road 50 |
+| 12 | longcat-2.5-preview-free | −£8,846 | Stopped in 1962 by the free-tier usage limit | £120,494 | 0 / 30 / 0 | rail 29 |
+| 13 | nemotron-3-ultra-free | −£36,300 | Never acted: provider outages and stalls | £0 | 0 / 0 / 0 | n/a |
+| 15 | nemotron-3.5-super-vl-free | −£129,949 | Stopped in 1963 by repeated stream stalls | £85,471 | 4 / 0 / 0 | road 90 |
+| 16 | space-bunny-free | −£425,249 | Played all 10 years and submitted | £633,773 | 46 / 16 / 2 | road 51, rail 51, air 39 |
+
+Every replay is valid, with 0 divergences.
+The players stopped by the provider followed the same rule as Fable: their companies ran unattended to the end of the mandate and through the run-off.
+beam-free is the only free model above the scripted baseline (£147,407).
+
+### 7.2 Inference was the binding constraint
+
+The free tier, not the game, decided how far three of the five got.
+
+| Model | Steps | Seconds per step (median / 90th percentile / max) | Provider failures | Wall-clock |
+|---|---|---|---|---|
+| beam-free | 300 | 0.4 / 1.4 / 6 | none | 9 min for the whole decade |
+| space-bunny-free | 144 | 5.3 / 22 / 44 | none | 26 min |
+| nemotron-3.5-super-vl-free | about 110 | 5.3 / 48 / 121 | stream stalls (one lasted 88 minutes) | stopped |
+| longcat-2.5-preview-free | 82 | 12 / 58 / 194 | free-tier usage limit (429) | stopped |
+| nemotron-3-ultra-free | 3 finished | n/a | 503 overloaded, repeatedly | never started |
+
+Three failure modes appeared, and the harness now treats each one separately (`railhead arena-run --supervise`):
+
+1. **Outage.** The provider returned 503. opencode retries for about 100 seconds and then ends the run. The supervisor resumes the same session after 1, 2, 5, 10, 15 and 30 minutes.
+2. **Stall.** The stream stopped producing tokens, and opencode ended the session for inactivity after 88 minutes. This is now resumed like an outage.
+3. **Quota.** The free tier rate-limits usage (`FreeUsageLimitError`). Resumes wait 30 to 60 minutes.
+
+The supervisor never restarts a model that stopped on its own.
+After about six hours of failures for the three affected models, the games were frozen where they stood and verified.
+
+### 7.3 Behaviour
+
+- **beam-free: cheap scaling, no search for a better mode.** Coal trucks only, mean leg 50 tiles. It explained the plan as marginal-cost thinking: "Scaled capacity by cloning trucks with shared orders on existing roads instead of building new infrastructure, keeping marginal cost low." It ran 153 dry runs, repaid its loan, and played the whole decade in 9 minutes. Its route choice put a hard ceiling on the result: the short-haul road economics that also limited Haiku and gpt-6-luna.
+- **space-bunny-free: a measurement error turned into the opposite strategy.** It reported: "Measured vehicle travel is ~1–2.3 tiles/day regardless of speed or mode. So throughput per vehicle is tiny, and distance is everything — short routes beat long ones by a wide margin." The winners measured the reverse: Opus timed aircraft at about 8.5 tiles a day and built routes averaging 462 tiles. space-bunny then built aircraft on a 39-tile route, borrowed the full £500,000 in August 1960, never repaid it, and finished last. This is the clearest case in either arena of a model forming a confident false belief from its own measurement and acting on it. It also reported an interface limit ("`rh rail line` cannot build 90° junctions"), which is not yet confirmed.
+- **longcat-2.5-preview-free: rail, very short.** Its 30 rail vehicles served 29-tile legs, and it advanced time in 10-day steps (38 waits). It spent most of its 82 steps fixing track geometry before the usage limit stopped it.
+- **nemotron-3.5-super-vl-free: a narrator with little progress.** It wrote 97 visible messages and took 121 actions, and reached only July 1963. Its most common failure was building on occupied tiles (`ERR_AREA_NOT_CLEAR`, 18 times).
+- **nemotron-3-ultra-free** made 7 read-only commands in total and no game action.
+
+Two of the free models said road building is hard to read from its errors: beam-free called it "fragile", with "cryptic errors". That matches the main lesson of section 3.5. Error text is part of what the model observes, and a vague error costs actions or produces a wrong belief.
