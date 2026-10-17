@@ -1,12 +1,13 @@
 """Run an arena: several models play the same task first-person, each with its own daemon.
 
-    railhead arena-run <task_id> <out_dir> claude:claude-opus-5-5 codex:gpt-6-astra ... [--otel URL]
+    railhead arena-run <task_id> <out_dir> claude:claude-opus-5-5 codex:gpt-6-astra opencode:opencode/big-pickle ... [--otel URL]
     railhead arena <out_dir>                                  # live scoreboard
 
 Each player gets ``<out_dir>/<label>/{state,agent.log}``. Claude players run ``claude -p`` and Codex
-players run ``codex exec``; both only see ``rh`` (on PATH, bound to their own daemon). Every LLM
-call is exported over OTLP to ``--otel`` (default the local ``railhead otel serve`` sink), tagged
-with ``player=<label>``.
+players run ``codex exec``, and opencode players run ``opencode run``; all only see ``rh`` (on PATH,
+bound to their own daemon). Claude and Codex export every LLM call over OTLP to ``--otel`` (default the
+local ``railhead otel serve`` sink), tagged with ``player=<label>``. opencode writes its events as JSON
+to ``agent.log`` and gets an empty configuration directory, so it never loads the operator's setup.
 """
 
 from __future__ import annotations
@@ -40,7 +41,7 @@ At the end, write a short report: your strategy, the final `rh status` numbers, 
 
 @dataclass(frozen=True)
 class Player:
-    vendor: str  # claude | codex
+    vendor: str  # claude | codex | opencode
     model: str
     label: str
 
@@ -49,9 +50,9 @@ def parse_players(specs: list[str]) -> list[Player]:
     out = []
     for s in specs:
         vendor, model = s.split(":", 1)
-        if vendor not in ("claude", "codex"):
+        if vendor not in ("claude", "codex", "opencode"):
             raise ValueError(f"unknown vendor {vendor!r} in {s!r}")
-        out.append(Player(vendor, model, model))
+        out.append(Player(vendor, model, model.split("/")[-1]))
     return out
 
 
@@ -59,6 +60,8 @@ def agent_command(p: Player, prompt: str, workdir: Path, otel: str = "http://127
     if p.vendor == "claude":
         return ["claude", "-p", prompt, "--model", p.model, "--dangerously-skip-permissions",
                 "--output-format", "stream-json", "--verbose"]
+    if p.vendor == "opencode":  # a private server per player; every step logged as JSON
+        return ["opencode", "run", "--standalone", "--model", p.model, "--auto", "--format", "json", prompt]
     return ["codex", "exec", "-m", p.model, "--skip-git-repo-check", "--dangerously-bypass-approvals-and-sandbox",
             "-C", str(workdir), "-c", 'model_reasoning_effort="high"',
             "-c", f'otel.exporter={{otlp-http={{endpoint="{otel}/v1/logs",protocol="json"}}}}',
@@ -80,6 +83,10 @@ def agent_env(p: Player, task: str, state: Path, tasks_dir: Path, otel: str, bas
         "OTEL_LOGS_EXPORT_INTERVAL": "2000",
         "OTEL_RESOURCE_ATTRIBUTES": f"player={p.label},arena.task={task}",
     })
+    if p.vendor == "opencode":  # isolation: no operator AGENTS.md, config, skills or ~/.claude prompt
+        cfg = Path(state).parent / ".config"
+        cfg.mkdir(parents=True, exist_ok=True)
+        env.update({"XDG_CONFIG_HOME": str(cfg), "OPENCODE_DISABLE_CLAUDE_CODE": "1"})
     return env
 
 

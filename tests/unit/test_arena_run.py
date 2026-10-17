@@ -35,3 +35,21 @@ def test_agent_env_points_rh_at_its_own_daemon_and_tags_traces(tmp_path):
     assert "player=haiku" in env["OTEL_RESOURCE_ATTRIBUTES"]
     assert env["OTEL_LOG_TOOL_CONTENT"] == "1"  # full tool input and output in the trace events
     assert env["PATH"].split(":")[0].endswith("/bin")
+
+
+def test_opencode_player_runs_standalone_auto_approved_and_logged_as_json(tmp_path):
+    p = parse_players(["opencode:opencode/big-pickle"])[0]
+    assert (p.vendor, p.model, p.label) == ("opencode", "opencode/big-pickle", "big-pickle")
+    cmd = agent_command(p, "PLAY", tmp_path)
+    assert cmd[:2] == ["opencode", "run"] and cmd[-1] == "PLAY"
+    assert "--standalone" in cmd and "--auto" in cmd
+    assert cmd[cmd.index("--model") + 1] == "opencode/big-pickle"
+    assert cmd[cmd.index("--format") + 1] == "json"
+
+
+def test_opencode_player_does_not_load_the_operators_personal_config(tmp_path):
+    p = parse_players(["opencode:opencode/big-pickle"])[0]
+    env = agent_env(p, "arena-dev-0100", tmp_path / "big-pickle" / "state", Path("/r/tasks"),
+                    "http://127.0.0.1:4318", base={"PATH": "/usr/bin", "HOME": "/Users/x"})
+    assert env["XDG_CONFIG_HOME"] == str(tmp_path / "big-pickle" / ".config")  # an empty config dir per player
+    assert env["OPENCODE_DISABLE_CLAUDE_CODE"] == "1"  # no ~/.claude prompt or skills
