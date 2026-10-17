@@ -68,8 +68,12 @@ def visible_messages(agent_log: Path) -> list[dict]:
             if d.get("type") == "assistant":
                 out += [{"kind": "message", "text": c["text"]} for c in d.get("message", {}).get("content", [])
                         if c.get("type") == "text" and c.get("text", "").strip()]
+            elif d.get("type") == "text" and str((d.get("part") or {}).get("text", "")).strip():  # opencode
+                out.append({"kind": "message", "text": d["part"]["text"]})
             elif d.get("type") == "result" and str(d.get("result", "")).strip():
                 out.append({"kind": "final", "text": str(d["result"])})
+        if out and not any(m["kind"] == "final" for m in out):  # opencode has no result event: the last message
+            out[-1]["kind"] = "final"
         return out
     block: list[str] | None = None  # codex exec text: a "codex" line opens a visible message
     for line in lines + ["exec"]:

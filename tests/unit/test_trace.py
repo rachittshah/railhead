@@ -100,3 +100,15 @@ def test_opencode_usage_summarises_steps_tokens_latency_and_provider_errors(tmp_
     assert u["errors"] == [{"type": "provider.internal", "status": 503, "message": "Service temporarily overloaded"}]
     assert u["finish_reasons"] == {"tool-calls": 1}
     assert u["wall_minutes"] == round((70000 - 1000) / 60000, 1) and u["last_event"] == "error"
+
+
+def test_visible_messages_read_opencode_json_events(tmp_path):
+    from railhead.trace import visible_messages
+
+    log = tmp_path / "agent.log"
+    log.write_text("\n".join(json.dumps(e) for e in [
+        {"type": "step_start", "sessionID": "s"},
+        {"type": "text", "sessionID": "s", "part": {"type": "text", "text": "Coal first."}},
+        {"type": "text", "sessionID": "s", "part": {"type": "text", "text": "Submitted."}},
+    ]) + "\n")
+    assert visible_messages(log) == [{"kind": "message", "text": "Coal first."}, {"kind": "final", "text": "Submitted."}]

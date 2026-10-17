@@ -89,3 +89,12 @@ def test_resume_continues_the_same_opencode_session(tmp_path):
     cmd = resume_command(p, "ses_b", tmp_path)
     assert cmd[cmd.index("--session") + 1] == "ses_b" and "--standalone" in cmd and "--auto" in cmd
     assert cmd[cmd.index("--model") + 1] == "opencode/big-pickle" and "rh status" in cmd[-1]
+
+
+def test_error_kinds_separate_outages_quota_and_stalls():
+    from railhead.arena_run import error_kind
+
+    assert error_kind({"type": "provider.internal", "message": "[503] Upstream error: Service temporarily overloaded"}) == "outage"
+    assert error_kind({"type": "provider.quota", "message": "Rate limit exceeded. Please try again later.", "status": 429}) == "quota"
+    assert error_kind({"type": "aborted", "message": "Session interrupted: inactivity"}) == "stall"
+    assert error_kind({"type": "tool", "message": "bad command"}) is None

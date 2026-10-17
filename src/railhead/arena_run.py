@@ -96,6 +96,20 @@ RESUME_PROMPT = ("The model provider failed and your session was cut off. Nothin
                  "away. Continue the same mandate with the same rules: run `rh status` and `rh history n=10` to see "
                  "where you are, then keep playing. When you are done, run `rh submit confirm=yes` and write your report.")
 PROVIDER_ERROR = re.compile(r"\[(5\d\d|429)\]|overloaded|rate.?limit|timed? ?out", re.IGNORECASE)
+BACKOFF = {"outage": (60, 120, 300, 600, 900, 1800), "stall": (30, 120, 300, 600, 900, 1800),
+           "quota": (1800, 3600, 3600, 3600, 3600, 3600)}
+
+
+def error_kind(err: dict) -> str | None:
+    """outage (5xx, overload, timeout), quota (429 / free-tier limit), stall (stream inactivity), else None."""
+    kind, msg = str(err.get("type", "")), str(err.get("message", ""))
+    if kind == "provider.quota" or err.get("status") == 429 or "[429]" in msg or re.search(r"rate.?limit", msg, re.IGNORECASE):
+        return "quota"
+    if kind == "aborted" and "inactivity" in msg.lower():
+        return "stall"
+    if kind.startswith("provider") or PROVIDER_ERROR.search(msg):
+        return "outage"
+    return None
 
 
 def last_session(agent_log: Path) -> tuple[str | None, bool]:
@@ -109,9 +123,7 @@ def last_session(agent_log: Path) -> tuple[str | None, bool]:
         except json.JSONDecodeError:
             continue
         session, last = e.get("sessionID", session), e
-    err = (last or {}).get("error") or {}
-    failed = (last or {}).get("type") == "error" and (
-        str(err.get("type", "")).startswith("provider") or bool(PROVIDER_ERROR.search(str(err.get("message", "")))))
+    failed = (last or {}).get("type") == "error" and error_kind((last or {}).get("error") or {}) is not None
     return session, failed
 
 
@@ -129,40 +141,69 @@ def resume_command(p: Player, session: str, workdir: Path) -> list[str]:
             RESUME_PROMPT]
 
 
-def supervise(task: str, out_dir: Path, players: list[Player], max_resumes: int = 6,
-              backoff: tuple[int, ...] = (60, 120, 300, 600, 900, 1800), poll: int = 30) -> dict[str, str]:
-    """Watch opencode players; after a provider failure, resume the same session with backoff."""
+def _last_error(agent_log: Path) -> dict:
+    for line in reversed(Path(agent_log).read_text(encoding="utf-8", errors="replace").splitlines()):
+        if line.startswith("{"):
+            try:
+                e = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            return e.get("error") or {} if e.get("type") == "error" else {}
+    return {}
+
+
+def supervise(task: str, out_dir: Path, players: list[Player], max_resumes: int = 6, poll: int = 30) -> dict[str, str]:
+    """Watch opencode players; after an infrastructure failure, resume the same session after a backoff that
+    depends on the failure (outage, stall, or free-tier quota). Never blocks one player on another's backoff,
+    and reaps the processes it starts, so a dead agent never looks alive."""
     import time
 
     out_dir = Path(out_dir).resolve()
     tasks_dir = Path(os.environ.get("RAILHEAD_TASKS", REPO_DIR / "tasks")).resolve()
     resumes = {p.label: 0 for p in players}
     status = {p.label: "wait" for p in players}
-    while any(v in ("wait", "resume") for v in status.values()):
+    due: dict[str, float] = {}
+    procs: dict[str, subprocess.Popen] = {}
+
+    def alive(label: str, pid: int) -> bool:
+        if label in procs:
+            return procs[label].poll() is None  # poll() also reaps the child
+        try:
+            os.kill(pid, 0)
+        except OSError:
+            return False
+        return True
+
+    while any(v != "done" and v != "failed" for v in status.values()):
         for p in players:
             if status[p.label] in ("done", "failed"):
                 continue
             pdir = out_dir / p.label
-            pid = int((pdir / "agent.pid").read_text())
-            try:
-                os.kill(pid, 0)
-                alive = True
-            except OSError:
-                alive = False
-            submitted = '"m":"submit"' in (pdir / "state/run/actions.jsonl").read_text()
-            session, failed = last_session(pdir / "agent.log")
-            step = next_step(alive, submitted, failed, resumes[p.label], max_resumes)
-            if step == "resume" and session:
-                time.sleep(backoff[min(resumes[p.label], len(backoff) - 1)])
+            if p.label in due:
+                if time.time() < due[p.label]:
+                    continue
+                session, _ = last_session(pdir / "agent.log")
                 resumes[p.label] += 1
                 with open(pdir / "agent.log", "ab") as log:  # the child keeps its own copy of the descriptor
                     log.write(f"\n=== resume {resumes[p.label]} after provider error ===\n".encode())
                     log.flush()
-                    proc = subprocess.Popen(resume_command(p, session, pdir), cwd=pdir, stdin=subprocess.DEVNULL,
-                                            stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
-                                            env=agent_env(p, task, pdir / "state", tasks_dir, "http://127.0.0.1:4318"))
-                (pdir / "agent.pid").write_text(str(proc.pid))
+                    procs[p.label] = subprocess.Popen(
+                        resume_command(p, session, pdir), cwd=pdir, stdin=subprocess.DEVNULL, stdout=log,
+                        stderr=subprocess.STDOUT, start_new_session=True,
+                        env=agent_env(p, task, pdir / "state", tasks_dir, "http://127.0.0.1:4318"))
+                (pdir / "agent.pid").write_text(str(procs[p.label].pid))
+                del due[p.label]
                 print(json.dumps({"player": p.label, "resume": resumes[p.label], "session": session}), flush=True)
+                continue
+            submitted = '"m":"submit"' in (pdir / "state/run/actions.jsonl").read_text()
+            session, failed = last_session(pdir / "agent.log")
+            step = next_step(alive(p.label, int((pdir / "agent.pid").read_text())), submitted, failed,
+                             resumes[p.label], max_resumes)
+            if step == "resume" and session:
+                kind = error_kind(_last_error(pdir / "agent.log")) or "outage"
+                wait_s = BACKOFF[kind][min(resumes[p.label], len(BACKOFF[kind]) - 1)]
+                due[p.label] = time.time() + wait_s
+                print(json.dumps({"player": p.label, "error": kind, "resume_in_s": wait_s}), flush=True)
                 step = "wait"
             elif step in ("done", "failed") and status[p.label] != step:
                 print(json.dumps({"player": p.label, "status": step, "resumes": resumes[p.label]}), flush=True)
