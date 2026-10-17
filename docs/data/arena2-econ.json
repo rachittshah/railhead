@@ -1,0 +1,1443 @@
+{
+ "task": "arena-dev-0100",
+ "map_x": 512,
+ "players": {
+  "claude-fable-5-1": {
+   "acts": 566,
+   "failed": 15,
+   "dry_runs": 13,
+   "errors": {
+    "ERR_LAND_SLOPED_WRONG": 8,
+    "ERR_AREA_NOT_CLEAR": 5,
+    "ERR_AREA_ALREADY_FLAT": 1,
+    "ERR_BAD_ARG": 1
+   },
+   "capex": {
+    "rail": 435970,
+    "vehicles": 1235886,
+    "bridges": 10531,
+    "terraform": 2252,
+    "air": 101190
+   },
+   "capex_total": 1785829,
+   "capex_by_year": {
+    "1960": {
+     "rail": 157270,
+     "vehicles": 385660,
+     "bridges": 1344
+    },
+    "1961": {
+     "rail": 191953,
+     "vehicles": 351122,
+     "bridges": 5441,
+     "terraform": 2252
+    },
+    "1962": {
+     "rail": 86747,
+     "bridges": 3746,
+     "vehicles": 462190,
+     "air": 67560
+    },
+    "1963": {
+     "vehicles": 36914,
+     "air": 33630
+    }
+   },
+   "acts_by_year": {
+    "1960": 193,
+    "1961": 208,
+    "1962": 159,
+    "1963": 6
+   },
+   "vehicles_bought": {
+    "road": 0,
+    "rail": 56,
+    "air": 6,
+    "water": 0
+   },
+   "vehicles_sold": 0,
+   "sale_revenue": 0,
+   "legs": {
+    "air": {
+     "vehicle_legs": 6,
+     "mean_tiles": 343,
+     "max_tiles": 346
+    },
+    "rail": {
+     "vehicle_legs": 29,
+     "mean_tiles": 121,
+     "max_tiles": 201
+    }
+   },
+   "loan": {
+    "max": 500000,
+    "first_max_date": "1960-02-21",
+    "repaid_date": null
+   },
+   "loan_events": [
+    [
+     "1960-02-01",
+     500000
+    ]
+   ],
+   "peak_vehicles": {
+    "vehicles": 35,
+    "date": "1963-02-15"
+   },
+   "first_build": {
+    "rail": "1960-02-01",
+    "air": "1962-08-04"
+   },
+   "first_income_date": "1960-08-29",
+   "net_worth_positive_date": null,
+   "peak_quarter_income": {
+    "date": "1963-02-15",
+    "income_q": 224064
+   },
+   "last_snapshot": {
+    "date": "1963-02-15",
+    "net_worth": -279327,
+    "money": 220673,
+    "loan": 500000,
+    "vehicles": 35,
+    "stations": 32,
+    "income_q": 224064,
+    "expenses_q": -14729
+   },
+   "waits": {
+    "count": 21,
+    "median_days": 60.0,
+    "total_days": 1110
+   },
+   "town_actions": {}
+  },
+  "claude-haiku-5-5": {
+   "acts": 832,
+   "failed": 38,
+   "dry_runs": 2,
+   "errors": {
+    "ERR_VEHICLE_NOT_IN_DEPOT": 23,
+    "ERR_NOT_ENOUGH_CASH": 4,
+    "ERR_AREA_NOT_CLEAR": 4,
+    "ERR_LAND_SLOPED_WRONG": 3,
+    "ERR_BRIDGE_HEADS_NOT_ON_SAME_HEIGHT": 3,
+    "ERR_ALREADY_BUILT": 1
+   },
+   "capex": {
+    "road": 181629,
+    "vehicles": 1227166,
+    "bridges": 6846
+   },
+   "capex_total": 1415641,
+   "capex_by_year": {
+    "1960": {
+     "road": 47724,
+     "vehicles": 292314,
+     "bridges": 806
+    },
+    "1961": {
+     "vehicles": 283456,
+     "road": 29216
+    },
+    "1962": {
+     "vehicles": 248024,
+     "road": 47863,
+     "bridges": 3513
+    },
+    "1963": {
+     "vehicles": 194876,
+     "road": 43445,
+     "bridges": 1180
+    },
+    "1964": {
+     "vehicles": 62006,
+     "road": 393
+    },
+    "1965": {
+     "road": 6993,
+     "vehicles": 79722
+    },
+    "1966": {
+     "road": 5602,
+     "bridges": 1347,
+     "vehicles": 66768
+    },
+    "1967": {
+     "road": 393
+    }
+   },
+   "acts_by_year": {
+    "1960": 229,
+    "1961": 145,
+    "1962": 142,
+    "1963": 110,
+    "1964": 36,
+    "1965": 49,
+    "1966": 45,
+    "1967": 76
+   },
+   "vehicles_bought": {
+    "road": 275,
+    "rail": 0,
+    "air": 0,
+    "water": 0
+   },
+   "vehicles_sold": 26,
+   "sale_revenue": 97196,
+   "legs": {
+    "road": {
+     "vehicle_legs": 249,
+     "mean_tiles": 85,
+     "max_tiles": 158
+    }
+   },
+   "loan": {
+    "max": 450000,
+    "first_max_date": "1962-05-21",
+    "repaid_date": "1965-01-25"
+   },
+   "loan_events": [
+    [
+     "1960-05-31",
+     300000
+    ],
+    [
+     "1961-05-26",
+     400000
+    ],
+    [
+     "1962-01-21",
+     450000
+    ],
+    [
+     "1963-02-05",
+     300000
+    ],
+    [
+     "1964-07-29",
+     100000
+    ],
+    [
+     "1964-11-26",
+     0
+    ]
+   ],
+   "peak_vehicles": {
+    "vehicles": 264,
+    "date": "1966-08-08"
+   },
+   "first_build": {
+    "road": "1960-02-01"
+   },
+   "first_income_date": "1960-05-31",
+   "net_worth_positive_date": "1964-11-26",
+   "peak_quarter_income": {
+    "date": "1966-03-31",
+    "income_q": 125314
+   },
+   "last_snapshot": {
+    "date": "1970-01-29",
+    "net_worth": 2262888,
+    "money": 2262888,
+    "loan": 0,
+    "vehicles": 249,
+    "stations": 26,
+    "income_q": 46995,
+    "expenses_q": -7681
+   },
+   "waits": {
+    "count": 33,
+    "median_days": 120.0,
+    "total_days": 3650
+   },
+   "town_actions": {}
+  },
+  "claude-opus-5-5": {
+   "acts": 554,
+   "failed": 11,
+   "dry_runs": 13,
+   "errors": {
+    "ERR_UNKNOWN": 8,
+    "ERR_NOT_ENOUGH_CASH": 2,
+    "ERR_AREA_NOT_CLEAR": 1
+   },
+   "capex": {
+    "air": 892065,
+    "vehicles": 5795483,
+    "towns": 1388670
+   },
+   "capex_total": 8076218,
+   "capex_by_year": {
+    "1960": {
+     "air": 382965,
+     "vehicles": 1468353
+    },
+    "1961": {
+     "air": 475515,
+     "vehicles": 2789050
+    },
+    "1962": {
+     "vehicles": 680856,
+     "air": 33585
+    },
+    "1963": {
+     "vehicles": 225585,
+     "towns": 1125000
+    },
+    "1964": {
+     "vehicles": 188671
+    },
+    "1965": {
+     "towns": 263670,
+     "vehicles": 36914
+    },
+    "1966": {
+     "vehicles": 406054
+    }
+   },
+   "acts_by_year": {
+    "1960": 171,
+    "1961": 256,
+    "1962": 49,
+    "1963": 24,
+    "1964": 13,
+    "1965": 13,
+    "1966": 28
+   },
+   "vehicles_bought": {
+    "road": 0,
+    "rail": 0,
+    "air": 154,
+    "water": 0
+   },
+   "vehicles_sold": 0,
+   "sale_revenue": 0,
+   "legs": {
+    "air": {
+     "vehicle_legs": 147,
+     "mean_tiles": 462,
+     "max_tiles": 691
+    }
+   },
+   "loan": {
+    "max": 500000,
+    "first_max_date": "1960-03-24",
+    "repaid_date": "1962-02-27"
+   },
+   "loan_events": [
+    [
+     "1960-02-01",
+     300000
+    ],
+    [
+     "1960-02-13",
+     500000
+    ],
+    [
+     "1961-10-30",
+     0
+    ]
+   ],
+   "peak_vehicles": {
+    "vehicles": 146,
+    "date": "1967-05-02"
+   },
+   "first_build": {
+    "air": "1960-02-01"
+   },
+   "first_income_date": "1960-05-23",
+   "net_worth_positive_date": "1961-04-03",
+   "peak_quarter_income": {
+    "date": "1962-06-27",
+    "income_q": 2025385
+   },
+   "last_snapshot": {
+    "date": "1970-01-29",
+    "net_worth": 41323272,
+    "money": 41323272,
+    "loan": 0,
+    "vehicles": 142,
+    "stations": 52,
+    "income_q": 376121,
+    "expenses_q": -73525
+   },
+   "waits": {
+    "count": 30,
+    "median_days": 60.0,
+    "total_days": 3650
+   },
+   "town_actions": {
+    "statue": 8,
+    "advertise_large": 10
+   }
+  },
+  "claude-sonnet-5-5": {
+   "acts": 1021,
+   "failed": 61,
+   "dry_runs": 274,
+   "errors": {
+    "ERR_VEHICLE_IN_THE_WAY": 26,
+    "ERR_NOT_ENOUGH_CASH": 8,
+    "ERR_BAD_ARG": 8,
+    "ERR_ALREADY_BUILT": 6,
+    "ERR_AREA_NOT_CLEAR": 4,
+    "ERR_FLAT_LAND_REQUIRED": 2
+   },
+   "capex": {
+    "road": 107502,
+    "vehicles": 824724,
+    "terraform": 5423,
+    "rail": 250615
+   },
+   "capex_total": 1188264,
+   "capex_by_year": {
+    "1960": {
+     "road": 24982,
+     "vehicles": 79722
+    },
+    "1961": {
+     "vehicles": 163873,
+     "road": 20089
+    },
+    "1962": {
+     "road": 26634,
+     "vehicles": 66435
+    },
+    "1963": {
+     "vehicles": 128441,
+     "road": 35797
+    },
+    "1964": {
+     "terraform": 5349,
+     "rail": 109456,
+     "vehicles": 180355
+    },
+    "1965": {
+     "rail": 140784,
+     "vehicles": 205898,
+     "terraform": 74
+    },
+    "1966": {
+     "rail": 375
+    }
+   },
+   "acts_by_year": {
+    "1960": 57,
+    "1961": 113,
+    "1962": 52,
+    "1963": 97,
+    "1964": 331,
+    "1965": 370,
+    "1966": 1
+   },
+   "vehicles_bought": {
+    "road": 105,
+    "rail": 129,
+    "air": 0,
+    "water": 0
+   },
+   "vehicles_sold": 1,
+   "sale_revenue": 19690,
+   "legs": {
+    "rail": {
+     "vehicle_legs": 11,
+     "mean_tiles": 122,
+     "max_tiles": 168
+    },
+    "road": {
+     "vehicle_legs": 104,
+     "mean_tiles": 81,
+     "max_tiles": 144
+    }
+   },
+   "loan": {
+    "max": 250000,
+    "first_max_date": "1961-05-11",
+    "repaid_date": "1966-06-02"
+   },
+   "loan_events": [
+    [
+     "1961-02-10",
+     250000
+    ],
+    [
+     "1965-06-17",
+     50000
+    ],
+    [
+     "1965-12-04",
+     0
+    ]
+   ],
+   "peak_vehicles": {
+    "vehicles": 114,
+    "date": "1965-12-04"
+   },
+   "first_build": {
+    "road": "1960-02-01",
+    "rail": "1964-01-05"
+   },
+   "first_income_date": "1960-06-30",
+   "net_worth_positive_date": "1964-06-23",
+   "peak_quarter_income": {
+    "date": "1969-12-01",
+    "income_q": 185852
+   },
+   "last_snapshot": {
+    "date": "1970-01-29",
+    "net_worth": 3210199,
+    "money": 3210199,
+    "loan": 0,
+    "vehicles": 112,
+    "stations": 29,
+    "income_q": 15651,
+    "expenses_q": -4804
+   },
+   "waits": {
+    "count": 85,
+    "median_days": 20.0,
+    "total_days": 3645
+   },
+   "town_actions": {}
+  },
+  "gpt-5.6-luna": {
+   "acts": 436,
+   "failed": 100,
+   "dry_runs": 81,
+   "errors": {
+    "ERR_BAD_ARG": 85,
+    "ERR_VEHICLE_NOT_IN_DEPOT": 6,
+    "ERR_AREA_NOT_CLEAR": 3,
+    "ERR_NOT_ENOUGH_CASH": 3,
+    "ERR_ALREADY_BUILT": 1,
+    "ERR_LAND_SLOPED_WRONG": 1
+   },
+   "capex": {
+    "road": 35081,
+    "bridges": 29183,
+    "vehicles": 184567,
+    "rail": 6742,
+    "air": 975
+   },
+   "capex_total": 256548,
+   "capex_by_year": {
+    "1960": {
+     "road": 15668,
+     "bridges": 29183,
+     "vehicles": 17716
+    },
+    "1961": {
+     "road": 1512,
+     "vehicles": 4429
+    },
+    "1962": {
+     "road": 1600
+    },
+    "1963": {
+     "road": 8873,
+     "vehicles": 26574
+    },
+    "1964": {
+     "vehicles": 42839,
+     "rail": 6382
+    },
+    "1965": {
+     "air": 975
+    },
+    "1966": {
+     "rail": 360,
+     "road": 6967,
+     "vehicles": 44290
+    },
+    "1967": {
+     "road": 461,
+     "vehicles": 48719
+    }
+   },
+   "acts_by_year": {
+    "1960": 104,
+    "1961": 31,
+    "1962": 14,
+    "1963": 77,
+    "1964": 49,
+    "1965": 30,
+    "1966": 70,
+    "1967": 60,
+    "1968": 1
+   },
+   "vehicles_bought": {
+    "road": 38,
+    "rail": 2,
+    "air": 0,
+    "water": 0
+   },
+   "vehicles_sold": 10,
+   "sale_revenue": 34800,
+   "legs": {
+    "rail": {
+     "vehicle_legs": 1,
+     "mean_tiles": 52,
+     "max_tiles": 52
+    },
+    "road": {
+     "vehicle_legs": 28,
+     "mean_tiles": 52,
+     "max_tiles": 129
+    }
+   },
+   "loan": {
+    "max": 300000,
+    "first_max_date": "1965-07-04",
+    "repaid_date": null
+   },
+   "loan_events": [
+    [
+     "1963-09-13",
+     200000
+    ],
+    [
+     "1965-03-06",
+     300000
+    ],
+    [
+     "1968-02-19",
+     200000
+    ]
+   ],
+   "peak_vehicles": {
+    "vehicles": 29,
+    "date": "1968-02-19"
+   },
+   "first_build": {
+    "road": "1960-02-01",
+    "rail": "1964-07-09",
+    "air": "1965-03-06"
+   },
+   "first_income_date": "1964-01-11",
+   "net_worth_positive_date": null,
+   "peak_quarter_income": {
+    "date": "1967-06-24",
+    "income_q": 10485
+   },
+   "last_snapshot": {
+    "date": "1970-01-29",
+    "net_worth": -78806,
+    "money": 121194,
+    "loan": 200000,
+    "vehicles": 29,
+    "stations": 11,
+    "income_q": 3497,
+    "expenses_q": -1555
+   },
+   "waits": {
+    "count": 32,
+    "median_days": 120.0,
+    "total_days": 3650
+   },
+   "town_actions": {}
+  },
+  "gpt-5.6-sol": {
+   "acts": 349,
+   "failed": 6,
+   "dry_runs": 85,
+   "errors": {
+    "ERR_UNKNOWN": 3,
+    "ERR_BAD_ARG": 2,
+    "ERR_PRECONDITION_STRING_TOO_LONG": 1
+   },
+   "capex": {
+    "road": 8931,
+    "vehicles": 2197720,
+    "air": 158651,
+    "terraform": 2361
+   },
+   "capex_total": 2367663,
+   "capex_by_year": {
+    "1960": {
+     "road": 6257,
+     "vehicles": 265116,
+     "air": 50856,
+     "terraform": 1377
+    },
+    "1961": {
+     "vehicles": 173902,
+     "air": 33660,
+     "road": 1240
+    },
+    "1962": {
+     "road": 592,
+     "vehicles": 1075401,
+     "air": 74135
+    },
+    "1963": {
+     "vehicles": 373235
+    },
+    "1964": {
+     "vehicles": 131248
+    },
+    "1966": {
+     "vehicles": 39368
+    },
+    "1967": {
+     "vehicles": 139450
+    },
+    "1968": {
+     "road": 842,
+     "terraform": 984
+    }
+   },
+   "acts_by_year": {
+    "1960": 71,
+    "1961": 47,
+    "1962": 138,
+    "1963": 29,
+    "1964": 20,
+    "1965": 10,
+    "1966": 16,
+    "1967": 10,
+    "1968": 8
+   },
+   "vehicles_bought": {
+    "road": 24,
+    "rail": 0,
+    "air": 61,
+    "water": 0
+   },
+   "vehicles_sold": 0,
+   "sale_revenue": 0,
+   "legs": {
+    "air": {
+     "vehicle_legs": 60,
+     "mean_tiles": 460,
+     "max_tiles": 621
+    },
+    "road": {
+     "vehicle_legs": 24,
+     "mean_tiles": 16,
+     "max_tiles": 31
+    }
+   },
+   "loan": {
+    "max": 500000,
+    "first_max_date": "1961-05-26",
+    "repaid_date": "1964-09-17"
+   },
+   "loan_events": [
+    [
+     "1960-11-27",
+     500000
+    ],
+    [
+     "1963-09-18",
+     0
+    ]
+   ],
+   "peak_vehicles": {
+    "vehicles": 84,
+    "date": "1968-09-16"
+   },
+   "first_build": {
+    "road": "1960-02-01",
+    "air": "1960-11-27"
+   },
+   "first_income_date": "1960-11-27",
+   "net_worth_positive_date": "1961-11-22",
+   "peak_quarter_income": {
+    "date": "1969-09-16",
+    "income_q": 566182
+   },
+   "last_snapshot": {
+    "date": "1970-01-29",
+    "net_worth": 11605388,
+    "money": 11605388,
+    "loan": 0,
+    "vehicles": 84,
+    "stations": 12,
+    "income_q": 201314,
+    "expenses_q": -17609
+   },
+   "waits": {
+    "count": 16,
+    "median_days": 180.0,
+    "total_days": 3650
+   },
+   "town_actions": {}
+  },
+  "gpt-5.6-terra": {
+   "acts": 241,
+   "failed": 7,
+   "dry_runs": 59,
+   "errors": {
+    "ERR_AREA_NOT_CLEAR": 3,
+    "ERR_BAD_ARG": 2,
+    "ERR_VEHICLE_NOT_IN_DEPOT": 2
+   },
+   "capex": {
+    "rail": 8070,
+    "vehicles": 251189,
+    "road": 78385
+   },
+   "capex_total": 337644,
+   "capex_by_year": {
+    "1960": {
+     "rail": 8070,
+     "vehicles": 33676,
+     "road": 10129
+    },
+    "1961": {
+     "road": 28395,
+     "vehicles": 13287
+    },
+    "1962": {
+     "road": 943
+    },
+    "1963": {
+     "road": 21337,
+     "vehicles": 39984
+    },
+    "1964": {
+     "road": 17581,
+     "vehicles": 17716
+    },
+    "1965": {
+     "vehicles": 35678
+    },
+    "1966": {
+     "vehicles": 39984
+    },
+    "1967": {
+     "vehicles": 35432
+    },
+    "1968": {
+     "vehicles": 35432
+    }
+   },
+   "acts_by_year": {
+    "1960": 56,
+    "1961": 24,
+    "1962": 10,
+    "1963": 48,
+    "1964": 24,
+    "1965": 20,
+    "1966": 24,
+    "1967": 18,
+    "1968": 16,
+    "1969": 1
+   },
+   "vehicles_bought": {
+    "road": 52,
+    "rail": 6,
+    "air": 0,
+    "water": 0
+   },
+   "vehicles_sold": 1,
+   "sale_revenue": 3141,
+   "legs": {
+    "rail": {
+     "vehicle_legs": 1,
+     "mean_tiles": 59,
+     "max_tiles": 59
+    },
+    "road": {
+     "vehicle_legs": 51,
+     "mean_tiles": 108,
+     "max_tiles": 138
+    }
+   },
+   "loan": {
+    "max": 200000,
+    "first_max_date": "1964-02-05",
+    "repaid_date": "1970-01-29"
+   },
+   "loan_events": [
+    [
+     "1963-02-05",
+     200000
+    ],
+    [
+     "1967-02-04",
+     100000
+    ],
+    [
+     "1969-02-03",
+     0
+    ]
+   ],
+   "peak_vehicles": {
+    "vehicles": 52,
+    "date": "1969-02-03"
+   },
+   "first_build": {
+    "rail": "1960-02-01",
+    "road": "1960-08-09"
+   },
+   "first_income_date": "1963-02-05",
+   "net_worth_positive_date": "1968-02-04",
+   "peak_quarter_income": {
+    "date": "1969-02-03",
+    "income_q": 12188
+   },
+   "last_snapshot": {
+    "date": "1970-01-29",
+    "net_worth": 219070,
+    "money": 219070,
+    "loan": 0,
+    "vehicles": 52,
+    "stations": 8,
+    "income_q": 9580,
+    "expenses_q": -1549
+   },
+   "waits": {
+    "count": 13,
+    "median_days": 365.0,
+    "total_days": 3650
+   },
+   "town_actions": {}
+  },
+  "gpt-6-astra": {
+   "acts": 298,
+   "failed": 28,
+   "dry_runs": 0,
+   "errors": {
+    "ERR_AREA_NOT_CLEAR": 11,
+    "ERR_FLAT_LAND_REQUIRED": 8,
+    "ERR_BAD_ARG": 3,
+    "ERR_UNKNOWN": 2,
+    "ERR_TYPE_NOT_AVAILABLE": 2,
+    "ERR_TUNNEL_CANNOT_BUILD_ON_WATER": 1
+   },
+   "capex": {
+    "air": 519258,
+    "terraform": 22558,
+    "vehicles": 1838590,
+    "road": 4380,
+    "rail": 8520,
+    "towns": 140625
+   },
+   "capex_total": 2533931,
+   "capex_by_year": {
+    "1960": {
+     "air": 130707,
+     "terraform": 2926,
+     "vehicles": 221484
+    },
+    "1961": {
+     "vehicles": 337147,
+     "air": 67290,
+     "terraform": 2581,
+     "road": 1303
+    },
+    "1962": {
+     "road": 71,
+     "rail": 8520,
+     "vehicles": 323481,
+     "air": 118110,
+     "terraform": 10983
+    },
+    "1963": {
+     "vehicles": 77929,
+     "towns": 140625
+    },
+    "1964": {
+     "air": 135276,
+     "vehicles": 566013,
+     "terraform": 247
+    },
+    "1965": {
+     "vehicles": 4921,
+     "road": 1512
+    },
+    "1966": {
+     "road": 1494,
+     "air": 67875,
+     "terraform": 5821,
+     "vehicles": 225585
+    },
+    "1967": {
+     "vehicles": 41015
+    },
+    "1968": {
+     "vehicles": 41015
+    }
+   },
+   "acts_by_year": {
+    "1960": 36,
+    "1961": 46,
+    "1962": 60,
+    "1963": 27,
+    "1964": 63,
+    "1965": 22,
+    "1966": 30,
+    "1967": 6,
+    "1968": 6,
+    "1969": 2
+   },
+   "vehicles_bought": {
+    "road": 2,
+    "rail": 9,
+    "air": 48,
+    "water": 0
+   },
+   "vehicles_sold": 4,
+   "sale_revenue": 62615,
+   "legs": {
+    "air": {
+     "vehicle_legs": 43,
+     "mean_tiles": 481,
+     "max_tiles": 672
+    },
+    "rail": {
+     "vehicle_legs": 1,
+     "mean_tiles": 51,
+     "max_tiles": 51
+    },
+    "road": {
+     "vehicle_legs": 1,
+     "mean_tiles": 5,
+     "max_tiles": 5
+    }
+   },
+   "loan": {
+    "max": 500000,
+    "first_max_date": "1961-07-30",
+    "repaid_date": "1962-07-30"
+   },
+   "loan_events": [
+    [
+     "1960-07-30",
+     500000
+    ],
+    [
+     "1961-07-30",
+     0
+    ]
+   ],
+   "peak_vehicles": {
+    "vehicles": 47,
+    "date": "1968-01-30"
+   },
+   "first_build": {
+    "air": "1960-02-01",
+    "road": "1961-07-30",
+    "rail": "1962-07-30"
+   },
+   "first_income_date": "1961-07-30",
+   "net_worth_positive_date": "1961-07-30",
+   "peak_quarter_income": {
+    "date": "1967-09-27",
+    "income_q": 1128447
+   },
+   "last_snapshot": {
+    "date": "1970-01-29",
+    "net_worth": 24196367,
+    "money": 24196367,
+    "loan": 0,
+    "vehicles": 45,
+    "stations": 34,
+    "income_q": 311115,
+    "expenses_q": -22437
+   },
+   "waits": {
+    "count": 14,
+    "median_days": 365.0,
+    "total_days": 3650
+   },
+   "town_actions": {
+    "statue": 1
+   }
+  },
+  "gpt-6-luna": {
+   "acts": 239,
+   "failed": 7,
+   "dry_runs": 102,
+   "errors": {
+    "ERR_BAD_ARG": 6,
+    "ERR_VEHICLE_NOT_IN_DEPOT": 1
+   },
+   "capex": {
+    "road": 47649,
+    "vehicles": 158510,
+    "air": 930,
+    "rail": 8895,
+    "bridges": 1124
+   },
+   "capex_total": 217108,
+   "capex_by_year": {
+    "1960": {
+     "road": 11204,
+     "vehicles": 8858
+    },
+    "1961": {
+     "road": 839,
+     "vehicles": 13287
+    },
+    "1962": {
+     "road": 13988,
+     "vehicles": 22145
+    },
+    "1963": {
+     "vehicles": 31003
+    },
+    "1964": {
+     "air": 930,
+     "rail": 8895,
+     "vehicles": 29905
+    },
+    "1966": {
+     "road": 21618,
+     "bridges": 1124,
+     "vehicles": 9022
+    },
+    "1967": {
+     "vehicles": 22145
+    },
+    "1968": {
+     "vehicles": 22145
+    }
+   },
+   "acts_by_year": {
+    "1960": 38,
+    "1961": 19,
+    "1962": 38,
+    "1963": 16,
+    "1964": 40,
+    "1965": 4,
+    "1966": 52,
+    "1967": 18,
+    "1968": 11,
+    "1969": 3
+   },
+   "vehicles_bought": {
+    "road": 29,
+    "rail": 5,
+    "air": 0,
+    "water": 0
+   },
+   "vehicles_sold": 5,
+   "sale_revenue": 38348,
+   "legs": {
+    "road": {
+     "vehicle_legs": 25,
+     "mean_tiles": 71,
+     "max_tiles": 74
+    }
+   },
+   "loan": {
+    "max": 100000,
+    "first_max_date": "1960-04-01",
+    "repaid_date": "1969-04-29"
+   },
+   "loan_events": [
+    [
+     "1968-04-29",
+     0
+    ]
+   ],
+   "peak_vehicles": {
+    "vehicles": 25,
+    "date": "1969-04-29"
+   },
+   "first_build": {
+    "road": "1960-02-01",
+    "air": "1964-09-12",
+    "rail": "1964-09-12"
+   },
+   "first_income_date": "1961-09-23",
+   "net_worth_positive_date": "1966-09-02",
+   "peak_quarter_income": {
+    "date": "1964-09-12",
+    "income_q": 10103
+   },
+   "last_snapshot": {
+    "date": "1970-01-29",
+    "net_worth": 178788,
+    "money": 178788,
+    "loan": 0,
+    "vehicles": 25,
+    "stations": 8,
+    "income_q": 6784,
+    "expenses_q": -806
+   },
+   "waits": {
+    "count": 24,
+    "median_days": 180.0,
+    "total_days": 3650
+   },
+   "town_actions": {}
+  },
+  "gpt-6-sol": {
+   "acts": 639,
+   "failed": 0,
+   "dry_runs": 363,
+   "errors": {},
+   "capex": {
+    "air": 551199,
+    "vehicles": 2162998,
+    "road": 7961,
+    "rail": 12210
+   },
+   "capex_total": 2734368,
+   "capex_by_year": {
+    "1960": {
+     "air": 33600,
+     "vehicles": 98436
+    },
+    "1961": {
+     "air": 67305,
+     "vehicles": 209178
+    },
+    "1962": {
+     "vehicles": 329432,
+     "air": 59122,
+     "road": 7819
+    },
+    "1963": {
+     "road": 142,
+     "rail": 6510,
+     "vehicles": 25076
+    },
+    "1964": {
+     "vehicles": 418357,
+     "air": 118320
+    },
+    "1965": {
+     "vehicles": 362245,
+     "air": 103415
+    },
+    "1966": {
+     "vehicles": 260902,
+     "rail": 5700,
+     "air": 34767
+    },
+    "1967": {
+     "air": 134670,
+     "vehicles": 418357
+    },
+    "1968": {
+     "vehicles": 41015
+    }
+   },
+   "acts_by_year": {
+    "1960": 41,
+    "1961": 20,
+    "1962": 96,
+    "1963": 31,
+    "1964": 226,
+    "1965": 107,
+    "1966": 48,
+    "1967": 62,
+    "1968": 4,
+    "1969": 4
+   },
+   "vehicles_bought": {
+    "road": 8,
+    "rail": 10,
+    "air": 55,
+    "water": 0
+   },
+   "vehicles_sold": 5,
+   "sale_revenue": 105982,
+   "legs": {
+    "air": {
+     "vehicle_legs": 49,
+     "mean_tiles": 452,
+     "max_tiles": 598
+    },
+    "rail": {
+     "vehicle_legs": 2,
+     "mean_tiles": 38,
+     "max_tiles": 44
+    },
+    "road": {
+     "vehicle_legs": 8,
+     "mean_tiles": 44,
+     "max_tiles": 44
+    }
+   },
+   "loan": {
+    "max": 100000,
+    "first_max_date": "1960-05-31",
+    "repaid_date": "1965-09-02"
+   },
+   "loan_events": [
+    [
+     "1965-03-06",
+     0
+    ]
+   ],
+   "peak_vehicles": {
+    "vehicles": 60,
+    "date": "1969-03-10"
+   },
+   "first_build": {
+    "air": "1960-02-01",
+    "road": "1962-09-18",
+    "rail": "1963-07-15"
+   },
+   "first_income_date": "1960-09-28",
+   "net_worth_positive_date": "1961-03-27",
+   "peak_quarter_income": {
+    "date": "1969-03-10",
+    "income_q": 915598
+   },
+   "last_snapshot": {
+    "date": "1970-01-29",
+    "net_worth": 24076624,
+    "money": 24076624,
+    "loan": 0,
+    "vehicles": 59,
+    "stations": 37,
+    "income_q": 294606,
+    "expenses_q": -24486
+   },
+   "waits": {
+    "count": 24,
+    "median_days": 180.0,
+    "total_days": 3650
+   },
+   "town_actions": {}
+  },
+  "gpt-6.1-sol": {
+   "acts": 286,
+   "failed": 27,
+   "dry_runs": 0,
+   "errors": {
+    "ERR_AREA_NOT_CLEAR": 11,
+    "ERR_BAD_ARG": 7,
+    "ERR_FLAT_LAND_REQUIRED": 4,
+    "ERR_TUNNEL_CANNOT_BUILD_ON_WATER": 2,
+    "ERR_AREA_ALREADY_FLAT": 2,
+    "ERR_ALREADY_BUILT": 1
+   },
+   "capex": {
+    "air": 515588,
+    "vehicles": 1543464,
+    "road": 3116,
+    "terraform": 310308,
+    "rail": 8730
+   },
+   "capex_total": 2381206,
+   "capex_by_year": {
+    "1960": {
+     "air": 118572,
+     "vehicles": 258398
+    },
+    "1961": {
+     "road": 2517,
+     "vehicles": 221484,
+     "air": 49725,
+     "terraform": 7879
+    },
+    "1962": {
+     "road": 449,
+     "vehicles": 300233,
+     "air": 102465
+    },
+    "1963": {
+     "rail": 8730,
+     "vehicles": 25076
+    },
+    "1965": {
+     "air": 109002,
+     "vehicles": 406049
+    },
+    "1966": {
+     "vehicles": 258397,
+     "road": 150,
+     "air": 102749,
+     "terraform": 10823
+    },
+    "1967": {
+     "terraform": 291606,
+     "air": 33075
+    },
+    "1968": {
+     "vehicles": 73827
+    }
+   },
+   "acts_by_year": {
+    "1960": 38,
+    "1961": 45,
+    "1962": 48,
+    "1963": 18,
+    "1964": 33,
+    "1965": 44,
+    "1966": 34,
+    "1967": 14,
+    "1968": 8,
+    "1969": 4
+   },
+   "vehicles_bought": {
+    "road": 1,
+    "rail": 6,
+    "air": 41,
+    "water": 0
+   },
+   "vehicles_sold": 0,
+   "sale_revenue": 0,
+   "legs": {
+    "air": {
+     "vehicle_legs": 40,
+     "mean_tiles": 472,
+     "max_tiles": 697
+    },
+    "rail": {
+     "vehicle_legs": 1,
+     "mean_tiles": 57,
+     "max_tiles": 57
+    },
+    "road": {
+     "vehicle_legs": 1,
+     "mean_tiles": 14,
+     "max_tiles": 14
+    }
+   },
+   "loan": {
+    "max": 500000,
+    "first_max_date": "1960-05-31",
+    "repaid_date": "1962-09-18"
+   },
+   "loan_events": [
+    [
+     "1960-02-01",
+     500000
+    ],
+    [
+     "1962-03-22",
+     0
+    ]
+   ],
+   "peak_vehicles": {
+    "vehicles": 42,
+    "date": "1969-03-05"
+   },
+   "first_build": {
+    "air": "1960-02-01",
+    "road": "1961-07-25",
+    "rail": "1963-07-15"
+   },
+   "first_income_date": "1960-11-27",
+   "net_worth_positive_date": "1961-07-25",
+   "peak_quarter_income": {
+    "date": "1967-06-24",
+    "income_q": 882186
+   },
+   "last_snapshot": {
+    "date": "1970-01-29",
+    "net_worth": 19539266,
+    "money": 19539266,
+    "loan": 0,
+    "vehicles": 42,
+    "stations": 34,
+    "income_q": 342711,
+    "expenses_q": -19470
+   },
+   "waits": {
+    "count": 16,
+    "median_days": 240.0,
+    "total_days": 3650
+   },
+   "town_actions": {}
+  }
+ }
+}

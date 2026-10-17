@@ -16,6 +16,7 @@
     railhead otel serve|summary [--port 4318] [--dir traces]   zero-dependency OTLP/HTTP trace sink
     railhead trace bundle <arena_dir> [--otel traces] [--out DIR]   per-player e2e trace bundles (scrubbed, local)
     railhead figures docs/data/<arena>.json ... [--out docs/img]   result charts (SVG, light and dark)
+    railhead econ <arena_dir> --task tasks/<id> [--out FILE]   per-player economics from the action logs
     railhead render <state_dir> <out.png> [--title T]   network map of a live world (engine minimap + routes)
     railhead harden <tasks_dir>   apply leak fixes to an existing catalog (ids, scenario, targets)
     railhead recheck <tasks_dir> [ids] [--shard i/n] [--jobs N]   re-verify oracle logs against certificates
@@ -170,6 +171,10 @@ def main(argv: list[str] | None = None) -> int:
             from railhead.trace import main as trace_main
 
             return trace_main(argv[1:])
+        if cmd == "econ":
+            from railhead.econ import main as econ_main
+
+            return econ_main(argv[1:])
         if cmd == "figures":
             from railhead.figures import main as figures_main
 

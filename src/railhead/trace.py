@@ -51,6 +51,39 @@ def _scrub_line(line: str) -> str:
         return scrub(line)
 
 
+CODEX_MARKERS = {"exec", "codex", "thinking", "tokens used", "user", "hook: Stop", "hook: Stop Completed"}
+
+
+def visible_messages(agent_log: Path) -> list[dict]:
+    """The messages a player showed (Claude ``text`` blocks and its final result; Codex ``codex`` blocks),
+    in order. Hidden reasoning is never included. The last message is marked ``final``."""
+    lines = Path(agent_log).read_text(encoding="utf-8", errors="replace").splitlines()
+    out: list[dict] = []
+    if lines and lines[0].startswith("{"):  # claude -p stream-json
+        for line in lines:
+            try:
+                d = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if d.get("type") == "assistant":
+                out += [{"kind": "message", "text": c["text"]} for c in d.get("message", {}).get("content", [])
+                        if c.get("type") == "text" and c.get("text", "").strip()]
+            elif d.get("type") == "result" and str(d.get("result", "")).strip():
+                out.append({"kind": "final", "text": str(d["result"])})
+        return out
+    block: list[str] | None = None  # codex exec text: a "codex" line opens a visible message
+    for line in lines + ["exec"]:
+        if line.strip() in CODEX_MARKERS:
+            if block is not None and "\n".join(block).strip():
+                out.append({"kind": "message", "text": "\n".join(block).strip()})
+            block = [] if line.strip() == "codex" else None
+        elif block is not None:
+            block.append(line)
+    if out:
+        out[-1]["kind"] = "final"
+    return out
+
+
 def _write_jsonl(path: Path, rows: list[dict]) -> None:
     with open(path, "w", encoding="utf-8") as fh:
         fh.writelines(json.dumps(r, separators=(",", ":")) + "\n" for r in rows)

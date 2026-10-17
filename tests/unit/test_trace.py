@@ -59,3 +59,21 @@ def test_bundle_splits_by_player_sorts_by_time_and_joins_game_side(tmp_path):
     assert "me@example.com" not in text and "my-mac" not in text
     assert (tmp_path / "out/opus/actions.jsonl").exists() and (tmp_path / "out/opus/reward.json").exists()
     assert json.loads((tmp_path / "out/index.json").read_text()) == index
+
+
+def test_visible_messages_keep_what_the_model_showed_and_drop_hidden_reasoning(tmp_path):
+    from railhead.trace import visible_messages
+
+    claude = tmp_path / "claude.log"
+    claude.write_text("\n".join(json.dumps(x) for x in [
+        {"type": "system", "subtype": "init"},
+        {"type": "assistant", "message": {"content": [{"type": "thinking", "thinking": "hidden"},
+                                                      {"type": "text", "text": "Air pays more per tile."}]}},
+        {"type": "result", "result": "Final report."},
+    ]) + "\n")
+    assert visible_messages(claude) == [{"kind": "message", "text": "Air pays more per tile."},
+                                        {"kind": "final", "text": "Final report."}]
+    codex = tmp_path / "codex.log"
+    codex.write_text("exec\nrh status\ncodex\nTrucks first.\nThen planes.\nexec\nrh wait\ncodex\nDone.\ntokens used\n12\n")
+    assert visible_messages(codex) == [{"kind": "message", "text": "Trucks first.\nThen planes."},
+                                       {"kind": "final", "text": "Done."}]
