@@ -18,13 +18,14 @@ from pathlib import Path
 
 THEMES = {
     "light": {"surface": "#fcfcfb", "ink": "#0b0b0b", "ink2": "#52514e", "grid": "#e6e5e1", "muted": "#c9c8c1",
-              "claude": "#2a78d6", "openai": "#eb6834", "road": "#1baf7a", "rail": "#eda100", "air": "#e87ba4",
+              "claude": "#2a78d6", "openai": "#eb6834", "free": "#1baf7a", "road": "#1baf7a", "rail": "#eda100", "air": "#e87ba4",
               "water": "#6250d6"},
     "dark": {"surface": "#1a1a19", "ink": "#f0efec", "ink2": "#c3c2b7", "grid": "#33332f", "muted": "#4a4944",
-             "claude": "#3987e5", "openai": "#d95926", "road": "#199e70", "rail": "#c98500", "air": "#d55181",
+             "claude": "#3987e5", "openai": "#d95926", "free": "#199e70", "road": "#199e70", "rail": "#c98500", "air": "#d55181",
              "water": "#9085e9"},
 }
-VENDOR_LABEL = {"claude": "Claude (Claude Code)", "openai": "OpenAI (Codex)"}
+VENDOR_LABEL = {"claude": "Claude (Claude Code)", "openai": "OpenAI (Codex)",
+                "free": "OpenCode Zen free models (opencode)"}
 BASELINE_LABEL = {"baseline": "scripted truck route (baseline)", "idle": "no play"}
 MODES = ("road", "rail", "air", "water")
 
@@ -39,7 +40,9 @@ def money(v: float) -> str:
 
 
 def vendor(player: str) -> str:
-    return "claude" if player.startswith("claude") else "openai"
+    if player.startswith("claude"):
+        return "claude"
+    return "openai" if player.startswith("gpt") else "free"
 
 
 def _plt(t: dict):
@@ -105,9 +108,9 @@ def networth(doc: dict, out: Path, theme: str, title: str) -> Path:
     ax.set_axisbelow(True)
     ax.set_xlabel("net worth (cash − loan) after the run-off year, £ million")
     ax.axvline(0, color=t["ink2"], linewidth=0.8)
-    ax.legend(handles=[Patch(color=t["claude"], label=VENDOR_LABEL["claude"]),
-                       Patch(color=t["openai"], label=VENDOR_LABEL["openai"]),
-                       Patch(color=t["muted"], label="certified reference")], loc="lower right", fontsize=9)
+    present = [v for v in VENDOR_LABEL if any(r["status"] != "certificate" and vendor(r["player"]) == v for r in rows)]
+    ax.legend(handles=[Patch(color=t[v], label=VENDOR_LABEL[v]) for v in present]
+              + [Patch(color=t["muted"], label="certified reference")], loc="lower right", fontsize=9)
     note = _playing_note(doc)
     sub = f"{doc['task']}: every model bar is the replay of its own action log (proof-of-play), 0 divergences"
     _header(fig, title, sub, t)
@@ -128,6 +131,10 @@ def growth(doc: dict, out: Path, theme: str, title: str) -> Path:
     series = {p: ([_years(s["date"]) for s in doc["curves"][p]], [s["net_worth"] / 1e6 for s in doc["curves"][p]])
               for p in order}
     playing = {r["player"] for r in doc["results"] if r["status"] == "playing"}
+    if not series:  # no player has advanced time yet: say so instead of drawing empty panels
+        fig = plt.figure(figsize=(8.6, 2.0))
+        _header(fig, title, f"{doc['task']}: no player has a snapshot yet", t)
+        return _save(fig, out)
     x0 = min(xs[0] for xs, _ in series.values())
     x1 = max(xs[-1] for xs, _ in series.values())
     cols = 4 if len(order) > 6 else max(1, min(3, len(order)))

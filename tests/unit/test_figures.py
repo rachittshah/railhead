@@ -32,3 +32,19 @@ def test_build_writes_each_chart_in_both_themes_with_direct_labels(tmp_path):
     svg = (tmp_path / "img/arena-x-networth.svg").read_text()
     assert "£9.00M" in svg and "claude-a" in svg and "still playing" in svg  # text stays text, labels direct
     assert "#2a78d6" in svg and "#3987e5" in (tmp_path / "img/arena-x-networth-dark.svg").read_text()
+
+
+def test_free_models_get_their_own_colour_and_legend_entry(tmp_path):
+    from railhead.figures import vendor
+
+    assert [vendor(p) for p in ("claude-opus-5-5", "gpt-6-astra", "beam-free")] == ["claude", "openai", "free"]
+    doc = {"task": "arena-y",
+           "results": [{"player": "beam-free", "status": "verified", "net_worth": 400_000},
+                       {"player": "gpt-6-astra", "status": "verified", "net_worth": 900_000}],
+           "curves": {}, "fleet_mix": {"beam-free": {"road": 3, "rail": 0, "air": 0, "water": 0},
+                                       "gpt-6-astra": {"road": 0, "rail": 0, "air": 4, "water": 0}}}
+    src = tmp_path / "arena-y.json"
+    src.write_text(json.dumps(doc))
+    build([src], tmp_path / "img")
+    svg = (tmp_path / "img/arena-y-networth.svg").read_text()
+    assert "#1baf7a" in svg and "OpenCode Zen free models" in svg and "Claude (Claude Code)" not in svg

@@ -86,6 +86,26 @@ def results(arena_dir: Path, task_dir: Path) -> list[dict]:
     return done + live
 
 
+def merge_exports(paths: list[Path]) -> dict:
+    """One document from several exports of the same task: every player, one set of certified baselines."""
+    docs = [json.loads(Path(p).read_text()) for p in paths]
+    players, certs, live = [], {}, []
+    for d in docs:
+        for r in d["results"]:
+            if r["status"] == "certificate":
+                certs.setdefault(r["player"], r)
+            elif r["status"] == "playing":
+                live.append(r)
+            else:
+                players.append(r)
+    done = sorted(players + list(certs.values()), key=lambda r: (-r["net_worth"], r["status"] == "certificate"))
+    out = {"task": docs[0]["task"], "results": done + live, "curves": {}, "fleet_mix": {}}
+    for d in docs:
+        out["curves"].update(d.get("curves", {}))
+        out["fleet_mix"].update(d.get("fleet_mix", {}))
+    return out
+
+
 def table(arena_dir: Path) -> str:
     rows = ["player   date         net worth      money       loan  value     veh  stn  acts fail"]
     for name, pts in curves(arena_dir).items():
@@ -97,6 +117,11 @@ def table(arena_dir: Path) -> str:
 
 
 def main(argv: list[str]) -> int:
+    if argv and argv[0] == "--merge":  # railhead arena --merge a.json b.json --out c.json
+        out = Path(argv[argv.index("--out") + 1])
+        out.write_text(json.dumps(merge_exports([Path(a) for a in argv[1:argv.index("--out")]]), indent=1) + "\n")
+        print(json.dumps({"merged": str(out)}))
+        return 0
     d = Path(argv[0])
     if "--export" in argv:
         task = Path(argv[argv.index("--task") + 1])

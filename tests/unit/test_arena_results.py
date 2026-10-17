@@ -55,3 +55,19 @@ def test_fleet_mix_counts_bought_and_cloned_vehicles_by_mode(tmp_path):
             {"kind": "act", "m": "vehicle_buy", "ok": True, "a": {"engine": 5, "dry_run": True}, "ret": {"cost": 1}}]
     log.write_text("".join(json.dumps(r) + "\n" for r in rows))
     assert fleet_mix(log) == {"road": 2, "rail": 0, "air": 1, "water": 0}
+
+
+def test_merge_exports_combines_players_and_keeps_one_set_of_baselines(tmp_path):
+    from railhead.arena import merge_exports
+
+    base = [{"player": "baseline", "status": "certificate", "net_worth": 100, "gain_x_baseline": 1.0},
+            {"player": "idle", "status": "certificate", "net_worth": -10, "gain_x_baseline": 0.0}]
+    a = {"task": "t", "results": [{"player": "opus", "status": "verified", "net_worth": 900}, *base],
+         "curves": {"opus": [1]}, "fleet_mix": {"opus": {"air": 2}}}
+    b = {"task": "t", "results": [{"player": "beam", "status": "verified", "net_worth": 300}, *base],
+         "curves": {"beam": [2]}, "fleet_mix": {"beam": {"road": 3}}}
+    for name, d in (("a", a), ("b", b)):
+        (tmp_path / f"{name}.json").write_text(json.dumps(d))
+    m = merge_exports([tmp_path / "a.json", tmp_path / "b.json"])
+    assert [r["player"] for r in m["results"]] == ["opus", "beam", "baseline", "idle"]
+    assert set(m["curves"]) == {"opus", "beam"} and set(m["fleet_mix"]) == {"opus", "beam"}
