@@ -196,6 +196,8 @@ The top five all hit the cap, so this table reports raw net worth.
   <img alt="Small multiples: net worth of each player during the 10-year mandate. Opus climbs from 1961; the OpenAI air players climb from 1962; the road players stay near zero." src="docs/img/arena2-growth.svg">
 </picture>
 
+Why each model played the way it did, from its action log, its own words and its telemetry, is in **[docs/model-economics-behaviour.md](docs/model-economics-behaviour.md)**. The short version: the winners all landed on ~460-tile air routes on their own, and two models never found air because an error message told them the wrong airport type.
+
 The fine print, which matters:
 
 - This is **one world and one run per model**. It shows that the environment separates models clearly. It is not a benchmark.
@@ -441,6 +443,7 @@ The full procedures and cautions are in [docs/USAGE.md](docs/USAGE.md).
 | Document | Contents |
 |---|---|
 | [docs/DIAGRAMS.md](docs/DIAGRAMS.md) | All the flowcharts and sequence diagrams |
+| [docs/model-economics-behaviour.md](docs/model-economics-behaviour.md) | Why each model played the way it did: economics, beliefs, self-report accuracy and exploration style |
 | [docs/USAGE.md](docs/USAGE.md) | Procedures: build, install, test, generate, play, verify, export, run, trace and chart |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Each layer of the system |
 | [docs/TASKS.md](docs/TASKS.md) | The task families, their rewards and their secrets |
