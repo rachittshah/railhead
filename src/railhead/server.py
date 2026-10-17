@@ -136,17 +136,39 @@ class OpenTTDServer:
             cmd += ["-d", self.config.debug]
         return cmd
 
+    START_ATTEMPTS = 3
+
     def start(self) -> OpenTTDServer:
-        self.admin_port, self.game_port = free_port(), free_port()
-        self._write_files()
-        log = open(self.log_path, "ab")
-        self.proc = subprocess.Popen(
-            self.command(), cwd=self.workdir, stdin=subprocess.PIPE, stdout=log, stderr=subprocess.STDOUT,
-            start_new_session=True,
-        )
-        log.close()
-        self._wait_ready()
-        return self
+        """Launch the engine. free_port() can race with other engines started at the same moment (parallel
+        replays), so a start that never answers, or whose admin join is refused, is retried on fresh ports."""
+        last: Exception | None = None
+        for _ in range(self.START_ATTEMPTS):
+            self.admin_port, self.game_port = free_port(), free_port()
+            self._write_files()
+            self._launch()
+            try:
+                self._wait_ready()
+                self._confirm_admin()
+                return self
+            except (TimeoutError, ConnectionError, OSError) as e:
+                last = e
+                self.stop()
+        raise RuntimeError(f"openttd did not start after {self.START_ATTEMPTS} attempts: {last}")
+
+    def _launch(self) -> None:
+        with open(self.log_path, "ab") as log:  # the child keeps its own copy of the descriptor
+            self.proc = subprocess.Popen(
+                self.command(), cwd=self.workdir, stdin=subprocess.PIPE, stdout=log, stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+
+    def _confirm_admin(self) -> None:
+        """A second join, after a short settle: proves the port is still our engine and it is still running."""
+        time.sleep(0.3)
+        if self.proc is not None and self.proc.poll() is not None:
+            raise ConnectionError(f"openttd exited right after start; log:\n{self.tail_log()}")
+        with AdminClient.connect("127.0.0.1", self.admin_port, self.admin_password, timeout=5.0):
+            pass
 
     def _wait_ready(self) -> None:
         deadline = time.monotonic() + self.ready_timeout
@@ -160,7 +182,6 @@ class OpenTTDServer:
             except (OSError, TimeoutError, ConnectionError) as e:
                 last_err = e
                 time.sleep(0.1)
-        self.stop()
         raise TimeoutError(f"openttd not ready after {self.ready_timeout}s ({last_err}); log:\n{self.tail_log()}")
 
     def tail_log(self, n: int = 40) -> str:
