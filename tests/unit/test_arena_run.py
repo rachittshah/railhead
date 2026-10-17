@@ -53,3 +53,39 @@ def test_opencode_player_does_not_load_the_operators_personal_config(tmp_path):
                     "http://127.0.0.1:4318", base={"PATH": "/usr/bin", "HOME": "/Users/x"})
     assert env["XDG_CONFIG_HOME"] == str(tmp_path / "big-pickle" / ".config")  # an empty config dir per player
     assert env["OPENCODE_DISABLE_CLAUDE_CODE"] == "1"  # no ~/.claude prompt or skills
+
+
+def test_last_session_and_provider_error_come_from_the_json_log(tmp_path):
+    import json
+
+    from railhead.arena_run import last_session
+
+    log = tmp_path / "agent.log"
+    log.write_text("\n".join(json.dumps(e) for e in [
+        {"type": "step_start", "sessionID": "ses_a"},
+        {"type": "error", "sessionID": "ses_b", "error": {"type": "provider.internal",
+                                                         "message": "Streaming response failed: [503] Upstream error"}},
+    ]) + "\n")
+    assert last_session(log) == ("ses_b", True)
+    log.write_text(json.dumps({"type": "text", "sessionID": "ses_c"}) + "\n")
+    assert last_session(log) == ("ses_c", False)
+
+
+def test_supervisor_resumes_only_after_infrastructure_failures():
+    from railhead.arena_run import next_step
+
+    assert next_step(alive=True, submitted=False, provider_error=True, resumes=0, max_resumes=5) == "wait"
+    assert next_step(alive=False, submitted=True, provider_error=True, resumes=0, max_resumes=5) == "done"
+    assert next_step(alive=False, submitted=False, provider_error=True, resumes=1, max_resumes=5) == "resume"
+    assert next_step(alive=False, submitted=False, provider_error=True, resumes=5, max_resumes=5) == "failed"
+    # the model stopped on its own: that is its decision, not an outage, so it is never restarted
+    assert next_step(alive=False, submitted=False, provider_error=False, resumes=0, max_resumes=5) == "done"
+
+
+def test_resume_continues_the_same_opencode_session(tmp_path):
+    from railhead.arena_run import resume_command
+
+    p = parse_players(["opencode:opencode/big-pickle"])[0]
+    cmd = resume_command(p, "ses_b", tmp_path)
+    assert cmd[cmd.index("--session") + 1] == "ses_b" and "--standalone" in cmd and "--auto" in cmd
+    assert cmd[cmd.index("--model") + 1] == "opencode/big-pickle" and "rh status" in cmd[-1]

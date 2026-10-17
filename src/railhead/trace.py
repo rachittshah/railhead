@@ -84,6 +84,58 @@ def visible_messages(agent_log: Path) -> list[dict]:
     return out
 
 
+def opencode_usage(agent_log: Path) -> dict:
+    """Inference health of one ``opencode run --format json`` session: steps, tokens, step latency,
+    tool calls, provider errors, and how the run ended."""
+    import statistics
+    from collections import Counter
+
+    events = []
+    for line in Path(agent_log).read_text(encoding="utf-8", errors="replace").splitlines():
+        if line.startswith("{"):
+            try:
+                events.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+    tokens = {"input": 0, "output": 0, "reasoning": 0, "cache_read": 0}
+    reasons: Counter = Counter()
+    errors, durations, open_at = [], [], None
+    steps = finished = tool_calls = tool_errors = 0
+    for e in events:
+        t, part = e.get("type"), e.get("part") or {}
+        if t == "step_start":
+            steps += 1
+            open_at = e.get("timestamp")
+        elif t == "step_finish":
+            finished += 1
+            reasons[part.get("reason", "?")] += 1
+            tk = part.get("tokens") or {}
+            for k in ("input", "output", "reasoning"):
+                tokens[k] += int(tk.get(k) or 0)
+            tokens["cache_read"] += int((tk.get("cache") or {}).get("read") or 0)
+            if open_at is not None and e.get("timestamp"):
+                durations.append((e["timestamp"] - open_at) / 1000)
+            open_at = None
+        elif t in ("tool_use", "tool"):  # opencode 2.x emits tool calls as "tool_use"
+            tool_calls += 1
+            tool_errors += (part.get("state") or {}).get("status") == "error"
+        elif t == "error":
+            err = e.get("error") or {}
+            msg = str(err.get("message", ""))
+            status = next((int(x) for x in re.findall(r"\[(\d{3})\]", msg)), None)
+            errors.append({"type": err.get("type"), "status": status, "message": msg.split(": ")[-1][:120]})
+    stamps = [e["timestamp"] for e in events if e.get("timestamp")]
+    return {
+        "steps": steps, "finished_steps": finished, "unfinished_steps": steps - finished,
+        "tool_calls": tool_calls, "tool_errors": tool_errors, "tokens": tokens,
+        "step_seconds": {"median": round(statistics.median(durations), 1) if durations else None,
+                         "max": round(max(durations), 1) if durations else None},
+        "errors": errors, "finish_reasons": dict(reasons),
+        "wall_minutes": round((max(stamps) - min(stamps)) / 60000, 1) if stamps else 0.0,
+        "last_event": events[-1].get("type") if events else None,
+    }
+
+
 def _write_jsonl(path: Path, rows: list[dict]) -> None:
     with open(path, "w", encoding="utf-8") as fh:
         fh.writelines(json.dumps(r, separators=(",", ":")) + "\n" for r in rows)

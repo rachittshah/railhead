@@ -77,3 +77,26 @@ def test_visible_messages_keep_what_the_model_showed_and_drop_hidden_reasoning(t
     codex.write_text("exec\nrh status\ncodex\nTrucks first.\nThen planes.\nexec\nrh wait\ncodex\nDone.\ntokens used\n12\n")
     assert visible_messages(codex) == [{"kind": "message", "text": "Trucks first.\nThen planes."},
                                        {"kind": "final", "text": "Done."}]
+
+
+def test_opencode_usage_summarises_steps_tokens_latency_and_provider_errors(tmp_path):
+    from railhead.trace import opencode_usage
+
+    ev = [
+        {"type": "step_start", "timestamp": 1000},
+        {"type": "tool_use", "timestamp": 1500, "part": {"tool": "shell", "state": {"status": "completed", "time": {"start": 1400, "end": 1500}}}},
+        {"type": "step_finish", "timestamp": 4000, "part": {"reason": "tool-calls", "tokens": {"input": 100, "output": 10, "reasoning": 5, "cache": {"read": 50, "write": 0}}}},
+        {"type": "step_start", "timestamp": 5000},
+        {"type": "step_start", "timestamp": 9000},  # a step that never finished
+        {"type": "error", "timestamp": 70000, "error": {"type": "provider.internal", "message": "Streaming response failed: [503] Upstream error from Nvidia: Service temporarily overloaded"}},
+    ]
+    log = tmp_path / "agent.log"
+    log.write_text("garbage line\n" + "\n".join(json.dumps(e) for e in ev) + "\n")
+    u = opencode_usage(log)
+    assert u["steps"] == 3 and u["finished_steps"] == 1 and u["unfinished_steps"] == 2
+    assert u["tool_calls"] == 1 and u["tool_errors"] == 0
+    assert u["tokens"] == {"input": 100, "output": 10, "reasoning": 5, "cache_read": 50}
+    assert u["step_seconds"] == {"median": 3.0, "max": 3.0}
+    assert u["errors"] == [{"type": "provider.internal", "status": 503, "message": "Service temporarily overloaded"}]
+    assert u["finish_reasons"] == {"tool-calls": 1}
+    assert u["wall_minutes"] == round((70000 - 1000) / 60000, 1) and u["last_event"] == "error"

@@ -12,7 +12,9 @@ to ``agent.log`` and gets an empty configuration directory, so it never loads th
 
 from __future__ import annotations
 
+import json
 import os
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -90,6 +92,85 @@ def agent_env(p: Player, task: str, state: Path, tasks_dir: Path, otel: str, bas
     return env
 
 
+RESUME_PROMPT = ("The model provider failed and your session was cut off. Nothing in the game changed while you were "
+                 "away. Continue the same mandate with the same rules: run `rh status` and `rh history n=10` to see "
+                 "where you are, then keep playing. When you are done, run `rh submit confirm=yes` and write your report.")
+PROVIDER_ERROR = re.compile(r"\[(5\d\d|429)\]|overloaded|rate.?limit|timed? ?out", re.IGNORECASE)
+
+
+def last_session(agent_log: Path) -> tuple[str | None, bool]:
+    """(opencode session id of the last event, whether the run ended on a provider error)."""
+    session, last = None, None
+    for line in Path(agent_log).read_text(encoding="utf-8", errors="replace").splitlines():
+        if not line.startswith("{"):
+            continue
+        try:
+            e = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        session, last = e.get("sessionID", session), e
+    err = (last or {}).get("error") or {}
+    failed = (last or {}).get("type") == "error" and (
+        str(err.get("type", "")).startswith("provider") or bool(PROVIDER_ERROR.search(str(err.get("message", "")))))
+    return session, failed
+
+
+def next_step(alive: bool, submitted: bool, provider_error: bool, resumes: int, max_resumes: int) -> str:
+    """The harness recovers from infrastructure failures, never from the model's own decisions."""
+    if alive:
+        return "wait"
+    if submitted or not provider_error:
+        return "done"
+    return "resume" if resumes < max_resumes else "failed"
+
+
+def resume_command(p: Player, session: str, workdir: Path) -> list[str]:
+    return ["opencode", "run", "--standalone", "--session", session, "--model", p.model, "--auto", "--format", "json",
+            RESUME_PROMPT]
+
+
+def supervise(task: str, out_dir: Path, players: list[Player], max_resumes: int = 6,
+              backoff: tuple[int, ...] = (60, 120, 300, 600, 900, 1800), poll: int = 30) -> dict[str, str]:
+    """Watch opencode players; after a provider failure, resume the same session with backoff."""
+    import time
+
+    out_dir = Path(out_dir).resolve()
+    tasks_dir = Path(os.environ.get("RAILHEAD_TASKS", REPO_DIR / "tasks")).resolve()
+    resumes = {p.label: 0 for p in players}
+    status = {p.label: "wait" for p in players}
+    while any(v in ("wait", "resume") for v in status.values()):
+        for p in players:
+            if status[p.label] in ("done", "failed"):
+                continue
+            pdir = out_dir / p.label
+            pid = int((pdir / "agent.pid").read_text())
+            try:
+                os.kill(pid, 0)
+                alive = True
+            except OSError:
+                alive = False
+            submitted = '"m":"submit"' in (pdir / "state/run/actions.jsonl").read_text()
+            session, failed = last_session(pdir / "agent.log")
+            step = next_step(alive, submitted, failed, resumes[p.label], max_resumes)
+            if step == "resume" and session:
+                time.sleep(backoff[min(resumes[p.label], len(backoff) - 1)])
+                resumes[p.label] += 1
+                with open(pdir / "agent.log", "ab") as log:  # the child keeps its own copy of the descriptor
+                    log.write(f"\n=== resume {resumes[p.label]} after provider error ===\n".encode())
+                    log.flush()
+                    proc = subprocess.Popen(resume_command(p, session, pdir), cwd=pdir, stdin=subprocess.DEVNULL,
+                                            stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
+                                            env=agent_env(p, task, pdir / "state", tasks_dir, "http://127.0.0.1:4318"))
+                (pdir / "agent.pid").write_text(str(proc.pid))
+                print(json.dumps({"player": p.label, "resume": resumes[p.label], "session": session}), flush=True)
+                step = "wait"
+            elif step in ("done", "failed") and status[p.label] != step:
+                print(json.dumps({"player": p.label, "status": step, "resumes": resumes[p.label]}), flush=True)
+            status[p.label] = step
+        time.sleep(poll)
+    return status
+
+
 def launch(task: str, out_dir: Path, players: list[Player], otel: str = "http://127.0.0.1:4318") -> list[int]:
     from railhead.daemon import ensure_up
 
@@ -112,6 +193,9 @@ def launch(task: str, out_dir: Path, players: list[Player], otel: str = "http://
 
 
 def main(argv: list[str]) -> int:
+    if argv and argv[0] == "--supervise":  # railhead arena-run --supervise <task> <out_dir> opencode:<model> ...
+        print(json.dumps(supervise(argv[1], Path(argv[2]), parse_players(argv[3:]))))
+        return 0
     otel = "http://127.0.0.1:4318"
     if "--otel" in argv:
         i = argv.index("--otel")
