@@ -130,14 +130,18 @@ The command has this format:
 python -m railhead.gen.build <family> <split> <seed_from> <seed_to> --out <dir> --jobs <N>
 ```
 
+The operator command `railhead gen` takes the same arguments.
+
 | Argument | Values | Default |
 |---|---|---|
-| `<family>` | `deliver`, `deliver_bid`, `impossible`, `simops`, `tycoon` | Necessary |
+| `<family>` | `deliver`, `deliver_bid`, `impossible`, `simops`, `tycoon`, `arena` | Necessary |
 | `<split>` | `train`, `dev`, `ood` | Necessary |
 | `<seed_from>` | The first seed | Necessary |
 | `<seed_to>` | The seed after the last seed | Necessary |
 | `--out <dir>` | The catalog directory | `tasks` |
 | `--jobs <N>` | The number of parallel processes | `4` |
+| `--years <N>` | The number of game years in the horizon (`arena` only) | `5` |
+| `--map <size>` | The map width and height in tiles: `256`, `512` or `1024` (`arena` only) | `256` |
 
 CAUTION: Each seed starts one or more engine processes, and a large seed range takes a long time. Start with a small range.
 
@@ -155,6 +159,22 @@ CAUTION: Each seed starts one or more engine processes, and a large seed range t
    ```
 
 3. Use the task IDs from the lines with `ok`.
+
+The `arena` family has two more options.
+`--years` sets the horizon to 365 days for each year.
+It also sets the fork budget (`max_fork_days`) to 73 days for each year.
+The run-off is always 365 days.
+`--map` sets the size of the map.
+Other families do not accept `--years` or `--map`. The command stops with an error if you use them.
+
+4. Generate 10-year `arena` tasks on a 512x512 map for the training seeds 200 to 210:
+
+   ```bash
+   railhead gen arena train 200 211 --years 10 --map 512 --jobs 4
+   ```
+
+   Each task has `horizon_days` 3650, `max_fork_days` 730 and `scenario.map_log2` 9.
+   A 10-year task on a large map takes much more time to generate than a 5-year task.
 
 A line with `rejected` tells you that the seed does not give a good task.
 A line with `error` tells you that the generator stopped because of a problem.

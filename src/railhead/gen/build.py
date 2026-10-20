@@ -17,6 +17,7 @@ import shutil
 import sys
 import tempfile
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from railhead.actionlog import ActionLog
@@ -184,13 +185,15 @@ def deliver_text(spec: TaskSpec) -> tuple[str, str]:
 
 
 # ---------------------------------------------------------------------- tycoon
-def gen_arena(seed: int, split: str, out: Path) -> TaskSpec:
-    """Money-and-scale arena: 5 game years on a 256x256 map, 1-year run-off. Same scoring as tycoon."""
-    return gen_tycoon(seed, split, out, family="arena", horizon=1825, runoff=365, map_log2=8)
+def gen_arena(seed: int, split: str, out: Path, years: int = 5, map_log2: int = 8) -> TaskSpec:
+    """Money-and-scale arena: ``years`` game years (default 5) on a 2**map_log2 square map (default 256),
+    1-year run-off, fork budget 73 days per year. Same scoring as tycoon."""
+    return gen_tycoon(seed, split, out, family="arena", horizon=365 * years, runoff=365, map_log2=map_log2,
+                      max_fork_days=73 * years)
 
 
 def gen_tycoon(seed: int, split: str, out: Path, family: str = "tycoon", horizon: int = TYCOON_HORIZON,
-               runoff: int = 730, map_log2: int | None = None) -> TaskSpec:
+               runoff: int = 730, map_log2: int | None = None, max_fork_days: int = 365) -> TaskSpec:
     sc = sample_scenario(seed, split, family)
     if map_log2:
         sc["map_log2"] = map_log2
@@ -207,7 +210,7 @@ def gen_tycoon(seed: int, split: str, out: Path, family: str = "tycoon", horizon
             w.save(tdir / "start.sav")
         start = tdir / "start.sav"
         spec = TaskSpec(task_id=tid, family="tycoon", horizon_days=horizon, runoff_days=runoff,
-                        limits={"max_forks": 2, "max_fork_days": 365},
+                        limits={"max_forks": 2, "max_fork_days": max_fork_days},
                         objective={"w_idle": 0, "w_base": 1}, scenario=sc, split=split)
         _write(tdir, spec)
         idle = verify(tdir, start, _empty_log(work / "idle.jsonl"), work / "idle")
@@ -263,13 +266,63 @@ GENERATORS = {
 }
 
 
-def _one(family: str, seed: int, split: str, out: str) -> tuple[int, str]:
+MAP_SIZES = {256: 8, 512: 9, 1024: 10}
+ARENA_ONLY = ("--years", "--map")
+
+
+@dataclass
+class GenArgs:
+    family: str
+    split: str
+    lo: int
+    hi: int
+    out: Path = Path("tasks")
+    jobs: int = 4
+    options: dict = field(default_factory=dict)  # extra keyword arguments for the family's generator
+
+
+def parse_gen_args(argv: list[str]) -> GenArgs:
+    """``<family> <split> <from> <to> [--out D] [--jobs N] [--years N] [--map 256|512|1024]`` -> GenArgs.
+
+    ``--years`` and ``--map`` exist only for the arena family; raises ValueError on bad input."""
+    out, jobs, opts, flags, rest = Path("tasks"), 4, {}, [], []
+    it = iter(argv)
+    for a in it:
+        if a in ("--out", "--jobs", *ARENA_ONLY):
+            v = next(it, None)
+            if v is None:
+                raise ValueError(f"{a} needs a value")
+            if a == "--out":
+                out = Path(v)
+            elif a == "--jobs":
+                jobs = int(v)
+            elif a == "--years":
+                if not v.isdigit() or int(v) < 1:
+                    raise ValueError(f"--years must be a whole number of game years (1 or more), not {v!r}")
+                opts["years"], flags = int(v), [*flags, a]
+            else:
+                if not v.isdigit() or int(v) not in MAP_SIZES:
+                    raise ValueError(f"--map must be one of {', '.join(map(str, MAP_SIZES))}, not {v!r}")
+                opts["map_log2"], flags = MAP_SIZES[int(v)], [*flags, a]
+        else:
+            rest.append(a)
+    if len(rest) != 4:
+        raise ValueError("usage: railhead gen <family> <split> <from> <to> [--out tasks] [--jobs N] "
+                         "[--years N --map 256|512|1024 (arena only)]")
+    family = rest[0]
+    if flags and family != "arena":
+        verb = "is" if len(flags) == 1 else "are"
+        raise ValueError(f"{' and '.join(flags)} {verb} only for the arena family, not for {family!r}")
+    return GenArgs(family, rest[1], int(rest[2]), int(rest[3]), out, jobs, opts)
+
+
+def _one(family: str, seed: int, split: str, out: str, options: dict | None = None) -> tuple[int, str]:
     if family == "simops" and "simops" not in GENERATORS:  # workers re-import this module (spawn)
         from railhead.gen.simops import gen_simops
 
         GENERATORS["simops"] = gen_simops
     try:
-        spec = GENERATORS[family](seed, split, Path(out))
+        spec = GENERATORS[family](seed, split, Path(out), **(options or {}))
         return seed, f"ok {spec.task_id}"
     except Rejected as e:
         return seed, f"rejected: {e}"
@@ -279,19 +332,15 @@ def _one(family: str, seed: int, split: str, out: str) -> tuple[int, str]:
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
-    out, jobs, rest = Path("tasks"), 4, []
-    it = iter(argv)
-    for a in it:
-        if a == "--out":
-            out = Path(next(it))
-        elif a == "--jobs":
-            jobs = int(next(it))
-        else:
-            rest.append(a)
-    family, split, lo, hi = rest[0], rest[1], int(rest[2]), int(rest[3])
+    try:
+        g = parse_gen_args(argv)
+    except ValueError as e:
+        print(f"railhead gen: {e}", file=sys.stderr)
+        return 2
+    family, split, out = g.family, g.split, g.out
     out.mkdir(parents=True, exist_ok=True)
-    with ProcessPoolExecutor(max_workers=jobs) as ex:
-        futs = [ex.submit(_one, family, s, split, str(out)) for s in range(lo, hi)]
+    with ProcessPoolExecutor(max_workers=g.jobs) as ex:
+        futs = [ex.submit(_one, family, s, split, str(out), g.options) for s in range(g.lo, g.hi)]
         for f in as_completed(futs):
             seed, msg = f.result()
             print(f"{family}/{split}/{seed}: {msg}", flush=True)
