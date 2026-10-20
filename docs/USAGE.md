@@ -729,7 +729,7 @@ Refer to the flowchart in [DIAGRAMS.md, 7](DIAGRAMS.md#7-arena-traces-and-charts
    railhead otel serve --port 4318 --dir traces &
    ```
 
-2. Start the players. Each argument is `claude:<model>` or `codex:<model>`:
+2. Start the players. Each argument is `claude:<model>`, `codex:<model>`, or `opencode:<model>`:
 
    ```bash
    railhead arena-run arena-dev-0100 arena claude:claude-opus-5-5 codex:gpt-6-astra
@@ -738,21 +738,60 @@ Refer to the flowchart in [DIAGRAMS.md, 7](DIAGRAMS.md#7-arena-traces-and-charts
    The command starts one daemon for each player, and then `claude -p` or `codex exec` with the instruction of the arena.
    Each agent finds `rh` on its `PATH`, bound to its own daemon.
    The output of each agent is in `arena/<model>/agent.log`.
+   The process ID of each agent is in `arena/<model>/agent.pid`.
 
-3. Show the scoreboard:
+3. Supervise the players. Use the same task, directory, and player arguments as in step 2:
+
+   ```bash
+   railhead arena-run --supervise arena-dev-0100 arena claude:claude-opus-5-5 codex:gpt-6-astra
+   ```
+
+   The command runs until all players are done. Run it in a different terminal, or in the background.
+   When an agent stops because of a provider failure, the supervisor continues the same session of the agent.
+   The time before it continues the session depends on the failure:
+
+   | Failure | Time before the supervisor continues the session |
+   |---|---|
+   | Usage limit (Claude or Codex) with a reset time | Until 60 seconds after the reset time |
+   | Usage limit or rate limit without a reset time | The `quota` steps of `BACKOFF` (30 minutes, then 1 hour) |
+   | Server error, overload, or time-out | The `outage` steps of `BACKOFF` (1 minute to 30 minutes) |
+   | Stream inactivity (opencode) | The `stall` steps of `BACKOFF` (30 seconds to 30 minutes) |
+
+   The supervisor does not continue a player that submitted, or that stopped for a different reason.
+   It continues each player a maximum of 6 times.
+
+4. If the supervisor or the computer stopped (for example, after a crash or a restart), continue the players:
+
+   ```bash
+   railhead arena-run --resume arena-dev-0100 arena claude:claude-opus-5-5 codex:gpt-6-astra
+   ```
+
+   For each player that did not submit, the command does these steps:
+
+   1. It starts the daemon of the player. The daemon replays `state/run/actions.jsonl` to restore the game.
+   2. It writes a `=== resume after restart ... ===` line to `agent.log`.
+   3. It continues the last session of the agent: `claude -p --resume <session>` or `codex exec resume <session>`.
+      The session ID comes from `agent.log`.
+      If `agent.log` has no session ID, the command starts a new agent with the instruction of the arena.
+   4. It writes the new process ID to `agent.pid`.
+
+   The command does not change a player that submitted, or a player whose agent still runs.
+   Then do step 3 again to supervise the players.
+
+5. Show the scoreboard:
 
    ```bash
    railhead arena arena
    ```
 
-4. When a player stops, calculate its verified result:
+6. When a player stops, calculate its verified result:
 
    ```bash
    python -m railhead.verify tasks/arena-dev-0100 tasks/arena-dev-0100/start.sav \
      arena/claude-opus-5-5/state/run/actions.jsonl arena/claude-opus-5-5/verify
    ```
 
-5. Write the results, the growth curves, and the vehicles of each transport mode to one file:
+7. Write the results, the growth curves, and the vehicles of each transport mode to one file:
 
    ```bash
    railhead arena arena --export docs/data/arena2.json --task tasks/arena-dev-0100
@@ -760,7 +799,7 @@ Refer to the flowchart in [DIAGRAMS.md, 7](DIAGRAMS.md#7-arena-traces-and-charts
 
    Use `--rename a=b,c=d` to change the player names in the file.
 
-6. Make the charts. Each data file gives three charts, in a light and a dark version:
+8. Make the charts. Each data file gives three charts, in a light and a dark version:
 
    ```bash
    railhead figures docs/data/arena2.json docs/data/arena1.json --out docs/img
@@ -772,7 +811,7 @@ Refer to the flowchart in [DIAGRAMS.md, 7](DIAGRAMS.md#7-arena-traces-and-charts
    | `<name>-growth.svg` | The net worth of each player during the mandate, one panel for each player |
    | `<name>-fleet.svg` | The vehicles that each player bought, for each transport mode |
 
-7. Make the route map of a player. The daemon of the player must run:
+9. Make the route map of a player. The daemon of the player must run:
 
    ```bash
    railhead render arena/claude-opus-5-5/state docs/img/arena2-map-claude-opus-5-5.png --title "claude-opus-5-5"
