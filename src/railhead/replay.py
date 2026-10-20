@@ -4,10 +4,15 @@ Every ``act`` record is re-issued at exactly its recorded tick and every ``wait`
 ``end_ticks - ticks`` ticks (so event-driven early stops replay bit-for-bit). Live checksums
 recorded after waits are compared with the replay; any mismatch is a *divergence* (infra problem,
 reported as valid=False upstream — never silently scored).
+
+``on_wait(world, record)`` (optional) runs once after each replayed wait, after its checksum check,
+while the world stands at the wait's ``end_ticks``: a hook to observe every decision point of a game.
+It is not called for a wait that ``max_ticks`` cut short.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -47,6 +52,7 @@ def replay(
     allowed: set[str] | None = None,
     keep_open: bool = False,
     max_ticks: int | None = None,
+    on_wait: Callable[[World, dict], None] | None = None,
 ) -> ReplayResult:
     allowed = default_whitelist() if allowed is None else allowed
     world = World.load(Path(workdir), Path(start_save))
@@ -87,6 +93,8 @@ def replay(
                     got = world.call("checksum")
                     if got.get("h") != r["checksum"].get("h"):
                         result.divergences.append({"seq": r.get("seq"), "what": "checksum", "live": r["checksum"], "replay": got})
+                if on_wait is not None and ticks == r["end_ticks"]:
+                    on_wait(world, r)
             else:
                 raise ReplayRejected(f"unknown record kind {rec.kind!r}")
         result.end_ticks = world.state()["ticks"]
