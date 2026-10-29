@@ -52,6 +52,27 @@ The script uses these environment variables:
 | `RAILHEAD_ENGINE_SRC` | `.cache/openttd-src` | The directory of the OpenTTD source tree |
 | `JOBS` | Number of processors | The number of parallel build jobs |
 | `PREFIX` | Not set | If set, the script also copies the binary and its data to this directory |
+| `CXX_FLAGS` | Not set | Optional compiler and linker flags for a variant build, for example `-mcpu=apple-m4 -flto=thin` |
+| `EXTRA_PATCHES` | Not set | Optional patch files applied after `engine/patches/`, absolute or relative to the repository root |
+
+### Optional: a faster engine
+
+`engine/optional/` holds patches that are not part of the default build.
+`0004-stdin-poll.patch` makes the dedicated server's per-tick check of standard input non-blocking.
+With `CXX_FLAGS="-mcpu=apple-m4 -flto=thin"` it stepped a 148-vehicle state about 11% faster on an M4 Max
+(4.62 against 5.21 ms per game day, seven alternating runs each).
+The flags alone gave 3.7% (4.94 against 5.13).
+The game itself is unchanged: the variant gave the same `checksum` as the default engine after 728 game days
+on five saves of 0 to 264 vehicles.
+
+The default binary is what sealed tasks pin by sha256, so build a variant into a separate tree and select it per
+process; do not replace the default engine unless you re-seal:
+
+```bash
+RAILHEAD_ENGINE_SRC=$PWD/.cache/openttd-fast CXX_FLAGS="-mcpu=apple-m4 -flto=thin" \
+  EXTRA_PATCHES=engine/optional/0004-stdin-poll.patch engine/build.sh
+RAILHEAD_OPENTTD=$PWD/.cache/openttd-fast/build/openttd railhead ...
+```
 
 To use a different engine binary, set `RAILHEAD_OPENTTD` to its path.
 Railhead looks for the binary in this sequence:
