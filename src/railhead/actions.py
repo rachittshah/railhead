@@ -231,6 +231,46 @@ _SPECS: list[ActionSpec] = [
           _int("town", "Town id.", minimum=0), _enum("kind", TOWN_ACTIONS, "The action.")),
 ]
 
+# Meta decisions (logged, no game effect): exact argument schemas {name: (type, required)}. The daemon
+# refuses other names and arguments; the replay refuses a meta record with another name.
+META_SCHEMAS: dict[str, dict[str, tuple[type, bool]]] = {
+    "submit": {"confirm": (str, True)},
+    "promise": {"quantity": (int, True)},
+    "forecast": {"metric": (str, True), "p10": (int, False), "p50": (int, True), "p90": (int, False),
+                 "by_day": (int, False)},
+    "abstain": {"reason": (str, True), "max_possible": (int, False)},
+    "flag": {"note": (str, True)},
+}
+
+# Wake conditions of a wait (gamescript main.nut UNTIL_KINDS); only cash_below takes a value.
+UNTIL_KINDS = frozenset({"vehicle_crashed", "industry_open", "industry_close", "company_bankrupt",
+                         "company_in_trouble", "station_first_vehicle", "cash_below", "new_month"})
+_UNTIL_VALUE = re.compile(r"^-?(0|[1-9]\d{0,14})$")  # the same text the GameScript accepts
+
+
+def check_until(until: Any) -> list[str] | None:
+    """Canonical wake conditions, or :class:`ActionArgError`. The GameScript must never see a bad one:
+    a value it cannot parse used to leave it stepping for ever or kill the script."""
+    if until is None:
+        return None
+    if not isinstance(until, list):
+        raise ActionArgError("until must be a list of wake conditions, e.g. until=vehicle_crashed,cash_below:5000")
+    out = []
+    for item in until:
+        if not isinstance(item, str):
+            raise ActionArgError(f"until: {item!r} is not a wake condition")
+        kind, sep, value = item.partition(":")
+        if kind not in UNTIL_KINDS:
+            raise ActionArgError(f"until: unknown wake condition {kind!r} (known: {', '.join(sorted(UNTIL_KINDS))})")
+        if kind == "cash_below":
+            if not sep or not _UNTIL_VALUE.match(value):
+                raise ActionArgError("until: cash_below needs an integer amount, e.g. cash_below:5000")
+        elif sep:
+            raise ActionArgError(f"until: {kind} takes no value")
+        out.append(item)
+    return out
+
+
 REGISTRY: dict[str, ActionSpec] = {s.name: s for s in _SPECS}
 _BY_GS: dict[str, ActionSpec] = {s.gs_method: s for s in _SPECS}
 WHITELIST: frozenset[str] = frozenset(s.gs_method for s in _SPECS if s.mutates)

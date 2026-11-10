@@ -29,6 +29,7 @@ class RailheadBridge extends GSController {
 	last_month = -1;
 	loaded = false;
 	monitors = null;     // objective ledger: [{id, kind, cargo, target, company, total}]
+	meta_digest = 0;     // running digest of the meta decisions of a v2 action log (0 = none)
 
 	/* Wake conditions a step may stop on. GS events + conditions synthesized at day boundaries. */
 	static UNTIL_KINDS = ["vehicle_crashed", "industry_open", "industry_close", "company_bankrupt",
@@ -37,7 +38,8 @@ class RailheadBridge extends GSController {
 	constructor() { this.monitors = []; }
 
 	function Save() {
-		return { ticks = this.ticks, company = this.company, monitors = this.monitors, actions = Action.SaveState() };
+		return { ticks = this.ticks, company = this.company, monitors = this.monitors, actions = Action.SaveState(),
+			meta_digest = this.meta_digest };
 	}
 
 	function Load(version, data) {
@@ -45,6 +47,7 @@ class RailheadBridge extends GSController {
 		if ("company" in data) this.company = data.company;
 		if ("monitors" in data) this.monitors = data.monitors;
 		if ("actions" in data) Action.LoadState(data.actions);
+		if ("meta_digest" in data) this.meta_digest = data.meta_digest;
 		this.loaded = true;
 	}
 
@@ -113,35 +116,54 @@ class RailheadBridge extends GSController {
 		Proto.Ok(id, st);
 	}
 
+	/* Parse wake conditions into a table kind -> arg, or return an error string. Runs before any step
+	 * state is set: a throw after step_mode was set used to leave the script answering ERR_BUSY. */
+	function ParseUntil(list) {
+		if (typeof list != "array") return "until must be a list";
+		local u = {};
+		foreach (item in list) {
+			if (typeof item != "string") return "until items must be strings";
+			local kind = item;
+			local arg = null;
+			local colon = item.find(":");
+			if (colon != null) {
+				kind = item.slice(0, colon);
+				local text = item.slice(colon + 1);
+				try { arg = text.tointeger(); } catch (e) { return "bad number in until '" + item + "'"; }
+				if (("" + arg) != text) return "bad number in until '" + item + "'";
+			}
+			local known = false;
+			foreach (k in RailheadBridge.UNTIL_KINDS) if (k == kind) known = true;
+			if (!known) return "unknown until kind '" + kind + "'";
+			if (kind == "cash_below" && arg == null) return "cash_below needs a value: cash_below:<money>";
+			if (kind != "cash_below" && arg != null) return "until kind '" + kind + "' takes no value";
+			u[kind] <- arg;
+		}
+		return u;
+	}
+
 	function H_step(id, a) {
 		if (this.step_mode != 0) return Proto.Err(id, "ERR_BUSY", "a step is already running");
+		local until = null;
+		if ("until" in a && a.until != null) {
+			until = this.ParseUntil(a.until);
+			if (typeof until == "string") return Proto.Err(id, "ERR_BAD_ARG", until);
+		}
+		local mode = 0;
 		if ("ticks" in a) {
-			if (a.ticks < 1) return Proto.Err(id, "ERR_BAD_ARG", "ticks must be >= 1");
-			this.step_mode = 1;
-			this.step_left = a.ticks;
+			if (typeof a.ticks != "integer" || a.ticks < 1) return Proto.Err(id, "ERR_BAD_ARG", "ticks must be an integer >= 1");
+			mode = 1;
 		} else if ("days" in a) {
-			if (a.days < 1) return Proto.Err(id, "ERR_BAD_ARG", "days must be >= 1");
-			this.step_mode = 2;
-			this.step_target = GSDate.GetCurrentDate() + a.days;
+			if (typeof a.days != "integer" || a.days < 1) return Proto.Err(id, "ERR_BAD_ARG", "days must be an integer >= 1");
+			mode = 2;
 		} else {
 			return Proto.Err(id, "ERR_BAD_ARG", "step needs ticks or days");
 		}
-		this.step_until = null;
-		if ("until" in a && a.until != null) {
-			if (typeof a.until != "array") { this.step_mode = 0; return Proto.Err(id, "ERR_BAD_ARG", "until must be a list"); }
-			local u = {};
-			foreach (item in a.until) {
-				local kind = item;
-				local arg = null;
-				local colon = item.find(":");
-				if (colon != null) { kind = item.slice(0, colon); arg = item.slice(colon + 1).tointeger(); }
-				local known = false;
-				foreach (k in RailheadBridge.UNTIL_KINDS) if (k == kind) known = true;
-				if (!known) { this.step_mode = 0; return Proto.Err(id, "ERR_BAD_ARG", "unknown until kind '" + kind + "'"); }
-				u[kind] <- arg;
-			}
-			this.step_until = u;
-		}
+		// Nothing below can throw: the step state is set only after every argument is valid.
+		if (mode == 1) this.step_left = a.ticks;
+		else this.step_target = GSDate.GetCurrentDate() + a.days;
+		this.step_mode = mode;
+		this.step_until = until;
 		this.step_id = id;
 		this.step_start_date = GSDate.GetCurrentDate();
 		this.last_day = this.step_start_date;
@@ -149,6 +171,14 @@ class RailheadBridge extends GSController {
 		GSGame.Unpause();
 		// We resume inside the first unpaused tick: count it now.
 		if (!GSGame.IsPaused()) this.CountTick();
+	}
+
+	/* Fold the digest of one meta decision (v2 action log) into the world checksum. Changes no game state. */
+	function H_note(id, a) {
+		if (!("d" in a) || typeof a.d != "integer") return Proto.Err(id, "ERR_BAD_ARG", "d must be an integer");
+		this.meta_digest = ((this.meta_digest * 1000003) ^ (a.d & 0x7FFFFFFF)) & 0x7FFFFFFFFFFF;
+		if (this.meta_digest == 0) this.meta_digest = 1;
+		Proto.Ok(id, { meta_digest = this.meta_digest });
 	}
 
 	/* ---------------------------------------------------------------- events & dispatch */
@@ -268,6 +298,11 @@ class RailheadBridge extends GSController {
 		local il = GSIndustryList();
 		il.Sort(GSList.SORT_BY_ITEM, GSList.SORT_ASCENDING);
 		foreach (i, _ in il) h = mix(h, GSIndustry.GetLocation(i));
+		// Only a v2 log sends meta digests; with none the checksum is the same as before (v1 logs).
+		if (this.meta_digest != 0) {
+			h = mix(h, this.meta_digest);
+			h = mix(h, this.meta_digest >> 32);
+		}
 		Proto.Ok(id, { h = h, date = GSDate.GetCurrentDate(), ticks = this.ticks, vehicles = vl.Count() });
 	}
 

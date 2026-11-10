@@ -259,6 +259,8 @@ def _run(argv: list[str], as_json: bool) -> int:
         if sub in ("create", "list", "drop"):
             _print(c.request(f"fork_{sub}", name=name, **kv), as_json)
         elif sub == "wait":
+            if isinstance(kv.get("until"), str):
+                kv["until"] = [u for u in kv["until"].split(",") if u]
             _print(c.request("fork_wait", name=name, **kv), as_json)
         elif sub in ("q", "do"):
             m = kv.pop("m")
