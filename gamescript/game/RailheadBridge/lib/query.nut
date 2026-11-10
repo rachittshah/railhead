@@ -162,6 +162,74 @@ QH <- {
 		return QH.BASE36.slice(h, h + 1);
 	}
 
+	/* Inclined (one-side) slopes: slope -> [name of the downhill side, dx, dy toward it]. A dock goes on
+	 * such a tile with its water part on the downhill side (station_cmd.cpp CmdBuildDock). */
+	INCLINES = {
+		[GSTile.SLOPE_NW] = ["se", 0, 1], [GSTile.SLOPE_NE] = ["sw", 1, 0],
+		[GSTile.SLOPE_SE] = ["nw", 0, -1], [GSTile.SLOPE_SW] = ["ne", -1, 0]
+	},
+
+	function FlatWater(t) {
+		return t != null && GSTile.IsWaterTile(t) && GSTile.GetSlope(t) == GSTile.SLOPE_FLAT;
+	}
+
+	/* The engine's dock geometry test, without building: an inclined land tile whose two tiles on the
+	 * downhill side are flat water. Returns {ok, water_tile (-1), why}. Ownership, town rating and
+	 * bridges are not checked here: water.dock dry_run=true is the final word. */
+	function DockCheck(t) {
+		local s = GSTile.GetSlope(t);
+		if (!(s in QH.INCLINES)) return { ok = false, water_tile = -1, why = "not an inclined slope (a dock needs a tile that slopes down to the water on one side)" };
+		if (GSTile.IsWaterTile(t)) return { ok = false, water_tile = -1, why = "the tile itself is water" };
+		if (!GSTile.IsBuildable(t)) return { ok = false, water_tile = -1, why = "something stands on the tile (house, station, rail...): pick a clear shore tile" };
+		local inc = QH.INCLINES[s];
+		local x = GSMap.GetTileX(t), y = GSMap.GetTileY(t);
+		local w1 = QH.TileAt(x + inc[1], y + inc[2]), w2 = QH.TileAt(x + 2 * inc[1], y + 2 * inc[2]);
+		if (!QH.FlatWater(w1) || !QH.FlatWater(w2)) {
+			return { ok = false, water_tile = -1, why = "the two tiles on the downhill (" + inc[0] + ") side are not both flat water" };
+		}
+		return { ok = true, water_tile = w1, why = "dock fits: its water part goes on " + GSMap.GetTileX(w1) + "," + GSMap.GetTileY(w1) };
+	}
+
+	function TileAt(x, y) {
+		if (x < 0 || y < 0 || x >= GSMap.GetMapSizeX() || y >= GSMap.GetMapSizeY()) return null;
+		return GSMap.GetTileIndex(x, y);
+	}
+
+	/* Rail track pieces on a tile, by the names rail.track uses. */
+	TRACK_NAMES = [
+		[GSRail.RAILTRACK_NE_SW, "ne_sw"], [GSRail.RAILTRACK_NW_SE, "nw_se"], [GSRail.RAILTRACK_NW_NE, "nw_ne"],
+		[GSRail.RAILTRACK_SW_SE, "sw_se"], [GSRail.RAILTRACK_NW_SW, "nw_sw"], [GSRail.RAILTRACK_NE_SE, "ne_se"]
+	],
+	SIGNAL_NAMES = {
+		[GSRail.SIGNALTYPE_NORMAL] = "normal", [GSRail.SIGNALTYPE_ENTRY] = "entry", [GSRail.SIGNALTYPE_EXIT] = "exit",
+		[GSRail.SIGNALTYPE_COMBO] = "combo", [GSRail.SIGNALTYPE_PBS] = "pbs", [GSRail.SIGNALTYPE_PBS_ONEWAY] = "pbs_oneway",
+		[GSRail.SIGNALTYPE_NORMAL_TWOWAY] = "normal_twoway", [GSRail.SIGNALTYPE_ENTRY_TWOWAY] = "entry_twoway",
+		[GSRail.SIGNALTYPE_EXIT_TWOWAY] = "exit_twoway", [GSRail.SIGNALTYPE_COMBO_TWOWAY] = "combo_twoway"
+	},
+
+	function TrackNames(t) {
+		local bits = GSRail.GetRailTracks(t);
+		local out = [];
+		if (bits == GSRail.RAILTRACK_INVALID) return out;
+		foreach (p in QH.TRACK_NAMES) if (bits & p[0]) out.append(p[1]);
+		return out;
+	}
+
+	/* Signals on a rail tile: [{front_tile, type}] as rail.signal / rail.remove_signal take them. */
+	function Signals(t) {
+		local out = [];
+		local x = GSMap.GetTileX(t), y = GSMap.GetTileY(t);
+		foreach (d in [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+			local n = QH.TileAt(x + d[0], y + d[1]);
+			if (n == null) continue;
+			local st = GSRail.GetSignalType(t, n);
+			if (st != GSRail.SIGNALTYPE_NONE) {
+				out.append({ front_tile = n, type = (st in QH.SIGNAL_NAMES) ? QH.SIGNAL_NAMES[st] : "other" });
+			}
+		}
+		return out;
+	}
+
 	function OwnerChar(t, company) {
 		local o = GSTile.GetOwner(t);
 		if (o == GSCompany.COMPANY_INVALID) return ".";
@@ -310,6 +378,13 @@ QH <- {
 			running_cost = GSEngine.GetRunningCost(e), reliability = GSEngine.GetReliability(e),
 			max_age = GSEngine.GetMaxAge(e), wagon = GSEngine.IsWagon(e), articulated = GSEngine.IsArticulated(e)
 		};
+		/* Cargos it can be bought for or refitted to (the depot window's refit list). Not named `refits`:
+		 * oracle/road.py reads that key, and its engine choice must stay as certified. */
+		local refits = [];
+		local cl = GSCargoList();
+		cl.Sort(GSList.SORT_BY_ITEM, GSList.SORT_ASCENDING);
+		foreach (c, _ in cl) if (GSEngine.GetCargoType(e) == c || GSEngine.CanRefitCargo(e, c)) refits.append(c);
+		r.refit_cargos <- refits;
 		if (vt == GSVehicle.VT_RAIL || vt == GSVehicle.VT_ROAD) {
 			r.power <- GSEngine.GetPower(e);
 			r.weight <- GSEngine.GetWeight(e);
@@ -438,42 +513,53 @@ Query <- {
 	 *   owner  '*' bound company, 'o' another company, '.' town/none
 	 *   slope  '0' flat, 's' steep, '1' any other slope
 	 *   build  '1' if GSTile.IsBuildable (clear, trees, coast, a single plain road piece), else '0'
-	 * Off-map edge tiles are kind ' ', height/slope/build '0', owner '.'.
+	 *   dock   '1' if a dock fits the tile's geometry (QH.DockCheck), else '0'
+	 * Off-map edge tiles are kind ' ', height/slope/build/dock '0', owner '.'.
+	 * Arg step (default 1) samples every step-th tile: rows then carry `step` (an overview map).
 	 * Consumers (oracle planner, CLI map) rely on these exact keys: y, x, kind, height, owner, slope, build. */
 	function H_tiles(br, id, a) {
 		local sx = GSMap.GetMapSizeX(), sy = GSMap.GetMapSizeY();
 		local x0 = QH.Int(a, "x", 0), y0 = QH.Int(a, "y", 0);
 		local w = QH.Int(a, "w", 64), h = QH.Int(a, "h", 64);
-		if (x0 < 0 || y0 < 0 || x0 >= sx || y0 >= sy || w < 1 || h < 1) {
-			return Proto.Err(id, "ERR_BAD_ARG", "need 0<=x<" + sx + ", 0<=y<" + sy + ", w>=1, h>=1");
+		/* step > 1 samples every step-th tile in x and y: an overview (the GUI minimap) of a large area. */
+		local step = QH.Int(a, "step", 1);
+		if (x0 < 0 || y0 < 0 || x0 >= sx || y0 >= sy || w < 1 || h < 1 || step < 1 || step > 64) {
+			return Proto.Err(id, "ERR_BAD_ARG", "need 0<=x<" + sx + ", 0<=y<" + sy + ", w>=1, h>=1, 1<=step<=64");
 		}
 		local x1 = (x0 + w > sx) ? sx : x0 + w;
 		local y1 = (y0 + h > sy) ? sy : y0 + h;
-		if ((x1 - x0) * (y1 - y0) > QH.MAX_TILES) {
-			return Proto.Err(id, "ERR_BAD_ARG", "area " + (x1 - x0) + "x" + (y1 - y0) + " exceeds " + QH.MAX_TILES + " tiles; request strips");
+		local nx = (x1 - x0 + step - 1) / step, ny = (y1 - y0 + step - 1) / step;
+		if (nx * ny > QH.MAX_TILES) {
+			return Proto.Err(id, "ERR_BAD_ARG", "area " + (x1 - x0) + "x" + (y1 - y0) + " exceeds " + QH.MAX_TILES +
+				" tiles; request strips, or an overview with step=N (e.g. step=8 for the whole map)");
 		}
 		local freeform = QH.FreeformEdges();
 		local rows = [];
-		for (local y = y0; y < y1; y++) {
-			local kind = "", height = "", owner = "", slope = "", build = "";
-			for (local x = x0; x < x1; x++) {
+		for (local y = y0; y < y1; y += step) {
+			local kind = "", height = "", owner = "", slope = "", build = "", dock = "";
+			for (local x = x0; x < x1; x += step) {
 				if (QH.IsVoid(x, y, freeform)) {
 					kind += " ";
 					height += "0";
 					owner += ".";
 					slope += "0";
 					build += "0";
+					dock += "0";
 					continue;
 				}
 				local t = y * sx + x;
 				local b = GSTile.IsBuildable(t);
+				local s = GSTile.GetSlope(t);
 				kind += QH.Kind(t, b);
 				height += QH.HeightChar(GSTile.GetMinHeight(t));
 				owner += QH.OwnerChar(t, br.company);
-				slope += QH.SlopeChar(GSTile.GetSlope(t));
+				slope += QH.SlopeChar(s);
 				build += b ? "1" : "0";
+				dock += ((s in QH.INCLINES) && QH.DockCheck(t).ok) ? "1" : "0";
 			}
-			rows.append({ y = y, x = x0, kind = kind, height = height, owner = owner, slope = slope, build = build });
+			local row = { y = y, x = x0, kind = kind, height = height, owner = owner, slope = slope, build = build, dock = dock };
+			if (step > 1) row.step <- step;
+			rows.append(row);
 		}
 		Proto.Rows(id, rows);
 	}
@@ -510,6 +596,16 @@ Query <- {
 			radius = radius
 		};
 		if (v.rail) v.rail_type <- GSRail.GetRailType(t);
+		/* What the player sees on the tile: incline, dock fit, track pieces, signals, depot entrance. */
+		local s = GSTile.GetSlope(t);
+		v.incline <- (s in QH.INCLINES) ? QH.INCLINES[s][0] : null;
+		v.dock <- QH.DockCheck(t);
+		if (v.rail || GSRail.IsRailStationTile(t) || GSRail.IsRailWaypointTile(t)) {
+			v.tracks <- QH.TrackNames(t);
+			if (v.rail) v.signals <- QH.Signals(t);
+		}
+		if (GSRail.IsRailDepotTile(t)) v.depot_front <- GSRail.GetRailDepotFrontTile(t);
+		else if (GSRoad.IsRoadDepotTile(t)) v.depot_front <- GSRoad.GetRoadDepotFrontTile(t);
 		local c = QH.Catchment(t, 1, 1, radius);
 		v.accepts <- c.accepts;
 		v.produces <- c.produces;

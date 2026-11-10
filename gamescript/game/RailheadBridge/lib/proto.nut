@@ -9,8 +9,14 @@ Proto <- {
 		}
 	}
 
+	/* Every request must get a final reply: if the error message is too large for one packet, send
+	 * it shortened, else a fixed error, so Python does not wait for its time-out. */
 	function Err(id, code, msg) {
-		GSAdmin.Send({ t = "r", id = id, ok = false, code = code, msg = msg });
+		if (GSAdmin.Send({ t = "r", id = id, ok = false, code = code, msg = msg })) return;
+		local text = "" + msg;
+		if (text.len() > 200) text = text.slice(0, 200) + "...";
+		if (GSAdmin.Send({ t = "r", id = id, ok = false, code = code, msg = text })) return;
+		GSAdmin.Send({ t = "r", id = id, ok = false, code = "ERR_SEND_FAILED", msg = "error reply too large" });
 	}
 
 	function SendBatch(id, batch) {

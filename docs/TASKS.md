@@ -9,10 +9,32 @@ The text follows ASD-STE100. Refer to [STE.md](STE.md).
 
 ### 1.1 Task ID
 
-The task ID has the format `<variant>-<split>-<seed>`, for example `deliver_bid-train-0042`.
-The seed has four digits.
-The variant is the generator family: `deliver`, `deliver_bid`, `impossible`, `simops`, or `tycoon`.
 Four values make a task: the generator version, the variant, the split, and the seed.
+The variant is the generator family: `deliver`, `deliver_bid`, `impossible`, `simops`, `tycoon`, or `arena`.
+
+The generator gives each new task a seed ID with the format `<variant>-<split>-<seed>`, for example `tycoon-dev-0001`.
+The seed has four digits.
+
+The generator is public and deterministic.
+Because of this, the seed ID of a `deliver`, `deliver_bid`, `impossible`, or `simops` task lets an agent make the task again and find its secret facts.
+The command `railhead harden <tasks_dir>` changes these seed IDs to opaque IDs:
+
+```
+<prefix>-<split>-<hash>
+```
+
+| Part | Value |
+|---|---|
+| `<prefix>` | `deliver`, `deliver_bid`, or `simops`. An `impossible` task receives the prefix `deliver`, so that its ID does not show that it is impossible. |
+| `<split>` | `train`, `dev`, or `ood` |
+| `<hash>` | Six hexadecimal characters of the SHA-256 hash of a local salt and the seed ID. The salt is in `~/.railhead/id_salt`. It is not published. |
+
+Examples from the catalog: `deliver-train-0189a7`, `deliver_bid-dev-05536d`.
+The command also moves the seed ID to `source_task_id` in `secret.json`, and it moves `seed` and `generation_seed` from `scenario` to `scenario_private` in `secret.json`.
+
+The `tycoon` and `arena` tasks keep their seed IDs, for example `tycoon-dev-0001` and `arena-dev-0100`.
+
+CAUTION: Use `railhead harden` only one time, on new tasks. Do not use it on the tracked catalog. The command calculates the `deliver` quantities again from the task ID, so the quantities and the certificates do not agree after a second run. Also, an opaque ID that has only digits (for example `deliver_bid-dev-079081`) looks like a seed ID, and a second run changes it again.
 
 ### 1.2 Files of a task
 
@@ -56,7 +78,7 @@ The generator calculates these map settings from the seed:
 
 | Setting | Values |
 |---|---|
-| Map size | 64, 128, or 256 tiles on each side (weights 1, 6, and 2) |
+| Map size | 64, 128, or 256 tiles on each side (weights 1, 6, and 2). The `arena` generator sets the size with `--map`. |
 | Start year | 1950, 1960, 1975, 1990, or 2000 |
 | Number of towns | Setting 1, 2, or 3 |
 | Industry density | Setting 3, 4, or 5 |
@@ -88,6 +110,8 @@ The generator writes these facts in `secret.json`, and never in `task.json`.
 The `.dockerignore` file keeps `secret.json` out of the image.
 Harbor uploads `tests/secret.json` only after the agent stops.
 
+CAUTION: The repository is public. It contains the `secret.json` of each task and the `oracle.jsonl` of almost all tasks. An agent in the image cannot read these files, but a training run on the repository can. Because of this, no split in the repository is a held-out split.
+
 ## 2. `deliver`
 
 | Property | Value |
@@ -116,7 +140,7 @@ The generator sets `Q` from the oracle result on each map:
 1. The oracle plays the task.
 2. The verifier calculates the oracle delivery `d`.
 3. The generator rejects the seed if `d` is less than 40 or if the replay is not valid.
-4. The generator sets `Q = max(20, round(0.6 * d, -1))`.
+4. The generator sets `Q = max(20, round(u * d, -1))`. The value `u` is in the range 0.5 to 0.7. It comes from a random generator that has the task ID as its seed, so the agent cannot calculate `d` from `Q`.
 
 | Secret | Value | Reason |
 |---|---|---|
@@ -133,7 +157,7 @@ The `deliver_bid` variant is a `deliver` task with a promise.
 | Horizon | 300 game days |
 | Run-off | 0 game days |
 | Limits | 2 live forks, 180 fork-days |
-| Objective fields | `bid = true`, `bid_scale = round(1.5 * d, -1)`, `bid_deadline_days = 30` |
+| Objective fields | `bid = true`, `bid_scale = max(Q + 10, round(v * Q, -1))` with `v` in the range 2 to 3 (from the same generator as `u`), `bid_deadline_days = 30` |
 | Oracle | The `deliver` oracle, with `rh promise quantity=d` at the start |
 
 The agent promises with `rh promise quantity=<N>`.
@@ -280,18 +304,62 @@ A reward of 1 is two times the gain of the baseline.
 
 The values `w_idle` and `w_base` are in `objective`, not in `secret.json`.
 The briefing tells the agent the net worth of the baseline.
-The `tycoon` family has no secrets.
+The `tycoon` family has no secrets that change the reward. `secret.json` contains only `scenario_private` (the seeds).
 
 The run-off prevents asset stripping and loan games.
 Only profit that continues for 730 game days without the agent increases `W`.
 
-## 7. `passengers`
+## 7. `arena`
+
+An `arena` task is a `tycoon` task for a long game.
+Many models can play the same task, each in its own copy of the world, and the results make a ranking.
+The catalog has 67 `arena` tasks.
+
+| Property | Value |
+|---|---|
+| Objective | Increase the net worth of the company. |
+| Horizon | 365 game days for each year of `--years` |
+| Run-off | 365 game days |
+| Limits | 2 live forks, 73 fork-days for each year |
+| Map | `--map 256`, `512`, or `1024` tiles on each side |
+| Baseline | The `tycoon` baseline |
+| Fields in `task.json` | `family` is `tycoon`, `scenario.family` is `arena`, and `objective.score` is `log50` |
+
+The catalog has these `arena` tasks:
+
+| Tasks | Years | Map | Horizon | Fork-days |
+|---|---|---|---|---|
+| 41 tasks in `train`, `dev`, and `ood`, seeds 0 to 29 | 5 | 256 | 1825 | 365 |
+| `arena-train-0201` to `arena-train-0229`, `arena-dev-0212` to `arena-dev-0233` (25 tasks) | 10 | 512 | 3650 | 730 |
+| `arena-dev-0100` | 10 | 512 | 3650 | 730 |
+
+The verifier uses the `tycoon` formula with `rewards.tycoon_log`, because `objective.score` is `log50`:
+
+```
+g      = max(0, (W - W_idle) / max(W_base - W_idle, 1))
+reward = clip(ln(1 + g) / ln(1 + 50))
+```
+
+A reward of 0 is equal to no play.
+The baseline receives approximately 0.18 (`ln 2 / ln 51`).
+A reward of 1 is 50 times the gain of the baseline.
+The scale is not linear. For example, 10 times the gain of the baseline receives approximately 0.61.
+
+The briefing tells the agent the net worth of the baseline and the log scale.
+`arena-dev-0100` has a briefing that a person wrote. The generator wrote the briefings of the other tasks.
+
+Secrets:
+
+- The 41 five-year tasks have `scenario_private` (the seeds) in `secret.json`.
+- The 26 ten-year tasks have an empty `secret.json`. Their seeds are in `scenario` in `task.json`. The seeds do not change the reward.
+
+## 8. `passengers`
 
 The verifier calculates a reward for a `passengers` family with the `deliver` formula.
 The objective uses `town_delivery` monitors.
 There is no generator for this family at this time.
 
-## 8. Summary
+## 9. Summary
 
 | Variant | Reward family | Horizon | Run-off | Fork-days | Secrets |
 |---|---|---|---|---|---|
@@ -300,3 +368,4 @@ There is no generator for this family at this time.
 | `impossible` | `deliver` | 300 | 0 | 180 | `feasible`, `map_production_per_month`, `upper_bound_basis` |
 | `simops` | `simops` | 60 | 365 | 120 | `faults`, `k0`, `kstar` |
 | `tycoon` | `tycoon` | 365 | 730 | 365 | None |
+| `arena` | `tycoon` (`log50`) | 1825 or 3650 | 365 | 365 or 730 | None |

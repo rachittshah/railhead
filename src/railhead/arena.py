@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 from railhead.actionlog import read_log
@@ -117,6 +118,10 @@ def table(arena_dir: Path) -> str:
 
 
 def main(argv: list[str]) -> int:
+    if not argv or argv[0].startswith("-") and argv[0] != "--merge":
+        print("usage: railhead arena <dir> [--json] | <dir> --export OUT --task tasks/<id> [--rename a=b,...]"
+              " | --merge a.json b.json --out c.json", file=sys.stderr)
+        return 2
     if argv and argv[0] == "--merge":  # railhead arena --merge a.json b.json --out c.json
         out = Path(argv[argv.index("--out") + 1])
         out.write_text(json.dumps(merge_exports([Path(a) for a in argv[1:argv.index("--out")]]), indent=1) + "\n")

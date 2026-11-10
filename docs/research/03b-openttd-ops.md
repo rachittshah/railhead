@@ -344,7 +344,7 @@ Admin-port Python libraries:
 
 ### Files produced (scratchpad, not committed)
 
-`$SCRATCH` = `/private/tmp/claude-501/-Users-rachitt/a8c1f8a7-1e71-4e78-bc25-15b2761b9b4f/scratchpad`
+`$SCRATCH` = `<scratch directory>` (a temporary directory of the session that made these notes)
 
 - **Clients:**
   - `$SCRATCH/client/probe_admin.py` (stdlib admin client, written from the 15.x source)

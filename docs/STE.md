@@ -110,7 +110,7 @@ Use each technical name only with the description in this table.
 | split | A set of seeds: `train`, `dev`, or `ood`. |
 | start state | The sealed savegame `start.sav` from which each episode starts. |
 | step | A period in which the GameScript lets game time pass. |
-| task, task ID | One environment instance and its name, for example `deliver-train-0003`. |
+| task, task ID | One environment instance and its name, for example `deliver-train-0189a7`. |
 | training | The RL procedure that changes a model with rewards. |
 | trajectory | The action log of one episode. |
 | turn | A sequence of actions without a wait or a meta decision between them. |

@@ -1,0 +1,28 @@
+Source code for the GPL-2.0 programs in this image
+
+This image contains two programs that are licensed under the GNU General
+Public License, version 2 only (the text is in LICENSES/GPL-2.0-only.txt):
+
+1. OpenTTD, at /opt/railhead/engine/openttd (with lang/, ai/, game/)
+   Upstream: https://github.com/OpenTTD/OpenTTD, tag 15.3
+   (the exact commit is in openttd/UPSTREAM_COMMIT).
+   Railhead changes: the patches in openttd/railhead-engine/patches/,
+   applied in name order by openttd/railhead-engine/build.sh, which also
+   holds the build commands. The OpenTTD licence notes are in openttd/.
+
+2. OpenGFX 8.0, at /opt/railhead/engine/baseset/
+   Upstream: https://github.com/OpenTTD/OpenGFX, release 8.0, not changed.
+   Its licence is in OpenGFX-license.txt.
+
+The upstream source plus the files in openttd/railhead-engine/ are the
+complete corresponding source of these two programs as this image ships them.
+The same files are in https://github.com/rachittshah/railhead (engine/).
+
+Written offer
+
+For at least three years after the last distribution of this image, the
+copyright holder of Railhead will give any third party, on request, a complete
+machine-readable copy of the corresponding source code of OpenTTD and OpenGFX
+as shipped in this image, for a charge no more than the cost of physically
+performing the distribution. To ask, open an issue at
+https://github.com/rachittshah/railhead/issues.

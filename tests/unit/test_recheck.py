@@ -13,6 +13,25 @@ def test_shards_partition_the_catalog_exactly_once():
     assert shard_dirs(dirs, 0, 1) == dirs
 
 
+def test_recheck_one_removes_its_work_dir(tmp_path, monkeypatch):
+    import json
+
+    import railhead.verify
+    from railhead.admin_cli import _recheck_one
+
+    (tmp_path / "certificates.json").write_text(json.dumps({"oracle_reward": 0.5}))
+    seen = []
+
+    def fake_verify(tdir, start, log, work):
+        (work / "replay").mkdir()
+        seen.append(work)
+        return {"valid": 1, "reward": 0.5}
+
+    monkeypatch.setattr(railhead.verify, "verify", fake_verify)
+    assert _recheck_one(str(tmp_path))["match"]
+    assert seen and not seen[0].exists()
+
+
 def test_parse_shard():
     assert parse_shard("2/4") == (2, 4)
     for bad in ("4/4", "-1/4", "1/0", "x"):

@@ -10,12 +10,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /build
 COPY engine/ engine/
+# Keep the licence notes of the GPL-2.0 parts (OpenTTD, its third-party code, OpenGFX) before the source goes.
 RUN RAILHEAD_ENGINE_SRC=/build/openttd-src PREFIX=/opt/railhead/engine engine/build.sh \
+    && L=/opt/railhead/licenses && mkdir -p "$L/openttd/3rdparty" \
+    && cp /build/openttd-src/COPYING.md /build/openttd-src/README.md "$L/openttd/" \
+    && git -C /build/openttd-src rev-parse HEAD > "$L/openttd/UPSTREAM_COMMIT" \
+    && (cd /build/openttd-src/src/3rdparty \
+        && find . -type f \( -iname 'LICENSE*' -o -iname 'COPYRIGHT*' -o -iname 'COPYING*' \) \
+             -exec cp --parents {} "$L/openttd/3rdparty/" \;) \
+    && tar -xOf /opt/railhead/engine/baseset/*[Oo]pen[Gg][Ff][Xx]*.tar --wildcards 'OpenGFX-*/license.txt' \
+         > "$L/OpenGFX-license.txt" \
     && rm -rf /build/openttd-src
 
 FROM debian:${DEBIAN}-slim
-ARG RAILHEAD_VERSION=0.1.0
+# CI passes the package version (src/railhead/__init__.py); the default must equal it (tests/unit/test_version.py).
+ARG RAILHEAD_VERSION=0.1.2
 LABEL org.opencontainers.image.source="https://github.com/rachittshah/railhead" \
+      org.opencontainers.image.version="${RAILHEAD_VERSION}" \
       org.opencontainers.image.description="Railhead: models play OpenTTD directly (RL environment)" \
       org.opencontainers.image.licenses="MIT AND GPL-2.0-only"
 # Runtime libs for the engine, python for railhead, and the basics Harbor agents expect (bash, tmux, curl).
@@ -23,11 +34,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       python3 python3-venv zlib1g liblzma5 liblzo2-2 ca-certificates curl tmux procps less jq \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=engine /opt/railhead/engine /opt/railhead/engine
+# Licence texts and the written source offer for the GPL-2.0 programs (NOTICE, docker/SOURCE-OFFER.txt).
+COPY --from=engine /opt/railhead/licenses /opt/railhead/licenses
+COPY LICENSE NOTICE docker/SOURCE-OFFER.txt /opt/railhead/licenses/
+COPY LICENSES/ /opt/railhead/licenses/LICENSES/
+COPY engine/build.sh /opt/railhead/licenses/openttd/railhead-engine/
+COPY engine/patches/ /opt/railhead/licenses/openttd/railhead-engine/patches/
 COPY pyproject.toml README.md /opt/railhead/src/
 COPY src/ /opt/railhead/src/src/
 COPY gamescript/ /opt/railhead/scripts/
 RUN python3 -m venv /opt/railhead/venv \
     && /opt/railhead/venv/bin/pip install --no-cache-dir /opt/railhead/src \
+    && v="$(/opt/railhead/venv/bin/python -c 'import railhead; print(railhead.__version__)')" \
+    && { [ "$v" = "$RAILHEAD_VERSION" ] || { echo "package $v != RAILHEAD_VERSION $RAILHEAD_VERSION" >&2; exit 1; }; } \
     && ln -s /opt/railhead/venv/bin/rh /usr/local/bin/rh \
     && ln -s /opt/railhead/venv/bin/railhead /usr/local/bin/railhead
 COPY tasks/ /opt/railhead/tasks/

@@ -52,6 +52,27 @@ The script uses these environment variables:
 | `RAILHEAD_ENGINE_SRC` | `.cache/openttd-src` | The directory of the OpenTTD source tree |
 | `JOBS` | Number of processors | The number of parallel build jobs |
 | `PREFIX` | Not set | If set, the script also copies the binary and its data to this directory |
+| `CXX_FLAGS` | Not set | Optional compiler and linker flags for a variant build, for example `-mcpu=apple-m4 -flto=thin` |
+| `EXTRA_PATCHES` | Not set | Optional patch files applied after `engine/patches/`, absolute or relative to the repository root |
+
+### Optional: a faster engine
+
+`engine/optional/` holds patches that are not part of the default build.
+`0004-stdin-poll.patch` makes the dedicated server's per-tick check of standard input non-blocking.
+With `CXX_FLAGS="-mcpu=apple-m4 -flto=thin"` it stepped a 148-vehicle state about 11% faster on an M4 Max
+(4.62 against 5.21 ms per game day, seven alternating runs each).
+The flags alone gave 3.7% (4.94 against 5.13).
+The game itself is unchanged: the variant gave the same `checksum` as the default engine after 728 game days
+on five saves of 0 to 264 vehicles.
+
+The default binary is what sealed tasks pin by sha256, so build a variant into a separate tree and select it per
+process; do not replace the default engine unless you re-seal:
+
+```bash
+RAILHEAD_ENGINE_SRC=$PWD/.cache/openttd-fast CXX_FLAGS="-mcpu=apple-m4 -flto=thin" \
+  EXTRA_PATCHES=engine/optional/0004-stdin-poll.patch engine/build.sh
+RAILHEAD_OPENTTD=$PWD/.cache/openttd-fast/build/openttd railhead ...
+```
 
 To use a different engine binary, set `RAILHEAD_OPENTTD` to its path.
 Railhead looks for the binary in this sequence:
@@ -179,6 +200,7 @@ Other families do not accept `--years` or `--map`. The command stops with an err
 A line with `rejected` tells you that the seed does not give a good task.
 A line with `error` tells you that the generator stopped because of a problem.
 The task ID has the format `<family>-<split>-<seed>`, with a seed of four digits.
+The tasks in the tracked catalog have opaque IDs. To change the IDs of new tasks to opaque IDs, use `railhead harden <dir>` one time. Refer to [TASKS.md, 1.1](TASKS.md#11-task-id).
 For the contents of a task directory, refer to [TASKS.md](TASKS.md).
 
 ## 6. Start a task daemon
@@ -198,19 +220,19 @@ CAUTION: Use a new, empty state directory for each episode. If `run/actions.json
 2. Set a new state directory for this episode:
 
    ```bash
-   export RAILHEAD_STATE="$HOME/.railhead/episodes/deliver-train-0003"
+   export RAILHEAD_STATE="$HOME/.railhead/episodes/deliver-train-0189a7"
    ```
 
 3. Set the task ID. The `rh` command uses this value to start the daemon when no daemon runs:
 
    ```bash
-   export RAILHEAD_TASK=deliver-train-0003
+   export RAILHEAD_TASK=deliver-train-0189a7
    ```
 
 4. Start the daemon:
 
    ```bash
-   railhead up deliver-train-0003
+   railhead up deliver-train-0189a7
    ```
 
 5. Make sure that the output is `{"up": true, "pid": <number>}`.
@@ -283,11 +305,13 @@ A query reads the world. It does not change the world.
 | `rh depots` | The depots of the company |
 | `rh orders` | The orders of the vehicles |
 | `rh subsidies` | The subsidies |
-| `rh catchment tile=12,40` | The cargo acceptance and the cargo production near a possible station site |
+| `rh catchment tile=12,40` | The cargo acceptance and the cargo production near a possible station site. Add `w=W h=H radius=R` for a station of W x H tiles (the radius of a train station is 4, of a dock 5). |
 | `rh monitor_read` | The objective ledger |
 | `rh map_info` | The date, the map size, the climate, and the number of towns and industries |
 | `rh map x=0 y=0 w=40 h=24` | A text map of one area, with a legend |
-| `rh tile tile=12,40` | One tile in detail, with the cargo acceptance near it |
+| `rh map x=0 y=0 w=40 h=24 layer=dock` | The same area with one layer. The layers are `kind`, `height`, `owner`, `slope`, `build`, and `dock`. In the layer `dock`, the letter `d` shows a tile where a dock fits. |
+| `rh map x=0 y=0 w=512 h=512 step=8` | An overview of the full map. It shows each eighth tile. Use it to find lakes and the sea. |
+| `rh tile tile=12,40` | One tile in detail: the slope, if a dock fits, the rail pieces, the signals, and the cargo acceptance near it |
 
 ### 7.4 Player actions
 
@@ -454,11 +478,16 @@ The exit code is 1 for a daemon error and 2 for an incorrect argument.
 | `ERR_FORK_LIMIT` | The number of live forks is at the maximum. |
 | `ERR_FORK_BUDGET` | The fork-day budget is too small. |
 | `ERR_BUSY` | The world is in a step. |
+| `ERR_INFRA` | The engine did not reply. The daemon made the world again from the action log, and the last request did not occur. Send the request again. |
 | `ERR_UNKNOWN_OP`, `ERR_UNKNOWN_METHOD` | The daemon or the GameScript does not know the request. |
 | `ERR_INTERNAL`, `ERR_DAEMON` | A problem in the daemon. Read `daemon.log`. |
 
 The engine refuses an incorrect action with a typed error code, for example `ERR_AREA_NOT_CLEAR`.
 The message of the error tells a possible correction.
+
+A build on water, or on the low side of a shore, gives `ERR_CANNOT_BUILD_ON_WATER`.
+Before version 0.1.2 this code was `ERR_TUNNEL_CANNOT_BUILD_ON_WATER`. Only `bridge.tunnel` keeps the old code.
+A program that compares the code must accept the two codes.
 
 ## 8. Stop the daemon
 
@@ -483,7 +512,7 @@ The Harbor oracle uses this command.
 2. Play the oracle log of the task:
 
    ```bash
-   railhead play "$RAILHEAD_TASKS/deliver-train-0003/oracle.jsonl"
+   railhead play "$RAILHEAD_TASKS/deliver-train-0189a7/oracle.jsonl"
    ```
 
 3. Make sure that the output is `{"played": <number>}`.
@@ -504,11 +533,11 @@ CAUTION: Stop the daemon before you start the verifier. If the daemon runs, the 
 2. Run the verifier:
 
    ```bash
-   python -m railhead.verify tasks/deliver-train-0003 tasks/deliver-train-0003/start.sav \
-     "$RAILHEAD_STATE/run/actions.jsonl" out/deliver-train-0003
+   python -m railhead.verify tasks/deliver-train-0189a7 tasks/deliver-train-0189a7/start.sav \
+     "$RAILHEAD_STATE/run/actions.jsonl" out/deliver-train-0189a7
    ```
 
-3. Read `out/deliver-train-0003/reward.json`.
+3. Read `out/deliver-train-0189a7/reward.json`.
 
 The arguments are, in sequence:
 
@@ -522,8 +551,20 @@ The verifier then writes `credit.json` in the output directory.
 This option replays the log one time for each turn.
 Because of this, the verifier takes much more time.
 
+The verifier accepts only an action log of version 2. This is the version that the daemon writes now.
+To verify an old log again, for example an Arena 2 game, add `--min-log-version=1`.
+
 The verifier writes `reward.json` and `reward.txt`.
 For the fields of `reward.json`, refer to [VERIFICATION.md](VERIFICATION.md).
+These are the results that are not a usual reward:
+
+| Result | Cause |
+|---|---|
+| `rejected = 1`, reward 0 | The log contains something that a player cannot do. Or a checksum in the log is different from the replay, and a second replay agrees with the first replay. Then the log is false. |
+| `valid = 0` | An infrastructure problem: an internal error, or two replays that do not agree. Do not use this result. |
+| `tamper = 1`, reward 0 | The hash of a trusted file or of the start state is incorrect. |
+
+[VERIFICATION.md](VERIFICATION.md) also gives the threat model: each attack, the test for it, and the attacks that stay open.
 If the task directory has no `sealed.json`, the verifier does not examine the hash of the start state.
 
 ## 11. Build the image
@@ -553,10 +594,20 @@ The Dockerfile has two build arguments:
 | Build argument | Default | Description |
 |---|---|---|
 | `DEBIAN` | `trixie` | The Debian release of the base image |
-| `RAILHEAD_VERSION` | `0.1.0` | The version label in the image |
+| `RAILHEAD_VERSION` | `0.1.2` | The version label in the image. It must be the same as `__version__` in `src/railhead/__init__.py`. If it is not, the build stops. The workflow `image.yml` sets it from that file. |
 
 The workflow `.github/workflows/image.yml` builds the image for `linux/amd64` and `linux/arm64`.
 It pushes the image to `ghcr.io/<owner>/railhead` when you push a tag that starts with `v`.
+The tag must be `v` and the package version, for example `v0.1.2`. If it is not, the workflow stops before it builds.
+
+The image contains GPL-2.0 programs (OpenTTD and OpenGFX). The directory `/opt/railhead/licenses/` in the image contains:
+
+| File or directory | Contents |
+|---|---|
+| `LICENSE`, `NOTICE`, `LICENSES/` | The licences of Railhead, and which path has which licence |
+| `SOURCE-OFFER.txt` | The written offer of the source code of OpenTTD and OpenGFX |
+| `openttd/` | The licence and the third-party licences of OpenTTD, the upstream commit, and the Railhead patches and build script |
+| `OpenGFX-license.txt` | The licence of OpenGFX |
 
 ## 12. Export Harbor tasks
 
@@ -565,7 +616,7 @@ It also seals each task.
 
 CAUTION: Run `railhead export` inside the image. The manifest contains the absolute paths and the hashes of the engine, the scripts, and the package. A manifest from a different installation is not correct for the image. The verifier then sets `tamper` to 1.
 
-CAUTION: Mount the host `tasks/` directory on `/opt/railhead/tasks`. The image does not contain `secret.json` and `oracle.jsonl`. Without these files, the exported tests and solutions are not complete.
+CAUTION: Mount the host `tasks/` directory in the container and set `RAILHEAD_TASKS` to that directory, as in step 2. The image does not contain `secret.json` and `oracle.jsonl`. Without these files, the exported tests and solutions are not complete.
 
 1. Make the output directory:
 
@@ -587,10 +638,61 @@ Use the same `tasks/` directory that you used to build the image.
 | Option | Default | Description |
 |---|---|---|
 | `<task_id> ...` | All tasks | Export only these tasks. |
-| `--image <ref>` | `ghcr.io/rachittshah/railhead:0.1.0` | The image that `task.toml` names |
-| `--version <v>` | `0.1.0` | The version in `task.toml` |
+| `--image <ref>` | `ghcr.io/rachittshah/railhead:0.1.2` | The image that `task.toml` names |
+| `--version <v>` | `0.1.2` | The version in `task.toml` |
 
 For the layout of a Harbor task, refer to [ARCHITECTURE.md](ARCHITECTURE.md).
+
+Each exported task directory contains:
+
+| File | Contents |
+|---|---|
+| `task.toml` | The Harbor name `rachittshah/railhead-<task_id>`, the version, the image, `RAILHEAD_TASK`, and the health check `railhead-up <task_id>` |
+| `instruction.md` | The briefing, the horizon, the fork budget, and the rules of play |
+| `environment/Dockerfile` | `FROM <image>` and `ENV RAILHEAD_TASK=<task_id>` |
+| `tests/` | `task.json`, `secret.json`, `sealed.json`, `test.sh`, and one manifest for each CPU architecture (`sealed.<arch>.sha256`) |
+| `solution/` | `oracle.jsonl` and `solve.sh` |
+
+### 12.1 Make and publish the Harbor datasets
+
+The published datasets are `rachittshah/railhead` (the `dev` and `ood` tasks) and `rachittshah/railhead-train` (the `train` tasks).
+Each dataset is a directory: one exported task directory for each task, and a `dataset.toml` file.
+
+CAUTION: Publish only after the image with the same version is public. A Harbor task names its image in `task.toml`, and `harbor publish` does not build or push images.
+
+1. Export the `dev` and `ood` tasks into one directory and the `train` tasks into a different directory. Run the command in the published amd64 image of this version (`<image>`):
+
+   ```bash
+   mkdir -p harbor/railhead harbor/railhead-train
+   docker run --rm --platform linux/amd64 -e RAILHEAD_TASKS=/work/tasks -v "$PWD/tasks:/work/tasks:ro" \
+     -v "$PWD/harbor:/out" <image> railhead export /out/railhead $(ls tasks | grep -E -- '-(dev|ood)-')
+   docker run --rm --platform linux/amd64 -e RAILHEAD_TASKS=/work/tasks -v "$PWD/tasks:/work/tasks:ro" \
+     -v "$PWD/harbor:/out" <image> railhead export /out/railhead-train $(ls tasks | grep -- '-train-')
+   ```
+
+   Without `--image` and `--version`, `task.toml` names `ghcr.io/rachittshah/railhead:<version>` and the version of the package.
+
+2. Add the manifest of the second CPU architecture. Run the command in the arm64 image:
+
+   ```bash
+   docker run --rm --platform linux/arm64 -v "$PWD/harbor:/out" <image> railhead export-manifest /out/railhead
+   docker run --rm --platform linux/arm64 -v "$PWD/harbor:/out" <image> railhead export-manifest /out/railhead-train
+   ```
+
+3. Make sure that each `tests/` directory has `sealed.x86_64.sha256` and `sealed.aarch64.sha256`.
+
+4. Make or update `dataset.toml` in each dataset directory. `harbor init <org>/<name> --dataset` makes the file and adds the task directories. `harbor add --scan --to <dataset_dir>` adds new task directories to an existing file. Set `version` in `[dataset]` to the package version.
+
+5. Run one task of each dataset with the oracle agent (section 13).
+
+6. Publish each dataset:
+
+   ```bash
+   harbor publish harbor/railhead
+   harbor publish harbor/railhead-train
+   ```
+
+The `harbor` commands in steps 4 and 6 come from the Harbor 0.22 notes in `docs/research/04-harbor.md`. `harbor publish` calculates the digests again, publishes each task directory, and then registers the dataset version.
 
 ## 13. Run a Harbor task on your computer
 
@@ -599,14 +701,14 @@ CAUTION: Use a job directory below `$HOME`. If Docker runs in colima, colima sha
 1. Run one task with the oracle agent:
 
    ```bash
-   harbor run -p harbor/deliver-train-0003 -a oracle -o ~/.cache/harbor/jobs
+   harbor run -p harbor/deliver-train-0189a7 -a oracle -o ~/.cache/harbor/jobs
    ```
 
 2. Open the trial directory in `~/.cache/harbor/jobs/<job>/`.
 
 3. Read `verifier/reward.json` in the trial directory.
 
-4. Compare `reward` with `oracle_reward` in `tasks/deliver-train-0003/certificates.json`. The two values are usually equal.
+4. Compare `reward` with `oracle_reward` in `tasks/deliver-train-0189a7/certificates.json`. The two values are usually equal.
 
 To run all exported tasks, use `-p harbor`.
 To run a model, replace `-a oracle` with an agent and add `-m <model>`.
@@ -618,15 +720,16 @@ The healthcheck runs `railhead-up <task_id>` until the world answers.
 
 ## 14. Build the Hugging Face dataset
 
-The module `railhead.hub` makes the dataset.
-There is no `railhead` command for this procedure at this time.
+The command `railhead hub` makes the dataset (module `railhead.hub`).
 The `tasks` configuration has one row for each task.
 The `trajectories` configuration has one row for each oracle log.
+
+CAUTION: Export the Harbor tasks before you build the dataset (section 12). Each row contains the exported task directory. The command looks for `harbor/<task_id>` and for `harbor/<dataset>/<task_id>`. If a task is not in the Harbor directory, the command stops with an error.
 
 1. Build the dataset. This step replays each oracle log:
 
    ```bash
-   python -c "from pathlib import Path; from railhead.hub import build; print(build(Path('tasks'), Path('harbor'), Path('hf')))"
+   railhead hub build tasks harbor hf
    ```
 
 2. Set `HF_TOKEN` to a Hugging Face token that has write access:
@@ -638,8 +741,10 @@ The `trajectories` configuration has one row for each oracle log.
 3. Push the dataset:
 
    ```bash
-   python -c "from pathlib import Path; from railhead.hub import push; print(push(Path('hf')))"
+   railhead hub push hf
    ```
+
+To add the verified games of an arena to the trajectories, use `railhead hub add-games hf <arena_dir> tasks/<task_id>`.
 
 The default repository is `rachittshah/railhead`.
 
@@ -826,10 +931,19 @@ The charts and the maps need matplotlib. Install it with `uv pip install -e ".[v
 The viewer is a GUI client of OpenTTD 15.3 that joins as a spectator.
 It does not change the world.
 
-The viewer opens only on the LG monitor.
-It reads the list of connected displays from macOS and finds the display with "LG" in its name.
-If no LG display is connected, the command stops with an error and opens no window.
-After it places the window, it reads the window position again. If the window is not on the LG monitor, it closes the window and stops with an error.
+The viewer works only on macOS.
+It reads the list of connected displays from macOS and selects one display:
+
+1. If a display has "LG" in its name, the viewer uses that display.
+2. If no display has "LG" in its name, the viewer uses the main display.
+
+The window fills the lower half of the selected display.
+To set the window position and size yourself, add `--bounds x,y,w,h`.
+The values are in points, from the top-left corner of the main display.
+The bounds must be inside one connected display. If they are not, the command stops with an error before it starts an engine.
+
+After it places the window, the viewer reads the window position again. If the window is not on the selected display, the viewer closes the window and stops with an error.
+Each call to `osascript` has a time limit of 10 seconds. If macOS does not reply in that time, the command stops with an error.
 
 - To watch a live player, attach to its daemon:
 
@@ -842,3 +956,150 @@ After it places the window, it reads the window position again. If the window is
   ```bash
   railhead view arena-dev-0005 --log arena/a/state/run/actions.jsonl --speed 1000
   ```
+
+- To put the window at a known position, give the bounds:
+
+  ```bash
+  railhead view arena-dev-0005 --bounds 0,0,1280,800
+  ```
+
+## Build a ship route
+
+This procedure builds a passenger ferry between two towns on one lake or sea.
+It uses only player commands. The water oracle (`src/railhead/oracle/water.py`) does the same steps.
+On `arena-dev-0100` the procedure needs 13 actions. Two ferries earn approximately £25,000 each year (`docs/MODES.md`).
+
+1. Find water. Show the overview map:
+
+   ```bash
+   rh map x=0 y=0 w=512 h=512 step=8
+   ```
+
+   Each character is one tile out of 8 x 8 tiles. The `~` character is water.
+2. Find two towns on the shore of the same water. Use `rh towns near_tile=X,Y radius=40`.
+3. Find the dock sites near each town:
+
+   ```bash
+   rh map x=X y=Y w=40 h=30 layer=dock
+   ```
+
+   The `d` character shows a tile where a dock fits. The tile slopes down to two flat water tiles.
+4. Examine a dock site with `rh tile tile=X,Y`.
+   Make sure that the line `Dock:` shows `yes`, and that the station accepts `PASS`.
+   The catchment radius of a dock is 5.
+5. Build the two docks:
+
+   ```bash
+   rh water dock tile=A join_station=-1
+   ```
+
+   Do this at the dock site `A` of the first town and at the site `B` of the second town.
+   The reply gives `water_tile`, `accepts`, and `supplies`.
+   Ships stop on `water_tile`.
+6. Build a ship depot near the first dock:
+
+   ```bash
+   rh water ship_depot tile=T toward_tile=T2
+   ```
+
+   The depot covers `tile` and the next tile in +x or +y. Both tiles must be flat open water (`~`).
+   The argument `toward_tile` only sets the direction.
+7. Find a ferry with `rh engines vtype=water cargo=0`. Use an engine with `carries` set to `yes`.
+8. Buy the ferry, give it the orders, and start it:
+
+   ```bash
+   rh vehicle buy depot_tile=T engine=E cargo=PASS
+   rh order append vehicle=V tile=A
+   rh order append vehicle=V tile=B
+   rh vehicle start vehicle=V
+   ```
+
+9. To add a ferry, use `rh vehicle clone depot_tile=T vehicle=V share_orders=true`. Then start it.
+
+Ships cannot cross land. Ships also cannot sail up or down a sloped river tile (rapids). The `slope` layer of `rh map` shows these tiles as `1`.
+If no flat water joins the two docks, the ferry does not arrive. Then build canals and locks, or choose another pair of towns.
+In 1960 a ferry has a speed of 32 km/h. A short crossing earns more for each ship than a long voyage.
+
+## Build a train route
+
+This procedure builds one coal train between a coal mine and a power station.
+It uses only player commands. The rail oracle (`src/railhead/oracle/rail.py`) does the same steps.
+On `arena-dev-0100` the procedure needs 21 actions. The train earns approximately £47,000 each year (`docs/MODES.md`).
+
+1. Find a coal mine and a power station 20 to 60 tiles apart:
+
+   ```bash
+   rh industries cargo=1 role=produces
+   rh industries cargo=1 role=accepts
+   ```
+
+   In the temperate climate, `COAL` has the cargo id 1. Use `rh cargos` to find the ids.
+2. Find a station site near each industry. The site must be three flat, clear tiles in a line.
+   Make sure that the tile after each end of the platform is also clear.
+3. Examine the catchment of each site:
+
+   ```bash
+   rh catchment tile=X,Y w=3 h=1 radius=4
+   ```
+
+   For a station on the y axis, use `w=1 h=3`.
+   At the mine, `produces` must show `COAL`. At the power station, `accepts` must show `COAL` as accepted.
+4. Build the two stations:
+
+   ```bash
+   rh rail station tile=X,Y axis=x platforms=1 length=3 join_station=-1
+   ```
+
+   The reply gives `accepts` and `supplies`. Make sure that they show `COAL`.
+5. Build the track. Start on the tile after the platform end.
+   - For each straight part, use `rh rail line from_tile=A to_tile=B`. The two tiles must have the same x or the same y.
+   - At each turn, build one corner piece: `rh rail track tile=T track=P`.
+   - The sides of a tile are `ne` (x-1), `sw` (x+1), `nw` (y-1), and `se` (y+1).
+     The piece `P` names the two sides that the train uses: `nw_ne`, `sw_se`, `nw_sw`, or `ne_se`.
+     For example, a train that comes from x-1 and goes to y+1 needs `ne_se`.
+   - Put two or more straight tiles between two turns. OpenTTD does not let trains make a 90-degree turn.
+6. Build the depot on the tile behind the other end of the first platform:
+
+   ```bash
+   rh rail depot tile=D front_tile=E
+   ```
+
+   `E` is the end tile of the platform. If the reply contains `hint`, no track joins the depot. Repair the front tile.
+7. Find a locomotive and a wagon with `rh engines vtype=rail cargo=1`.
+   Use a locomotive with `wagon` set to `no`, and a wagon with `carries` set to `yes`.
+8. Buy the train in the depot:
+
+   ```bash
+   rh vehicle buy depot_tile=D engine=LOCO
+   rh vehicle buy depot_tile=D engine=WAGON cargo=COAL
+   rh vehicle attach vehicle=W train_vehicle=V
+   ```
+
+   Do the second and the third command one time for each wagon. Use four wagons for a platform of three tiles.
+9. Give the orders and start the train:
+
+   ```bash
+   rh order append vehicle=V tile=<mine station> flags='["full_load_any"]'
+   rh order append vehicle=V tile=<power station> flags='["unload","no_load"]'
+   rh vehicle start vehicle=V
+   ```
+
+10. To examine the track, use `rh tile tile=X,Y`. The line `Rail pieces:` shows the pieces on the tile.
+
+Use only one train on a single track.
+For a second train, build a passing loop and signals (`rh rail signal`).
+
+## Compare players, environment versions, and anchors
+
+These operator tools have their own documents. Each document gives the full procedure and the results.
+
+| Task | Command | Document |
+|---|---|---|
+| Calculate the differences between players on more than one map, with intervals | `railhead stats docs/data/seedgames.json` | [SEEDGAMES.md](SEEDGAMES.md) |
+| Run community script AIs on a task. They give a ceiling for the models. | `railhead anchor tasks/arena-dev-0100 --ai AAAHogEx --seeds 3` | [ANCHORS.md](ANCHORS.md) |
+| Make a video of the networks of an arena | `railhead timelapse <arena directory> --task tasks/arena-dev-0100 --out out/timelapse` | [TIMELAPSE.md](TIMELAPSE.md) |
+| Compare two checkouts with the same models on the same tasks | `railhead ab plan experiments/pilot-water-rail/plan.json`, then `run`, `collect`, and `report` | [AB.md](AB.md) |
+| Read what each transport mode earns, and what stopped the models | None | [MODES.md](MODES.md) |
+
+`railhead ab` writes a `manifest.json` and an `events.jsonl` for each game.
+The player `script:<path>` in `railhead arena-run` is a scripted player. Use it to test an experiment without a model.

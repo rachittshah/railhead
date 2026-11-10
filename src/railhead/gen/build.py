@@ -166,10 +166,10 @@ def deliver_text(spec: TaskSpec) -> tuple[str, str]:
     dx, dy = o["dest_xy"]
     title = f"Deliver {o['cargo_name']} to {o['dest_name']}"
     lines = [
-        f"You run a young transport company. A customer needs **{o['cargo_name']}** delivered to "
-        f"**{o['dest_name']}** (industry id {o['dest']}, near tile {dx},{dy}).",
-        f"A likely supplier is **{o['source_name']}** (industry id {o['source']}, near tile {sx},{sy}); any "
-        "source counts, only what your company delivers to that industry is counted.",
+        (f"You run a young transport company. A customer needs **{o['cargo_name']}** delivered to "
+         f"**{o['dest_name']}** (industry id {o['dest']}, near tile {dx},{dy})."),
+        (f"A likely supplier is **{o['source_name']}** (industry id {o['source']}, near tile {sx},{sy}); any "
+         "source counts, only what your company delivers to that industry is counted."),
         f"**Contract:** deliver at least **{o['quantity']:,} units** within the horizon.",
     ]
     if o.get("bid"):
@@ -190,6 +190,21 @@ def gen_arena(seed: int, split: str, out: Path, years: int = 5, map_log2: int = 
     1-year run-off, fork budget 73 days per year. Same scoring as tycoon."""
     return gen_tycoon(seed, split, out, family="arena", horizon=365 * years, runoff=365, map_log2=map_log2,
                       max_fork_days=73 * years)
+
+
+def tycoon_briefing(family: str, horizon: int, runoff: int, w_base: int) -> str:
+    """Briefing for tycoon/arena tasks. The scale text must match the score: linear 0.5/1 for tycoon,
+    log50 (rewards.tycoon_log: baseline ~0.18, 1 = 50x its gain) for arena."""
+    if family == "arena":
+        scale = (f"on a log scale: doing nothing scores 0, a simple scripted truck route scores about 0.18 "
+                 f"(net worth £{w_base:,}), and 1 needs 50 times that route's gain. ")
+    else:
+        scale = (f"scaled so that doing nothing scores 0, a simple scripted truck route scores 0.5 "
+                 f"(net worth £{w_base:,}), and doubling its gain scores 1. ")
+    return (f"You run a new transport company with a {horizon}-day mandate. Build whatever network you like "
+            "(road, rail, air, water). When the mandate ends, your company keeps running **without you** for "
+            f"{runoff} more days; the reward is your **net worth (cash minus loan) after that run-off**, "
+            + scale + "Asset stripping and loan games do not help: only sustainable profit survives the run-off.")
 
 
 def gen_tycoon(seed: int, split: str, out: Path, family: str = "tycoon", horizon: int = TYCOON_HORIZON,
@@ -226,13 +241,7 @@ def gen_tycoon(seed: int, split: str, out: Path, family: str = "tycoon", horizon
         if family == "arena":
             spec.objective["score"] = "log50"  # unsaturated scale score: strong models beat the baseline 10x+
         spec.title = "Build a transport empire" if family == "tycoon" else "Arena: make money and scale"
-        spec.briefing = (
-            f"You run a new transport company with a {horizon}-day mandate. Build whatever network you like "
-            "(road, rail, air, water). When the mandate ends, your company keeps running **without you** for "
-            f"{spec.runoff_days} more days; the reward is your **net worth (cash minus loan) after that run-off**, "
-            f"scaled so that doing nothing scores 0, a simple scripted truck route scores 0.5 "
-            f"(net worth £{spec.objective['w_base']:,}), and doubling its gain scores 1. "
-            "Asset stripping and loan games do not help: only sustainable profit survives the run-off.")
+        spec.briefing = tycoon_briefing(family, horizon, spec.runoff_days, spec.objective["w_base"])
         _write(tdir, spec)
         certify(spec, tdir, work)
         return spec
@@ -310,6 +319,8 @@ def parse_gen_args(argv: list[str]) -> GenArgs:
         raise ValueError("usage: railhead gen <family> <split> <from> <to> [--out tasks] [--jobs N] "
                          "[--years N --map 256|512|1024 (arena only)]")
     family = rest[0]
+    if family not in (*GENERATORS, "simops"):
+        raise ValueError(f"unknown family {family!r}; choose from {', '.join([*GENERATORS, 'simops'])}")
     if flags and family != "arena":
         verb = "is" if len(flags) == 1 else "are"
         raise ValueError(f"{' and '.join(flags)} {verb} only for the arena family, not for {family!r}")
@@ -339,17 +350,19 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     family, split, out = g.family, g.split, g.out
     out.mkdir(parents=True, exist_ok=True)
+    errors = 0  # a rejected seed is normal; a generator crash must fail the command
     with ProcessPoolExecutor(max_workers=g.jobs) as ex:
         futs = [ex.submit(_one, family, s, split, str(out), g.options) for s in range(g.lo, g.hi)]
         for f in as_completed(futs):
             seed, msg = f.result()
+            errors += msg.startswith("error:")
             print(f"{family}/{split}/{seed}: {msg}", flush=True)
-    return 0
+    return 1 if errors else 0
 
 
 if __name__ == "__main__":
     # Run through the package module so worker processes and simops share one Rejected class.
-    from railhead.gen import build as _pkg
+    from railhead.gen import build as _pkg  # noqa: PLW0406 - on purpose, see above
 
     raise SystemExit(_pkg.main())
 

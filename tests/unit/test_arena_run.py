@@ -106,7 +106,7 @@ import json
 import os
 
 # Arena 2, claude-fable-5-1: the five-hour window ran out at 11:31:49 UTC (2026-10-16)
-CLAUDE_SID = "44aaef25-7d0c-4014-9899-83dbf58fcd49"
+CLAUDE_SID = "00000000-0000-4000-8000-00000000c1a0"
 CLAUDE_START = [
     {"type": "system", "subtype": "hook_started", "hook_name": "SessionStart:startup", "session_id": CLAUDE_SID},
     {"type": "system", "subtype": "init", "cwd": "/arena/claude-fable-5-1", "session_id": CLAUDE_SID,
@@ -129,7 +129,7 @@ CLAUDE_LIMIT = [
 CLAUDE_DONE = {"type": "result", "subtype": "success", "is_error": False, "stop_reason": "end_turn",
                "result": "Submitted.", "session_id": CLAUDE_SID}
 
-CODEX_SID = "01a15876-fb28-76d2-9ba5-132ad579c619"
+CODEX_SID = "00000000-0000-7000-8000-00000000c0de"
 CODEX_START = f"""WARNING: proceeding, even though we could not create PATH aliases: operation would block
 Reading additional input from stdin...
 2026-10-20T08:39:15.126060Z ERROR codex_core::session::session: failed to load skill /x/SKILL.md: missing YAML frontmatter
@@ -346,3 +346,62 @@ def test_an_agent_error_that_is_not_the_providers_never_restarts_the_player(tmp_
     assert last_session(log) == (CODEX_SID, False)
     too_long = {"type": "result", "is_error": True, "result": "Prompt is too long", "session_id": CLAUDE_SID}
     assert last_session(_jsonl(log, CLAUDE_START + [too_long])) == (CLAUDE_SID, False)
+
+
+def test_supervise_accepts_otel_after_the_players(monkeypatch):
+    """`--otel` is stripped before `--supervise` parses players, and reaches the resumed agents."""
+    import railhead.arena_run as ar
+
+    seen = {}
+    monkeypatch.setattr(ar, "supervise", lambda task, out, players, otel: seen.update(
+        task=task, players=[p.label for p in players], otel=otel) or {})
+    assert ar.main(["--supervise", "t", "out", "claude:claude-opus-5-5", "--otel", "http://sink:9"]) == 0
+    assert seen == {"task": "t", "players": ["claude-opus-5-5"], "otel": "http://sink:9"}
+
+
+# ------------------------------------------------------------------ scripted player and launch hygiene
+def test_script_vendor_runs_the_play_script_runner_of_this_environment(tmp_path):
+    import sys
+
+    from railhead.arena_run import resume_command
+
+    script = tmp_path / "aa.rh"
+    script.write_text("rh status\n")
+    p = parse_players([f"script:{script}"])[0]
+    assert (p.vendor, p.model, p.label) == ("script", str(script), "aa.rh")
+    cmd = agent_command(p, "IGNORED", tmp_path)
+    assert cmd == [str(Path(sys.executable).parent / "railhead"), "arena-run", "--play-script", str(script)]
+    assert resume_command(p, None, tmp_path) == cmd  # the runner itself skips the lines already done
+
+
+def test_play_script_records_progress_and_resumes_after_the_last_done_line(tmp_path, capsys):
+    from railhead.arena_run import SCRIPT_DONE, play_script
+
+    script = tmp_path / "s.rh"
+    script.write_text("# comment\necho one\n\necho two\n@sleep 0\necho three\n")
+    (tmp_path / "script.progress").write_text("1")  # "echo one" ran before an interruption
+    assert play_script(script, tmp_path) == 0
+    out = capsys.readouterr().out
+    assert "$ echo one" not in out and "two" in out and "three" in out and out.rstrip().endswith(SCRIPT_DONE)
+    assert (tmp_path / "script.progress").read_text() == "4"
+    play_script(script, tmp_path)
+    assert "two" not in capsys.readouterr().out
+
+
+def test_launch_prints_json_and_keeps_no_log_handle_open(tmp_path, monkeypatch, capsys):
+    import json
+    import os
+
+    import railhead.arena_run as ar
+    from railhead import daemon
+
+    monkeypatch.setattr(daemon, "ensure_up", lambda task, state: 1)
+    monkeypatch.setattr(ar, "agent_command", lambda p, prompt, workdir, otel="": ["true"])
+    before = len(os.listdir("/dev/fd"))
+    assert ar.main(["t", str(tmp_path), "codex:gpt-6-sol"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["launched"] == 1 and (tmp_path / "gpt-6-sol" / "agent.pid").exists()
+    assert len(os.listdir("/dev/fd")) <= before + 1  # the harness log handle at most, not one per player
+    assert "=== launch ===" in (tmp_path / "gpt-6-sol" / "agent.log").read_text()
+    lines = (tmp_path / "arena-run.jsonl").read_text().splitlines()
+    assert json.loads(lines[-1])["msg"] == "launch"

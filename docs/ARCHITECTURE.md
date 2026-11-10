@@ -37,6 +37,8 @@ Refer to [DIAGRAMS.md](DIAGRAMS.md) for the sequence of one action and one wait,
 | Packages | `src/railhead/harbor_export.py`, `hub.py`, `docker/` | Harbor tasks, the image, and the dataset |
 | Arenas and telemetry | `src/railhead/arena.py`, `arena_run.py`, `otel.py`, `trace.py` | Runs several players on one task, records the LLM traces, and joins them with the game |
 | Charts and maps | `src/railhead/figures.py`, `render.py` | Makes the result charts and the route maps in `docs/img/` |
+| Statistics, anchors, and timelapse | `src/railhead/stats.py`, `anchors.py`, `timelapse.py` | Calculates the differences between players on many maps with intervals ([SEEDGAMES.md](SEEDGAMES.md)), runs script AIs as a ceiling ([ANCHORS.md](ANCHORS.md)), and makes a video from replays ([TIMELAPSE.md](TIMELAPSE.md)) |
+| A/B experiments and run records | `src/railhead/ab.py`, `behaviour.py`, `log.py` | Runs the same models on the same tasks with two checkouts, calculates behaviour metrics, and writes a manifest and an event log for each game ([AB.md](AB.md)) |
 
 ## 1. Engine and patches
 
@@ -164,6 +166,7 @@ The checksum uses these values:
 - The position, the state, and the profit of each vehicle.
 - The population of each town.
 - The location of each industry.
+- The digest of the meta decisions of a v2 log, if there is one (`note`). With no digest, the checksum is the same as in v1.
 
 The replay compares this checksum with the checksum in the action log.
 
@@ -220,7 +223,7 @@ The log and the sealed start state are the proof of play.
 
 | Kind | Fields | Description |
 |---|---|---|
-| `header` | `v`, `company`, `ticks`, `checksum` | The start of the log |
+| `header` | `v`, `company`, `ticks`, `checksum` | The start of the log. `v` is 2 (`actionlog.LOG_VERSION`). |
 | `act` | `seq`, `ticks`, `m`, `a`, `ok`, `ret` or `code` | One player action and its result |
 | `wait` | `seq`, `ticks`, `end_ticks`, `a`, `reason`, `checksum` | One wait, from `ticks` to `end_ticks` |
 | `meta` | `seq`, `ticks`, `m`, `a` | One meta decision |
@@ -228,25 +231,37 @@ The log and the sealed start state are the proof of play.
 The log writes each record with sorted keys and flushes the file after each record.
 The value `seq` increases by one for each record.
 
+In a v2 log, `World.note` sends the digest of each `meta` record to the GameScript (`note`) before it writes the record.
+The GameScript adds the digest to its checksum. Thus later wait checksums include the meta decisions.
+A v1 log (the tracked oracle logs and the Arena 2 games) has passive meta records.
+
 ## 7. Replay
 
-The replay loads the start state in a new engine process and sends the log again:
+The replay reads the log one time, loads the start state in a new engine process, and sends the log again:
 
-1. The replay sends each `act` record at its recorded tick, with its recorded arguments.
+1. The replay sends each `act` record at its recorded tick, with its recorded arguments as one object.
 2. For each `wait` record, the replay runs exactly `end_ticks - ticks` ticks. Because of this, a wait that stopped early on an event stops at the same tick in the replay.
-3. The replay ignores `header` and `meta` records.
+3. In a v2 log, the replay sends the digest of each `meta` record to the GameScript, as the live world did. In a v1 log, `meta` records have no effect on the world.
 4. After each wait, the replay compares the checksum with the recorded checksum.
 
 | Condition | Result |
 |---|---|
-| A record has a tick that is not the current tick | `ReplayRejected` |
+| The first record is not a header, or the header version is not accepted | `ReplayRejected` |
+| A `seq` value is not the previous value plus 1 | `ReplayRejected` |
+| A record, `meta` included, has a tick that is not the current tick | `ReplayRejected` |
 | An `act` record names a method that is not in the whitelist | `ReplayRejected` |
-| A `wait` record does not move time forward | `ReplayRejected` |
+| An `act` record is on or after the horizon date (with `horizon_days`) | `ReplayRejected` |
+| A `meta` record names an unknown decision | `ReplayRejected` |
+| A `wait` record has no checksum, or does not move time forward | `ReplayRejected` |
+| A `wait` record ends after the horizon (with `horizon_days`). The replay does not simulate it. | `ReplayRejected` |
 | A record has an unknown kind | `ReplayRejected` |
 | An action has a different result (`ok`) | A divergence |
 | A checksum is different | A divergence |
 
-A divergence is an infrastructure problem. The verifier sets `valid` to 0. It does not set the reward to 0 silently.
+The verifier attributes a divergence with a second replay, up to the first divergence.
+If the two replays agree, the log is false: `rejected = 1` and reward 0.
+If they do not agree, the engine is not deterministic: `valid = 0`.
+For the full rules and the data that supports them, refer to [VERIFICATION.md, 3](VERIFICATION.md#3-log-rules).
 
 ## 8. Daemon
 
@@ -259,8 +274,8 @@ Each request is one JSON line, and each reply is one JSON line.
 | `ping` | Returns the task ID and the process ID. | No |
 | `info` | Returns the task, the date, the horizon, the budgets, the objective, and the briefing. | No |
 | `query` | Sends a read-only GameScript method. | No |
-| `act` | Sends a player action that is in the whitelist. | Yes |
-| `wait` | Lets game time pass, not past the horizon. | Yes |
+| `act` | Examines the arguments with `actions.validate` (also for `rh do`) and sends the canonical arguments of a whitelisted player action. | Yes |
+| `wait` | Examines the wake conditions, then lets game time pass, not past the horizon. | Yes |
 | `meta` | Records a forecast, promise, abstain, flag, or submit. | Yes |
 | `history` | Returns the last records of the log. | No |
 | `fork_*` | Makes, uses, and stops forks. | No |
@@ -270,6 +285,15 @@ When the daemon starts, it loads the sealed `start.sav`.
 If `run/actions.jsonl` is not empty, the daemon replays it to recover the world.
 Then it continues to add records to the same log.
 Because of this, the daemon recovers the exact world after a crash or a `kill -9`.
+The daemon keeps the fork budget in `run/forks.json`. Thus a restart does not reset the budget.
+
+The arguments of a request go as one object from the daemon through `World` and the bridge to the GameScript.
+Because of this, an argument name such as `timeout` cannot change how long the bridge waits.
+
+If the engine does not reply to an `act`, `wait`, or `meta` request, `World` raises `WorldFault`, because the daemon cannot know if the engine applied the request.
+The daemon then stops the engine, rebuilds the world from the log by the same replay, and replies `ERR_INFRA`.
+The log does not contain the failed request, so the live world is again equal to the log.
+A GameScript refusal (`BridgeError`) is different: the daemon records it, because a replay gives the same refusal.
 
 The function `ensure_up` starts the daemon if it does not run.
 It uses a file lock.
@@ -287,7 +311,7 @@ A fork is a copy of the world in a different engine process.
 | Random values | The daemon reseeds the fork with a seed from the task ID and the fork number. |
 | Exact fork | Only with `exact=true` and `allow_exact_forks` in the task limits |
 | Maximum live forks | `max_forks` in the task limits. The default is 2. |
-| Budget | `max_fork_days` in the task limits. Each fork wait decreases it by the days that pass. |
+| Budget | `max_fork_days` in the task limits. Each fork wait decreases it by the days that pass. The daemon keeps the budget in `run/forks.json`, so a restart does not reset it. |
 | Effect on the reward | None. The daemon does not record fork requests. |
 
 The reseed changes the random values of industry production, breakdowns, and town growth.
@@ -407,5 +431,5 @@ The module `railhead.hub` writes Parquet files for the Hugging Face dataset.
 
 | Workflow | Trigger | Steps |
 |---|---|---|
-| `ci.yml` | A push to `main`, a pull request, or a manual start | Job `test`: builds the engine, keeps it in the cache, and runs all tests. Job `recheck`: six parallel shards replay the oracle log of each task on Linux amd64 and compare the reward with the certificate (`railhead recheck tasks --shard i/6 --jobs 4`). |
+| `ci.yml` | A push to `main`, a pull request, or a manual start | Job `lint`: runs `ruff check` with ruff 0.17.4. Job `engine`: builds the engine one time for each change in `engine/` and keeps the installed engine in the cache. Job `test`: restores the engine and runs all tests. Job `recheck`: six parallel shards replay the oracle log of each task on Linux amd64 and compare the reward with the certificate (`railhead recheck tasks --shard i/6 --jobs 4`). |
 | `image.yml` | A tag that starts with `v`, or a manual start | Builds the image for `linux/amd64` and `linux/arm64` and pushes it to `ghcr.io/<owner>/railhead`. |

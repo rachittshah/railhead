@@ -84,7 +84,9 @@ flowchart TD
     S -->|"no"| T
     S -->|"yes"| RP["Replay the log in a new engine<br/>whitelist, ticks from the log"]
     RP -->|"rejected, or after the horizon"| X["rejected = 1<br/>reward 0"]
-    RP -->|"a checksum is different"| DV["divergence<br/>valid = 0"]
+    RP -->|"a checksum is different"| R2{"Replay a second time:<br/>do the two replays agree?"}
+    R2 -->|"yes: the log is false"| X
+    R2 -->|"no: the engine is not deterministic"| DV["valid = 0<br/>drop the result"]
     RP --> H["Run to the end of the horizon<br/>without the agent"]
     H --> L1["Read the objective ledger"]
     L1 --> RO["Run-off: the world continues<br/>without the agent"]

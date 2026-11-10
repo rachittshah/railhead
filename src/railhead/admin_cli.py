@@ -9,8 +9,12 @@
     railhead arena-run <task> <dir> claude:<model> codex:<model> ...   launch an arena (headless, traced)
     railhead arena-run --supervise|--resume <task> <dir> <players...>   resume after provider errors | after a crash or reboot
     railhead arena <dir> [--json]  scoreboard of several players on one task (growth curves)
-    railhead view --attach <state_dir>  spectate a live daemon world
-    railhead view <task_id> [--days N] [--speed PCT]   watch a task live in the GUI (macOS)
+    railhead ab plan|run|status|collect|report <plan.json>   A/B experiment between checkouts (docs/AB.md)
+    railhead stats <export.json|map_dir>... [--tasks DIR] [--finished-only] [--out FILE]   paired differences across maps, with intervals (docs/SEEDGAMES.md)
+    railhead anchor fetch <AI>... | anchor <task_dir> --ai <AI> [--seeds N] [--out FILE]   script AIs as a ceiling on a task (docs/ANCHORS.md)
+    railhead timelapse <arena_dir> --task tasks/<id> --out DIR   video of the networks growing, every frame from a replay (docs/TIMELAPSE.md)
+    railhead view --attach <state_dir> [--bounds x,y,w,h]  spectate a live daemon world
+    railhead view <task_id> [--days N] [--speed PCT] [--log L] [--bounds x,y,w,h]   watch a task live in the GUI (macOS)
     railhead export-manifest <out>  add this CPU architecture's sealed manifest to exported tasks
     railhead hub build <tasks> <harbor> <out> [--credit] | railhead hub push <out> [--repo R]
     railhead hub add-games <out> <arena_dir> <task_dir> [--rename a=b,...]   add an arena's verified games
@@ -27,7 +31,6 @@ from __future__ import annotations
 
 import json
 import sys
-
 from pathlib import Path
 
 from railhead.actionlog import read_log
@@ -52,13 +55,18 @@ def shard_dirs(dirs: list[Path], i: int, n: int) -> list[Path]:
 
 
 def _recheck_one(tdir_s: str) -> dict:
+    import shutil
     import tempfile
 
     from railhead.verify import verify
 
     tdir = Path(tdir_s)
     cert = json.loads((tdir / "certificates.json").read_text())
-    out = verify(tdir, tdir / "start.sav", tdir / "oracle.jsonl", Path(tempfile.mkdtemp(prefix="rh-recheck-")))
+    work = Path(tempfile.mkdtemp(prefix="rh-recheck-"))
+    try:
+        out = verify(tdir, tdir / "start.sav", tdir / "oracle.jsonl", work)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)  # replay + probe engine dirs (saves, logs) per task
     same = out["valid"] == 1 and abs(out["reward"] - cert["oracle_reward"]) < 1e-9
     return {"task": tdir.name, "match": same, "reward": out["reward"], "cert": cert["oracle_reward"],
             "delivered": out.get("delivered"), "valid": out["valid"]}
@@ -130,21 +138,18 @@ def main(argv: list[str] | None = None) -> int:
             from railhead.arena import main as arena_main
 
             return arena_main(argv[1:])
-        if cmd == "view":
-            from railhead.viewer import attach, view
+        if cmd == "anchor":  # railhead anchor fetch <AI>... | anchor <task_dir> --ai <AI> [--seeds N] [--out F]
+            from railhead.anchors import main as anchor_main
 
-            try:
-                if len(argv) > 2 and argv[1] == "--attach":
-                    attach(Path(argv[2]))
-                    return 0
-                days = int(argv[argv.index("--days") + 1]) if "--days" in argv else 365
-                speed = int(argv[argv.index("--speed") + 1]) if "--speed" in argv else 300
-                log = Path(argv[argv.index("--log") + 1]) if "--log" in argv else None
-                view(argv[1], days=days, speed=speed, log=log)
-            except RuntimeError as e:  # no LG monitor, or the window did not land on it
-                print(f"railhead view: {e}", file=sys.stderr)
-                return 1
-            return 0
+            return anchor_main(argv[1:])
+        if cmd == "stats":  # railhead stats <exports|map dirs>... | stats collect ... (multi-map intervals)
+            from railhead.stats import main as stats_main
+
+            return stats_main(argv[1:])
+        if cmd == "view":
+            from railhead.viewer import main as view_main
+
+            return view_main(argv[1:])
         if cmd == "export-manifest":
             from railhead.harbor_export import add_arch_manifests
 
@@ -176,6 +181,10 @@ def main(argv: list[str] | None = None) -> int:
             from railhead.econ import main as econ_main
 
             return econ_main(argv[1:])
+        if cmd == "ab":  # railhead ab plan|run|status|collect|report <plan> | ab behaviour <player_dir> (A/B tests)
+            from railhead.ab import main as ab_main
+
+            return ab_main(argv[1:])
         if cmd == "figures":
             from railhead.figures import main as figures_main
 
@@ -184,6 +193,10 @@ def main(argv: list[str] | None = None) -> int:
             from railhead.render import main as render_main
 
             return render_main(argv[1:])
+        if cmd == "timelapse":
+            from railhead.timelapse import main as timelapse_main
+
+            return timelapse_main(argv[1:])
         if cmd == "harden":
             from railhead.gen.build import harden_catalog
 
@@ -207,9 +220,9 @@ def main(argv: list[str] | None = None) -> int:
 
             return gen_main(argv[1:])
         if cmd == "export":
-            from railhead.harbor_export import DEFAULT_IMAGE, export_all
+            from railhead.harbor_export import DEFAULT_IMAGE, DEFAULT_VERSION, export_all
 
-            image, version, rest = DEFAULT_IMAGE, "0.1.0", []
+            image, version, rest = DEFAULT_IMAGE, DEFAULT_VERSION, []
             it = iter(argv[1:])
             for a in it:
                 if a == "--image":

@@ -39,12 +39,58 @@ INFO_HELP = [
     "rh status | brief | info | history [n=30]",
     "rh towns | industries | stations | vehicles | depots [vtype=road] | company | cargos | subsidies",
     "rh engines vtype=road|rail|air|water        vehicles you can buy",
-    "rh map x=0 y=0 w=48 h=24 [layer=kind|height|owner|slope|build]",
-    "rh tile tile=X,Y [radius=3] | rh catchment tile=X,Y | rh orders vehicle=N",
+    "rh map x=0 y=0 w=48 h=24 [layer=kind|height|owner|slope|build|dock]   (layer=dock: d = a dock fits)",
+    "rh map x=0 y=0 w=512 h=512 step=8           overview: every 8th tile (the minimap; finds lakes and sea)",
+    "rh tile tile=X,Y [radius=3]   one tile: slope, dock fit, rail pieces, signals, catchment",
+    "rh catchment tile=X,Y w=W h=H radius=R     what a station of W x H tiles accepts and gets (train R=4, dock 5)",
+    "rh orders vehicle=N",
     "rh fork create|list|drop name=F | fork do name=F m=<gs_method> ... | fork wait name=F days=N",
     "rh fork q name=F m=company|vehicles|stations ...   read the state of a fork (same queries as above)",
     "rh q <query> k=v | rh do <gs_method> k=v    raw JSON escape hatches;  add --json to any command",
 ]
+
+
+#: Minimal working recipes, shown by `rh help rail` / `rh help water` (docs/USAGE.md has the long form).
+RECIPES: dict[str, list[str]] = {
+    "rail": [
+        "RECIPE: one coal train (about 20 actions; measured payback 0.7 years from 1960, 1.2 years from 1990)",
+        " 1 rh industries cargo=1 role=produces  and  ... role=accepts   (rh cargos: COAL is 1 in temperate)",
+        "   choose a mine and a power station 20-60 tiles apart, with flat clear land between them",
+        " 2 rh catchment tile=X,Y w=3 h=1 radius=4   (w=1 h=3 for axis=y): the station footprint must",
+        "   show COAL in 'produces' at the mine and COAL accepted at the power station",
+        " 3 rh rail station tile=X,Y axis=x platforms=1 length=3 join_station=-1   (at each end; flat land)",
+        " 4 track: rh rail line from_tile=A to_tile=B for each straight run (same x or same y), starting on",
+        "   the tile next to a platform end. At a turn put ONE corner piece: rh rail track tile=T track=P.",
+        "   Tile sides: ne = x-1, sw = x+1, nw = y-1, se = y+1. P names the two sides the train uses:",
+        "   nw_ne, sw_se, nw_sw or ne_se (e.g. arrive from x-1, leave to y+1: ne_se).",
+        "   Keep 2 or more straight tiles between turns: OpenTTD forbids 90-degree turns.",
+        " 5 rh rail depot tile=D front_tile=E   D = the tile behind a platform end E (it faces into the",
+        "   platform). If the reply has a hint, the depot is not joined to track: fix the front tile.",
+        " 6 rh engines vtype=rail cargo=1   a locomotive (wagon=no) and a wagon with carries=yes",
+        " 7 rh vehicle buy depot_tile=D engine=LOCO   -> V;   4 times: rh vehicle buy depot_tile=D engine=WAGON",
+        "   cargo=COAL -> W, then rh vehicle attach vehicle=W train_vehicle=V",
+        " 8 rh order append vehicle=V tile=<mine station> flags='[\"full_load_any\"]'",
+        "   rh order append vehicle=V tile=<power station> flags='[\"unload\",\"no_load\"]'",
+        "   rh vehicle start vehicle=V",
+        " 9 check: rh tile tile=X,Y shows the rail pieces on a tile; rh vehicles shows profit and state.",
+        " One train per single track. A second train needs a passing loop and signals (rh rail signal).",
+    ],
+    "water": [
+        "RECIPE: a passenger ferry between two towns on one lake or sea (about 13 actions)",
+        " 1 rh map x=0 y=0 w=512 h=512 step=8   overview: find water (~) with towns (rh towns) on its shore",
+        " 2 rh map x=X y=Y w=40 h=30 layer=dock   'd' marks tiles where a dock fits",
+        "   rh tile tile=X,Y   'Dock: yes' and PASS accepted (a dock's catchment radius is 5)",
+        " 3 rh water dock tile=A join_station=-1   and the same at B. Both docks must touch the same water:",
+        "   ships cannot cross land or sloped river tiles (rapids: '1' in rh map layer=slope); locks pass them.",
+        " 4 rh water ship_depot tile=T toward_tile=T2   T and the next tile in +x or +y must be flat open",
+        "   water near dock A; T2 is any neighbour of T in x or y and only sets the direction",
+        " 5 rh engines vtype=water cargo=0   a ferry (carries=yes)",
+        " 6 rh vehicle buy depot_tile=T engine=E cargo=PASS -> V",
+        "   rh order append vehicle=V tile=A;  rh order append vehicle=V tile=B;  rh vehicle start vehicle=V",
+        " 7 more ferries: rh vehicle clone depot_tile=T vehicle=V share_orders=true, then rh vehicle start",
+        " 1960 ferries are slow (32 km/h, 100 passengers): short crossings pay better than long voyages.",
+    ],
+}
 
 
 def _param_usage(p) -> str:
@@ -85,7 +131,10 @@ def help_text(group: str | None = None) -> str:
                 lines.append(f"      {spec.doc}")
     if group is None:
         lines += ["", "TIME AND DECISIONS"] + [f"  {x}" for x in META_HELP]
-        lines += ["", "Details for one group: rh help <group>   (e.g. rh help vehicle)"]
+        lines += ["", "Details for one group: rh help <group>   (e.g. rh help vehicle)",
+                  "Route recipes (the minimal calls that work): rh help rail | rh help water"]
+    elif group in RECIPES:
+        lines += [""] + RECIPES[group]
     return "\n".join(lines)
 
 
@@ -149,13 +198,13 @@ def _labels(c: Client) -> dict[int, str]:
 def _status(c: Client, info: dict) -> str:
     from railhead.observe import format_status, money
 
-    q = lambda m: c.request("query", m=m)  # noqa: E731
+    q = lambda m: c.request("query", m=m)
     text = format_status(q("map_info"), q("company"), q("vehicles"), q("stations"), labels=_labels(c))
     obj = info.get("objective") or {}
     lines = [text, "",
              f"task {info['task_id']} ({info['family']}): {info.get('title', '')}",
-             f"days left {info['days_left']} of {info['horizon_days']} | run-off after: {info['runoff_days']} days | "
-             f"fork-days left {info['fork_days_left']} | forks {info['forks_alive'] or '-'}"]
+             (f"days left {info['days_left']} of {info['horizon_days']} | run-off after: {info['runoff_days']} days | "
+              f"fork-days left {info['fork_days_left']} | forks {info['forks_alive'] or '-'}")]
     if "monitor" in obj:
         done = next((m["total"] for m in c.request("query", m="monitor_read") if m["id"] == obj["monitor"]), 0)
         target = obj.get("quantity")
@@ -182,8 +231,10 @@ def _render(cmd: str, result: Any, c: Client, args: dict) -> str | None:
     if cmd == "tile":
         return observe.format_tile(result, _labels(c))
     if cmd == "engines" and isinstance(result, list):
-        fields = ["id", "name", "cargo", "capacity", "speed", "price", "running_cost", "reliability", "wagon", "power"]
-        return observe.format_table(result, [f for f in fields if result and f in result[0]], page=int(args.get("page", 1)))
+        fields = ["id", "name", "cargo", "capacity", "speed", "price", "running_cost", "reliability", "wagon", "power",
+                  "rail_type", "carries", "refit_cargos"]
+        return observe.format_table(result, [f for f in fields if result and f in result[0]],
+                                    page=int(args.get("page", 1)), labels=_labels(c))
     if isinstance(result, list) and result and isinstance(result[0], dict):
         return observe.format_table(result, list(result[0].keys())[:10], page=int(args.get("page", 1)))
     return None
@@ -225,7 +276,8 @@ def _run(argv: list[str], as_json: bool) -> int:
         else:
             print(f"# {info.get('title') or info['task_id']}\n\n{info.get('briefing', '')}\n\n"
                   f"horizon {info['horizon_days']} days, run-off {info['runoff_days']} days, "
-                  f"fork budget {info['fork_days_left']} days")
+                  f"fork budget {info['fork_days_left']} days\n\n"
+                  "Route recipes (the minimal calls that work): rh help rail | rh help water")
         return 0
     if cmd == "history":
         _print(c.request("history", **parse_kv(rest, mx)), as_json)
@@ -259,6 +311,8 @@ def _run(argv: list[str], as_json: bool) -> int:
         if sub in ("create", "list", "drop"):
             _print(c.request(f"fork_{sub}", name=name, **kv), as_json)
         elif sub == "wait":
+            if isinstance(kv.get("until"), str):
+                kv["until"] = [u for u in kv["until"].split(",") if u]
             _print(c.request("fork_wait", name=name, **kv), as_json)
         elif sub in ("q", "do"):
             m = kv.pop("m")

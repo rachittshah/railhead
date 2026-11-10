@@ -2,8 +2,6 @@
 
 import pytest
 
-from railhead.world import World
-
 pytestmark = pytest.mark.integration
 
 

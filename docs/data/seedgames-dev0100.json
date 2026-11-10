@@ -1,0 +1,727 @@
+{
+ "maps": [
+  {
+   "task": "arena-dev-0100",
+   "objective": {
+    "w_idle": -36300,
+    "w_base": 147407
+   },
+   "horizon_days": 3650,
+   "runoff_days": 365,
+   "results": [
+    {
+     "player": "claude-opus-5-5",
+     "vehicles": 142,
+     "stations": 52,
+     "reached": "1970-01-29",
+     "end": "submitted",
+     "days_played": 3650,
+     "submitted": 1,
+     "status": "verified",
+     "net_worth": 45758664,
+     "net_worth_horizon": 41323272,
+     "gain_x_baseline": 249.3,
+     "score_k50": 1.0,
+     "score_k1000": 0.799,
+     "actions": 554,
+     "failed_actions": 17,
+     "waits": 30,
+     "divergences": 0,
+     "valid": 1
+    },
+    {
+     "player": "gpt-6-astra",
+     "vehicles": 45,
+     "stations": 34,
+     "reached": "1970-01-29",
+     "end": "submitted",
+     "days_played": 3650,
+     "submitted": 1,
+     "status": "verified",
+     "net_worth": 27935307,
+     "net_worth_horizon": 24196367,
+     "gain_x_baseline": 152.3,
+     "score_k50": 1.0,
+     "score_k1000": 0.728,
+     "actions": 298,
+     "failed_actions": 28,
+     "waits": 14,
+     "divergences": 0,
+     "valid": 1
+    },
+    {
+     "player": "gpt-6-sol",
+     "vehicles": 59,
+     "stations": 37,
+     "reached": "1970-01-29",
+     "end": "submitted",
+     "days_played": 3650,
+     "submitted": 1,
+     "status": "verified",
+     "net_worth": 27232656,
+     "net_worth_horizon": 24076624,
+     "gain_x_baseline": 148.4,
+     "score_k50": 1.0,
+     "score_k1000": 0.725,
+     "actions": 639,
+     "failed_actions": 262,
+     "waits": 24,
+     "divergences": 0,
+     "valid": 1
+    },
+    {
+     "player": "baseline",
+     "status": "certificate",
+     "net_worth": 147407,
+     "gain_x_baseline": 1.0
+    },
+    {
+     "player": "idle",
+     "status": "certificate",
+     "net_worth": -36300,
+     "gain_x_baseline": 0.0
+    }
+   ],
+   "curves": {
+    "claude-opus-5-5": [
+     {
+      "date": "1960-02-07",
+      "net_worth": -108015,
+      "money": 191985,
+      "loan": 300000,
+      "vehicles": 2,
+      "stations": 2,
+      "acts": 19
+     },
+     {
+      "date": "1960-02-11",
+      "net_worth": -108163,
+      "money": 191837,
+      "loan": 300000,
+      "vehicles": 2,
+      "stations": 2,
+      "acts": 19
+     },
+     {
+      "date": "1960-02-13",
+      "net_worth": -108237,
+      "money": 191763,
+      "loan": 300000,
+      "vehicles": 2,
+      "stations": 2,
+      "acts": 19
+     },
+     {
+      "date": "1960-03-24",
+      "net_worth": -450279,
+      "money": 49721,
+      "loan": 500000,
+      "vehicles": 8,
+      "stations": 8,
+      "acts": 48
+     },
+     {
+      "date": "1960-05-23",
+      "net_worth": -363713,
+      "money": 136287,
+      "loan": 500000,
+      "vehicles": 8,
+      "stations": 8,
+      "acts": 48
+     },
+     {
+      "date": "1960-06-22",
+      "net_worth": -343012,
+      "money": 156988,
+      "loan": 500000,
+      "vehicles": 11,
+      "stations": 8,
+      "acts": 57
+     },
+     {
+      "date": "1960-07-22",
+      "net_worth": -378017,
+      "money": 121983,
+      "loan": 500000,
+      "vehicles": 14,
+      "stations": 8,
+      "acts": 71
+     },
+     {
+      "date": "1960-08-21",
+      "net_worth": -290908,
+      "money": 209092,
+      "loan": 500000,
+      "vehicles": 16,
+      "stations": 10,
+      "acts": 80
+     },
+     {
+      "date": "1960-09-20",
+      "net_worth": -194492,
+      "money": 305508,
+      "loan": 500000,
+      "vehicles": 19,
+      "stations": 12,
+      "acts": 93
+     },
+     {
+      "date": "1960-10-20",
+      "net_worth": -238327,
+      "money": 261673,
+      "loan": 500000,
+      "vehicles": 24,
+      "stations": 16,
+      "acts": 115
+     },
+     {
+      "date": "1960-11-19",
+      "net_worth": -327269,
+      "money": 172731,
+      "loan": 500000,
+      "vehicles": 28,
+      "stations": 18,
+      "acts": 131
+     },
+     {
+      "date": "1960-12-19",
+      "net_worth": -78607,
+      "money": 421393,
+      "loan": 500000,
+      "vehicles": 31,
+      "stations": 18,
+      "acts": 140
+     },
+     {
+      "date": "1961-01-18",
+      "net_worth": -138077,
+      "money": 361923,
+      "loan": 500000,
+      "vehicles": 39,
+      "stations": 22,
+      "acts": 171
+     },
+     {
+      "date": "1961-02-17",
+      "net_worth": -22556,
+      "money": 477444,
+      "loan": 500000,
+      "vehicles": 43,
+      "stations": 26,
+      "acts": 189
+     },
+     {
+      "date": "1961-04-03",
+      "net_worth": 53595,
+      "money": 553595,
+      "loan": 500000,
+      "vehicles": 51,
+      "stations": 28,
+      "acts": 217
+     },
+     {
+      "date": "1961-06-02",
+      "net_worth": 445178,
+      "money": 945178,
+      "loan": 500000,
+      "vehicles": 63,
+      "stations": 32,
+      "acts": 256
+     },
+     {
+      "date": "1961-08-01",
+      "net_worth": 685618,
+      "money": 1185618,
+      "loan": 500000,
+      "vehicles": 79,
+      "stations": 40,
+      "acts": 317
+     },
+     {
+      "date": "1961-10-30",
+      "net_worth": 1601081,
+      "money": 2101081,
+      "loan": 500000,
+      "vehicles": 94,
+      "stations": 46,
+      "acts": 372
+     },
+     {
+      "date": "1962-02-27",
+      "net_worth": 3299491,
+      "money": 3299491,
+      "loan": 0,
+      "vehicles": 112,
+      "stations": 50,
+      "acts": 427
+     },
+     {
+      "date": "1962-06-27",
+      "net_worth": 5590869,
+      "money": 5590869,
+      "loan": 0,
+      "vehicles": 119,
+      "stations": 50,
+      "acts": 444
+     },
+     {
+      "date": "1962-11-24",
+      "net_worth": 8047340,
+      "money": 8047340,
+      "loan": 0,
+      "vehicles": 127,
+      "stations": 52,
+      "acts": 472
+     },
+     {
+      "date": "1963-07-22",
+      "net_worth": 11999983,
+      "money": 11999983,
+      "loan": 0,
+      "vehicles": 128,
+      "stations": 52,
+      "acts": 476
+     },
+     {
+      "date": "1964-03-18",
+      "net_worth": 14282426,
+      "money": 14282426,
+      "loan": 0,
+      "vehicles": 133,
+      "stations": 52,
+      "acts": 500
+     },
+     {
+      "date": "1965-01-12",
+      "net_worth": 18228487,
+      "money": 18228487,
+      "loan": 0,
+      "vehicles": 137,
+      "stations": 52,
+      "acts": 513
+     },
+     {
+      "date": "1965-05-02",
+      "net_worth": 19421395,
+      "money": 19421395,
+      "loan": 0,
+      "vehicles": 137,
+      "stations": 52,
+      "acts": 523
+     },
+     {
+      "date": "1966-05-02",
+      "net_worth": 24529145,
+      "money": 24529145,
+      "loan": 0,
+      "vehicles": 136,
+      "stations": 52,
+      "acts": 526
+     },
+     {
+      "date": "1967-05-02",
+      "net_worth": 28998187,
+      "money": 28998187,
+      "loan": 0,
+      "vehicles": 146,
+      "stations": 52,
+      "acts": 554
+     },
+     {
+      "date": "1968-05-01",
+      "net_worth": 33705495,
+      "money": 33705495,
+      "loan": 0,
+      "vehicles": 145,
+      "stations": 52,
+      "acts": 554
+     },
+     {
+      "date": "1969-05-01",
+      "net_worth": 38136359,
+      "money": 38136359,
+      "loan": 0,
+      "vehicles": 143,
+      "stations": 52,
+      "acts": 554
+     },
+     {
+      "date": "1970-01-29",
+      "net_worth": 41323272,
+      "money": 41323272,
+      "loan": 0,
+      "vehicles": 142,
+      "stations": 52,
+      "acts": 554
+     }
+    ],
+    "gpt-6-astra": [
+     {
+      "date": "1960-07-30",
+      "net_worth": -77386,
+      "money": 22614,
+      "loan": 100000,
+      "vehicles": 1,
+      "stations": 2,
+      "acts": 11
+     },
+     {
+      "date": "1961-07-30",
+      "net_worth": 492476,
+      "money": 992476,
+      "loan": 500000,
+      "vehicles": 6,
+      "stations": 7,
+      "acts": 36
+     },
+     {
+      "date": "1962-07-30",
+      "net_worth": 1791504,
+      "money": 1791504,
+      "loan": 0,
+      "vehicles": 16,
+      "stations": 13,
+      "acts": 82
+     },
+     {
+      "date": "1963-07-30",
+      "net_worth": 3453701,
+      "money": 3453701,
+      "loan": 0,
+      "vehicles": 24,
+      "stations": 22,
+      "acts": 142
+     },
+     {
+      "date": "1964-07-29",
+      "net_worth": 5360366,
+      "money": 5360366,
+      "loan": 0,
+      "vehicles": 26,
+      "stations": 22,
+      "acts": 169
+     },
+     {
+      "date": "1965-07-29",
+      "net_worth": 7485868,
+      "money": 7485868,
+      "loan": 0,
+      "vehicles": 41,
+      "stations": 30,
+      "acts": 232
+     },
+     {
+      "date": "1966-07-29",
+      "net_worth": 11145331,
+      "money": 11145331,
+      "loan": 0,
+      "vehicles": 41,
+      "stations": 30,
+      "acts": 254
+     },
+     {
+      "date": "1966-09-27",
+      "net_worth": 11398708,
+      "money": 11398708,
+      "loan": 0,
+      "vehicles": 45,
+      "stations": 34,
+      "acts": 276
+     },
+     {
+      "date": "1967-09-27",
+      "net_worth": 15419876,
+      "money": 15419876,
+      "loan": 0,
+      "vehicles": 46,
+      "stations": 34,
+      "acts": 284
+     },
+     {
+      "date": "1968-01-30",
+      "net_worth": 16647094,
+      "money": 16647094,
+      "loan": 0,
+      "vehicles": 47,
+      "stations": 34,
+      "acts": 290
+     },
+     {
+      "date": "1969-01-29",
+      "net_worth": 20515017,
+      "money": 20515017,
+      "loan": 0,
+      "vehicles": 46,
+      "stations": 34,
+      "acts": 296
+     },
+     {
+      "date": "1969-09-26",
+      "net_worth": 22901319,
+      "money": 22901319,
+      "loan": 0,
+      "vehicles": 46,
+      "stations": 34,
+      "acts": 296
+     },
+     {
+      "date": "1969-11-30",
+      "net_worth": 23565941,
+      "money": 23565941,
+      "loan": 0,
+      "vehicles": 46,
+      "stations": 34,
+      "acts": 297
+     },
+     {
+      "date": "1970-01-29",
+      "net_worth": 24196367,
+      "money": 24196367,
+      "loan": 0,
+      "vehicles": 45,
+      "stations": 34,
+      "acts": 298
+     }
+    ],
+    "gpt-6-sol": [
+     {
+      "date": "1960-05-31",
+      "net_worth": -68706,
+      "money": 31294,
+      "loan": 100000,
+      "vehicles": 1,
+      "stations": 2,
+      "acts": 20
+     },
+     {
+      "date": "1960-09-28",
+      "net_worth": -33331,
+      "money": 66669,
+      "loan": 100000,
+      "vehicles": 1,
+      "stations": 2,
+      "acts": 20
+     },
+     {
+      "date": "1961-03-27",
+      "net_worth": 43986,
+      "money": 143986,
+      "loan": 100000,
+      "vehicles": 3,
+      "stations": 2,
+      "acts": 41
+     },
+     {
+      "date": "1961-09-23",
+      "net_worth": 117943,
+      "money": 217943,
+      "loan": 100000,
+      "vehicles": 6,
+      "stations": 4,
+      "acts": 51
+     },
+     {
+      "date": "1962-03-22",
+      "net_worth": 414452,
+      "money": 514452,
+      "loan": 100000,
+      "vehicles": 9,
+      "stations": 6,
+      "acts": 61
+     },
+     {
+      "date": "1962-09-18",
+      "net_worth": 1141169,
+      "money": 1241169,
+      "loan": 100000,
+      "vehicles": 13,
+      "stations": 6,
+      "acts": 73
+     },
+     {
+      "date": "1963-03-17",
+      "net_worth": 1880590,
+      "money": 1980590,
+      "loan": 100000,
+      "vehicles": 21,
+      "stations": 11,
+      "acts": 157
+     },
+     {
+      "date": "1963-07-15",
+      "net_worth": 2599795,
+      "money": 2699795,
+      "loan": 100000,
+      "vehicles": 21,
+      "stations": 11,
+      "acts": 162
+     },
+     {
+      "date": "1964-01-11",
+      "net_worth": 3432685,
+      "money": 3532685,
+      "loan": 100000,
+      "vehicles": 22,
+      "stations": 13,
+      "acts": 188
+     },
+     {
+      "date": "1964-07-09",
+      "net_worth": 4304500,
+      "money": 4404500,
+      "loan": 100000,
+      "vehicles": 29,
+      "stations": 16,
+      "acts": 267
+     },
+     {
+      "date": "1965-01-05",
+      "net_worth": 5457133,
+      "money": 5557133,
+      "loan": 100000,
+      "vehicles": 33,
+      "stations": 20,
+      "acts": 414
+     },
+     {
+      "date": "1965-03-06",
+      "net_worth": 5916705,
+      "money": 6016705,
+      "loan": 100000,
+      "vehicles": 33,
+      "stations": 20,
+      "acts": 416
+     },
+     {
+      "date": "1965-09-02",
+      "net_worth": 7459270,
+      "money": 7459270,
+      "loan": 0,
+      "vehicles": 38,
+      "stations": 20,
+      "acts": 447
+     },
+     {
+      "date": "1966-03-01",
+      "net_worth": 8882854,
+      "money": 8882854,
+      "loan": 0,
+      "vehicles": 44,
+      "stations": 26,
+      "acts": 521
+     },
+     {
+      "date": "1966-08-28",
+      "net_worth": 11067274,
+      "money": 11067274,
+      "loan": 0,
+      "vehicles": 48,
+      "stations": 27,
+      "acts": 551
+     },
+     {
+      "date": "1966-10-27",
+      "net_worth": 11606072,
+      "money": 11606072,
+      "loan": 0,
+      "vehicles": 48,
+      "stations": 27,
+      "acts": 553
+     },
+     {
+      "date": "1967-04-25",
+      "net_worth": 13405819,
+      "money": 13405819,
+      "loan": 0,
+      "vehicles": 49,
+      "stations": 29,
+      "acts": 569
+     },
+     {
+      "date": "1967-10-22",
+      "net_worth": 15241846,
+      "money": 15241846,
+      "loan": 0,
+      "vehicles": 55,
+      "stations": 35,
+      "acts": 607
+     },
+     {
+      "date": "1968-04-19",
+      "net_worth": 17265448,
+      "money": 17265448,
+      "loan": 0,
+      "vehicles": 59,
+      "stations": 37,
+      "acts": 631
+     },
+     {
+      "date": "1969-03-10",
+      "net_worth": 20898355,
+      "money": 20898355,
+      "loan": 0,
+      "vehicles": 60,
+      "stations": 37,
+      "acts": 635
+     },
+     {
+      "date": "1969-05-09",
+      "net_worth": 21543500,
+      "money": 21543500,
+      "loan": 0,
+      "vehicles": 60,
+      "stations": 37,
+      "acts": 635
+     },
+     {
+      "date": "1969-09-06",
+      "net_worth": 22689897,
+      "money": 22689897,
+      "loan": 0,
+      "vehicles": 60,
+      "stations": 37,
+      "acts": 637
+     },
+     {
+      "date": "1969-11-15",
+      "net_worth": 23343941,
+      "money": 23343941,
+      "loan": 0,
+      "vehicles": 60,
+      "stations": 37,
+      "acts": 638
+     },
+     {
+      "date": "1970-01-29",
+      "net_worth": 24076624,
+      "money": 24076624,
+      "loan": 0,
+      "vehicles": 59,
+      "stations": 37,
+      "acts": 639
+     }
+    ]
+   },
+   "fleet_mix": {
+    "claude-opus-5-5": {
+     "road": 0,
+     "rail": 0,
+     "air": 154,
+     "water": 0
+    },
+    "gpt-6-astra": {
+     "road": 2,
+     "rail": 9,
+     "air": 48,
+     "water": 0
+    },
+    "gpt-6-sol": {
+     "road": 8,
+     "rail": 10,
+     "air": 55,
+     "water": 0
+    }
+   }
+  }
+ ]
+}

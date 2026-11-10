@@ -8,8 +8,12 @@ It is mapped into [0,1] *affinely* — clipping would break properness.
 
 from __future__ import annotations
 
+import math
+
 
 def _clip(x: float) -> float:
+    if math.isnan(x):  # NaN: never a reward (and never "NaN" in reward.json, which is not JSON)
+        return 0.0
     return 0.0 if x < 0 else 1.0 if x > 1 else float(x)
 
 

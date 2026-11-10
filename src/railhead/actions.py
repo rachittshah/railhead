@@ -166,12 +166,16 @@ _SPECS: list[ActionSpec] = [
     # ---------------------------------------------------------------- air / water
     _spec("air.airport", "Build an airport with its north corner at tile.",
           _tile("tile", "North corner of the airport."), _enum("type", AIRPORTS, "Airport type."), JOIN),
-    _spec("water.dock", "Build a dock on a sloped coast tile (the land tile next to water).",
-          _tile("tile", "Sloped land tile at the water's edge."), JOIN),
+    _spec("water.dock", "Build a dock on a shore tile that slopes down to the water on one side; the two tiles on "
+          "the low side must be flat water (rh map layer=dock marks such tiles, rh tile shows `dock`). "
+          "Catchment radius 5. Reply: station, water_tile (where ships stop).",
+          _tile("tile", "Inclined land or coast tile at the water's edge."), JOIN),
     _spec("water.canal", "Build a canal on a tile.", _tile("tile", "Tile to turn into canal.")),
     _spec("water.lock", "Build a lock on a straight sloped tile of a waterway.", _tile("tile", "Middle (sloped) tile of the lock.")),
-    _spec("water.ship_depot", "Build a ship depot (2 tiles) on water, oriented toward toward_tile.",
-          _tile("tile", "Water tile for the depot."), _tile("toward_tile", "Neighbour on the depot's axis.")),
+    _spec("water.ship_depot", "Build a ship depot on 2 flat open-water tiles: tile and the next tile in +x (if "
+          "toward_tile is beside tile in x) or in +y (if beside it in y). It must be on the same water as your docks.",
+          _tile("tile", "First (north-most) water tile of the depot."),
+          _tile("toward_tile", "Any x- or y-neighbour of tile; it only sets the axis.")),
     # ---------------------------------------------------------------- bridges / tunnels
     _spec("bridge.build", "Build a bridge between two tiles in a straight line (road bridges add road on both ends).",
           _tile("start_tile", "First bridge head."), _tile("end_tile", "Second bridge head (same x or same y)."),
@@ -230,6 +234,73 @@ _SPECS: list[ActionSpec] = [
     _spec("town.action", "Perform a town action (advertise, road rebuild, statue, fund buildings, exclusive rights, bribe).",
           _int("town", "Town id.", minimum=0), _enum("kind", TOWN_ACTIONS, "The action.")),
 ]
+
+# Meta decisions (logged, no game effect): exact argument schemas {name: (type, required)}. The daemon
+# refuses other names and arguments; the replay refuses a meta record with another name.
+META_SCHEMAS: dict[str, dict[str, tuple[type, bool]]] = {
+    "submit": {"confirm": (str, True)},
+    "promise": {"quantity": (int, True)},
+    "forecast": {"metric": (str, True), "p10": (int, False), "p50": (int, True), "p90": (int, False),
+                 "by_day": (int, False)},
+    "abstain": {"reason": (str, True), "max_possible": (int, False)},
+    "flag": {"note": (str, True)},
+}
+
+META_INT_LIMIT = 2 ** 53  # every meta int must be exact as a float (the verifier computes in floats)
+
+
+def meta_args_problem(m: str, a: Any, require_confirm: bool = True) -> str | None:
+    """Why ``a`` is not a meta record the daemon could have written, or None. The daemon and the replay
+    both use this. ``require_confirm=False`` for replay: 1,379 tracked oracle logs have ``submit {}``."""
+    schema = META_SCHEMAS.get(m)
+    if schema is None:
+        return f"unknown meta decision {m!r}"
+    if not isinstance(a, dict):
+        return f"{m}: arguments must be an object"
+    unknown = set(a) - set(schema)
+    if unknown:
+        return f"{m}: unknown argument(s) {sorted(unknown)} (arguments: {', '.join(schema)})"
+    for k, (typ, required) in schema.items():
+        if k not in a:
+            if required and (require_confirm or (m, k) != ("submit", "confirm")):
+                return f"{m}: missing required argument '{k}' (arguments: {', '.join(schema)})"
+            continue
+        v = a[k]
+        if not isinstance(v, typ) or isinstance(v, bool):
+            return f"{m}: '{k}' must be {typ.__name__}"
+        if typ is int and not -META_INT_LIMIT <= v <= META_INT_LIMIT:
+            return f"{m}: '{k}' must be between -2**53 and 2**53"
+    return None
+
+
+# Wake conditions of a wait (gamescript main.nut UNTIL_KINDS); only cash_below takes a value.
+UNTIL_KINDS = frozenset({"vehicle_crashed", "industry_open", "industry_close", "company_bankrupt",
+                         "company_in_trouble", "station_first_vehicle", "cash_below", "new_month"})
+_UNTIL_VALUE = re.compile(r"^-?(0|[1-9]\d{0,14})$")  # the same text the GameScript accepts
+
+
+def check_until(until: Any) -> list[str] | None:
+    """Canonical wake conditions, or :class:`ActionArgError`. The GameScript must never see a bad one:
+    a value it cannot parse used to leave it stepping for ever or kill the script."""
+    if until is None:
+        return None
+    if not isinstance(until, list):
+        raise ActionArgError("until must be a list of wake conditions, e.g. until=vehicle_crashed,cash_below:5000")
+    out = []
+    for item in until:
+        if not isinstance(item, str):
+            raise ActionArgError(f"until: {item!r} is not a wake condition")
+        kind, sep, value = item.partition(":")
+        if kind not in UNTIL_KINDS:
+            raise ActionArgError(f"until: unknown wake condition {kind!r} (known: {', '.join(sorted(UNTIL_KINDS))})")
+        if kind == "cash_below":
+            if not sep or not _UNTIL_VALUE.match(value):
+                raise ActionArgError("until: cash_below needs an integer amount, e.g. cash_below:5000")
+        elif sep:
+            raise ActionArgError(f"until: {kind} takes no value")
+        out.append(item)
+    return out
+
 
 REGISTRY: dict[str, ActionSpec] = {s.name: s for s in _SPECS}
 _BY_GS: dict[str, ActionSpec] = {s.gs_method: s for s in _SPECS}

@@ -1,0 +1,608 @@
+[
+ {
+  "mode": "water",
+  "seed": 1,
+  "save": "tasks/arena-dev-0100/start.sav",
+  "start": "1960-02-01",
+  "build_cost": 37671,
+  "acts": 13,
+  "queries": 201,
+  "vehicles": 2,
+  "yearly": [
+   {
+    "year": 1960,
+    "profit": 9052,
+    "vehicles": 2,
+    "net_worth": -42918
+   },
+   {
+    "year": 1961,
+    "profit": 18513,
+    "vehicles": 2,
+    "net_worth": -39704
+   },
+   {
+    "year": 1962,
+    "profit": 21213,
+    "vehicles": 2,
+    "net_worth": -33790
+   }
+  ],
+  "income": 19863,
+  "payback_years": 1.9,
+  "income_per_pound": 0.527,
+  "income_per_act": 1528,
+  "towns": [
+   7,
+   123
+  ],
+  "docks": [
+   [
+    298,
+    170
+   ],
+   [
+    210,
+    167
+   ]
+  ],
+  "water": [
+   [
+    298,
+    171
+   ],
+   [
+    210,
+    168
+   ]
+  ],
+  "engine": 206,
+  "distance": 91,
+  "cargo": "PASS"
+ },
+ {
+  "mode": "water",
+  "seed": 2,
+  "save": "tasks/arena-dev-0100/start.sav",
+  "start": "1960-02-01",
+  "build_cost": 37671,
+  "acts": 13,
+  "queries": 201,
+  "vehicles": 2,
+  "yearly": [
+   {
+    "year": 1960,
+    "profit": 9140,
+    "vehicles": 2,
+    "net_worth": -42830
+   },
+   {
+    "year": 1961,
+    "profit": 20497,
+    "vehicles": 2,
+    "net_worth": -37632
+   },
+   {
+    "year": 1962,
+    "profit": 26369,
+    "vehicles": 2,
+    "net_worth": -26562
+   }
+  ],
+  "income": 23433,
+  "payback_years": 1.61,
+  "income_per_pound": 0.622,
+  "income_per_act": 1803,
+  "towns": [
+   7,
+   123
+  ],
+  "docks": [
+   [
+    298,
+    170
+   ],
+   [
+    210,
+    167
+   ]
+  ],
+  "water": [
+   [
+    298,
+    171
+   ],
+   [
+    210,
+    168
+   ]
+  ],
+  "engine": 206,
+  "distance": 91,
+  "cargo": "PASS"
+ },
+ {
+  "mode": "water",
+  "seed": 3,
+  "save": "tasks/arena-dev-0100/start.sav",
+  "start": "1960-02-01",
+  "build_cost": 37671,
+  "acts": 13,
+  "queries": 201,
+  "vehicles": 2,
+  "yearly": [
+   {
+    "year": 1960,
+    "profit": 9140,
+    "vehicles": 2,
+    "net_worth": -42830
+   },
+   {
+    "year": 1961,
+    "profit": 20089,
+    "vehicles": 2,
+    "net_worth": -38040
+   },
+   {
+    "year": 1962,
+    "profit": 26366,
+    "vehicles": 2,
+    "net_worth": -26973
+   }
+  ],
+  "income": 23228,
+  "payback_years": 1.62,
+  "income_per_pound": 0.617,
+  "income_per_act": 1787,
+  "towns": [
+   7,
+   123
+  ],
+  "docks": [
+   [
+    298,
+    170
+   ],
+   [
+    210,
+    167
+   ]
+  ],
+  "water": [
+   [
+    298,
+    171
+   ],
+   [
+    210,
+    168
+   ]
+  ],
+  "engine": 206,
+  "distance": 91,
+  "cargo": "PASS"
+ },
+ {
+  "mode": "rail",
+  "seed": 1,
+  "save": "tasks/arena-dev-0100/start.sav",
+  "start": "1960-02-01",
+  "build_cost": 31680,
+  "acts": 21,
+  "queries": 14,
+  "vehicles": 1,
+  "yearly": [
+   {
+    "year": 1960,
+    "profit": 38716,
+    "vehicles": 1,
+    "net_worth": -7264
+   },
+   {
+    "year": 1961,
+    "profit": 48720,
+    "vehicles": 1,
+    "net_worth": 26156
+   },
+   {
+    "year": 1962,
+    "profit": 43539,
+    "vehicles": 1,
+    "net_worth": 54395
+   }
+  ],
+  "income": 46130,
+  "payback_years": 0.69,
+  "income_per_pound": 1.456,
+  "income_per_act": 2197,
+  "source": 59,
+  "dest": 61,
+  "cargo": "COAL",
+  "track_tiles": 56,
+  "stations_at": [
+   [
+    401,
+    165
+   ],
+   [
+    346,
+    169
+   ]
+  ],
+  "engine": 14,
+  "wagon": 29,
+  "wagons": 4,
+  "distance": 56
+ },
+ {
+  "mode": "rail",
+  "seed": 2,
+  "save": "tasks/arena-dev-0100/start.sav",
+  "start": "1960-02-01",
+  "build_cost": 31680,
+  "acts": 21,
+  "queries": 14,
+  "vehicles": 1,
+  "yearly": [
+   {
+    "year": 1960,
+    "profit": 38716,
+    "vehicles": 1,
+    "net_worth": -7264
+   },
+   {
+    "year": 1961,
+    "profit": 48788,
+    "vehicles": 1,
+    "net_worth": 26224
+   },
+   {
+    "year": 1962,
+    "profit": 48784,
+    "vehicles": 1,
+    "net_worth": 59708
+   }
+  ],
+  "income": 48786,
+  "payback_years": 0.65,
+  "income_per_pound": 1.54,
+  "income_per_act": 2323,
+  "source": 59,
+  "dest": 61,
+  "cargo": "COAL",
+  "track_tiles": 56,
+  "stations_at": [
+   [
+    401,
+    165
+   ],
+   [
+    346,
+    169
+   ]
+  ],
+  "engine": 14,
+  "wagon": 29,
+  "wagons": 4,
+  "distance": 56
+ },
+ {
+  "mode": "rail",
+  "seed": 3,
+  "save": "tasks/arena-dev-0100/start.sav",
+  "start": "1960-02-01",
+  "build_cost": 31680,
+  "acts": 21,
+  "queries": 14,
+  "vehicles": 1,
+  "yearly": [
+   {
+    "year": 1960,
+    "profit": 38716,
+    "vehicles": 1,
+    "net_worth": -7264
+   },
+   {
+    "year": 1961,
+    "profit": 48720,
+    "vehicles": 1,
+    "net_worth": 26156
+   },
+   {
+    "year": 1962,
+    "profit": 43443,
+    "vehicles": 1,
+    "net_worth": 54299
+   }
+  ],
+  "income": 46082,
+  "payback_years": 0.69,
+  "income_per_pound": 1.455,
+  "income_per_act": 2194,
+  "source": 59,
+  "dest": 61,
+  "cargo": "COAL",
+  "track_tiles": 56,
+  "stations_at": [
+   [
+    401,
+    165
+   ],
+   [
+    346,
+    169
+   ]
+  ],
+  "engine": 14,
+  "wagon": 29,
+  "wagons": 4,
+  "distance": 56
+ },
+ {
+  "mode": "air",
+  "seed": 1,
+  "save": "tasks/arena-dev-0100/start.sav",
+  "start": "1960-02-01",
+  "build_cost": 107458,
+  "acts": 14,
+  "queries": 9,
+  "vehicles": 2,
+  "yearly": [
+   {
+    "year": 1960,
+    "profit": 146330,
+    "vehicles": 2,
+    "net_worth": 24572
+   },
+   {
+    "year": 1961,
+    "profit": 186213,
+    "vehicles": 2,
+    "net_worth": 195486
+   },
+   {
+    "year": 1962,
+    "profit": 117804,
+    "vehicles": 2,
+    "net_worth": 297991
+   }
+  ],
+  "income": 152008,
+  "payback_years": 0.71,
+  "income_per_pound": 1.415,
+  "income_per_act": 10858,
+  "towns": [
+   19,
+   91
+  ],
+  "airports": [
+   [
+    28,
+    389
+   ],
+   [
+    145,
+    477
+   ]
+  ],
+  "engine": 220,
+  "distance": 205,
+  "cargo": "PASS"
+ },
+ {
+  "mode": "air",
+  "seed": 2,
+  "save": "tasks/arena-dev-0100/start.sav",
+  "start": "1960-02-01",
+  "build_cost": 107458,
+  "acts": 14,
+  "queries": 9,
+  "vehicles": 2,
+  "yearly": [
+   {
+    "year": 1960,
+    "profit": 144959,
+    "vehicles": 2,
+    "net_worth": 23201
+   },
+   {
+    "year": 1961,
+    "profit": 163441,
+    "vehicles": 2,
+    "net_worth": 171343
+   },
+   {
+    "year": 1962,
+    "profit": 117143,
+    "vehicles": 2,
+    "net_worth": 273187
+   }
+  ],
+  "income": 140292,
+  "payback_years": 0.77,
+  "income_per_pound": 1.306,
+  "income_per_act": 10021,
+  "towns": [
+   19,
+   91
+  ],
+  "airports": [
+   [
+    28,
+    389
+   ],
+   [
+    145,
+    477
+   ]
+  ],
+  "engine": 220,
+  "distance": 205,
+  "cargo": "PASS"
+ },
+ {
+  "mode": "air",
+  "seed": 3,
+  "save": "tasks/arena-dev-0100/start.sav",
+  "start": "1960-02-01",
+  "build_cost": 107458,
+  "acts": 14,
+  "queries": 9,
+  "vehicles": 2,
+  "yearly": [
+   {
+    "year": 1960,
+    "profit": 147623,
+    "vehicles": 2,
+    "net_worth": 25865
+   },
+   {
+    "year": 1961,
+    "profit": 171656,
+    "vehicles": 2,
+    "net_worth": 182222
+   },
+   {
+    "year": 1962,
+    "profit": 122907,
+    "vehicles": 2,
+    "net_worth": 289830
+   }
+  ],
+  "income": 147282,
+  "payback_years": 0.73,
+  "income_per_pound": 1.371,
+  "income_per_act": 10520,
+  "towns": [
+   19,
+   91
+  ],
+  "airports": [
+   [
+    28,
+    389
+   ],
+   [
+    145,
+    477
+   ]
+  ],
+  "engine": 220,
+  "distance": 205,
+  "cargo": "PASS"
+ },
+ {
+  "mode": "road",
+  "seed": 1,
+  "save": "tasks/arena-dev-0100/start.sav",
+  "start": "1960-02-01",
+  "build_cost": 53604,
+  "acts": 48,
+  "queries": 69,
+  "vehicles": 10,
+  "yearly": [
+   {
+    "year": 1960,
+    "profit": 27917,
+    "vehicles": 10,
+    "net_worth": -39979
+   },
+   {
+    "year": 1961,
+    "profit": 36478,
+    "vehicles": 10,
+    "net_worth": -18797
+   },
+   {
+    "year": 1962,
+    "profit": 34259,
+    "vehicles": 10,
+    "net_worth": 166
+   }
+  ],
+  "income": 35368,
+  "payback_years": 1.52,
+  "income_per_pound": 0.66,
+  "income_per_act": 737,
+  "source": 59,
+  "dest": 61,
+  "cargo": "COAL",
+  "distance": 54
+ },
+ {
+  "mode": "road",
+  "seed": 2,
+  "save": "tasks/arena-dev-0100/start.sav",
+  "start": "1960-02-01",
+  "build_cost": 53604,
+  "acts": 48,
+  "queries": 69,
+  "vehicles": 10,
+  "yearly": [
+   {
+    "year": 1960,
+    "profit": 27905,
+    "vehicles": 10,
+    "net_worth": -39991
+   },
+   {
+    "year": 1961,
+    "profit": 36480,
+    "vehicles": 10,
+    "net_worth": -18807
+   },
+   {
+    "year": 1962,
+    "profit": 34262,
+    "vehicles": 10,
+    "net_worth": 159
+   }
+  ],
+  "income": 35371,
+  "payback_years": 1.52,
+  "income_per_pound": 0.66,
+  "income_per_act": 737,
+  "source": 59,
+  "dest": 61,
+  "cargo": "COAL",
+  "distance": 54
+ },
+ {
+  "mode": "road",
+  "seed": 3,
+  "save": "tasks/arena-dev-0100/start.sav",
+  "start": "1960-02-01",
+  "build_cost": 53604,
+  "acts": 48,
+  "queries": 69,
+  "vehicles": 10,
+  "yearly": [
+   {
+    "year": 1960,
+    "profit": 27905,
+    "vehicles": 10,
+    "net_worth": -39991
+   },
+   {
+    "year": 1961,
+    "profit": 36480,
+    "vehicles": 10,
+    "net_worth": -18807
+   },
+   {
+    "year": 1962,
+    "profit": 34262,
+    "vehicles": 10,
+    "net_worth": 159
+   }
+  ],
+  "income": 35371,
+  "payback_years": 1.52,
+  "income_per_pound": 0.66,
+  "income_per_act": 737,
+  "source": 59,
+  "dest": 61,
+  "cargo": "COAL",
+  "distance": 54
+ }
+]

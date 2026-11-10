@@ -16,3 +16,6 @@ jobs/
 traces/
 !tasks/**/start.sav
 harbor/
+thoughts/
+out/
+experiments/*/out/
