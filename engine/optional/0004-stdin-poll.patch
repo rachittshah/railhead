@@ -1,0 +1,14 @@
+diff --git a/src/video/dedicated_v.cpp b/src/video/dedicated_v.cpp
+--- a/src/video/dedicated_v.cpp
++++ b/src/video/dedicated_v.cpp
+@@ -151,7 +151,8 @@ static bool InputWaiting()
+ 	struct timeval tv;
+ 	fd_set readfds;
+
+ 	tv.tv_sec = 0;
+-	tv.tv_usec = 1;
++	/* Railhead: a zero timeout polls stdin without arming a timer; the dedicated loop calls this every tick. */
++	tv.tv_usec = 0;
+
+ 	FD_ZERO(&readfds);
+ 	FD_SET(STDIN, &readfds);
