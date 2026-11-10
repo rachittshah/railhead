@@ -10,6 +10,11 @@ players run ``codex exec``, and opencode players run ``opencode run``; all only 
 bound to their own daemon). Claude and Codex export every LLM call over OTLP to ``--otel`` (default the
 local ``railhead otel serve`` sink), tagged with ``player=<label>``. opencode writes its events as JSON
 to ``agent.log`` and gets an empty configuration directory, so it never loads the operator's setup.
+
+``script:<path>`` is a scripted player for tests (no model): it runs the ``rh`` command lines of a text file in
+order (``#`` comments, ``@sleep N``), records its progress in ``<label>/script.progress`` and, when resumed,
+continues after the last completed line. Options ``--poll S`` and ``--max-resumes N`` tune ``--supervise``.
+Harness events go to ``<out_dir>/arena-run.jsonl`` (JSON lines, see railhead.log).
 """
 
 from __future__ import annotations
@@ -17,12 +22,18 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
 from railhead.engine import REPO_DIR
+from railhead.log import event, get_logger, setup
+
+log = get_logger("arena_run")
+SCRIPT_DONE = "=== script finished ==="
 
 PROMPT = """You are the owner of a transport company in OpenTTD, and you play the game yourself, in first \
 person, through the `rh` command (it is on PATH: just run `rh ...` in the shell). Your goal: make as much \
@@ -45,8 +56,8 @@ At the end, write a short report: your strategy, the final `rh status` numbers, 
 
 @dataclass(frozen=True)
 class Player:
-    vendor: str  # claude | codex | opencode
-    model: str
+    vendor: str  # claude | codex | opencode | script
+    model: str  # for script: the path of the command file
     label: str
 
 
@@ -54,13 +65,22 @@ def parse_players(specs: list[str]) -> list[Player]:
     out = []
     for s in specs:
         vendor, model = s.split(":", 1)
-        if vendor not in ("claude", "codex", "opencode"):
+        if vendor not in ("claude", "codex", "opencode", "script"):
             raise ValueError(f"unknown vendor {vendor!r} in {s!r}")
+        if vendor == "script":
+            model = str(Path(model).resolve())
         out.append(Player(vendor, model, model.split("/")[-1]))
     return out
 
 
+def _railhead_bin() -> str:
+    """The ``railhead`` entry point of the running interpreter's environment (the arm's checkout)."""
+    return str(Path(sys.executable).parent / "railhead")
+
+
 def agent_command(p: Player, prompt: str, workdir: Path, otel: str = "http://127.0.0.1:4318") -> list[str]:
+    if p.vendor == "script":  # no model: a fixed sequence of rh commands (resumes after its last done line)
+        return [_railhead_bin(), "arena-run", "--play-script", p.model]
     if p.vendor == "claude":
         return ["claude", "-p", prompt, "--model", p.model, "--dangerously-skip-permissions",
                 "--output-format", "stream-json", "--verbose"]
@@ -250,6 +270,8 @@ def next_step(alive: bool, submitted: bool, provider_error: bool, resumes: int, 
 
 def resume_command(p: Player, session: str | None, workdir: Path, otel: str = "http://127.0.0.1:4318") -> list[str]:
     """Continue the same session. With no session id, start a fresh agent that gets the rules and the resume note."""
+    if p.vendor == "script":
+        return agent_command(p, "", workdir, otel)
     if not session:
         return agent_command(p, PROMPT + "\n\n" + RESUME_PROMPT, workdir, otel)
     if p.vendor == "claude":
@@ -287,8 +309,8 @@ def _agent_alive(p: Player, pdir: Path) -> bool:
         os.kill(pid, 0)
     except (OSError, ValueError):
         return False
-    out = subprocess.run(["ps", "-p", str(pid), "-o", "command="], capture_output=True, text=True).stdout
-    return p.vendor in out
+    out = subprocess.run(["ps", "-p", str(pid), "-o", "command="], check=False, capture_output=True, text=True).stdout
+    return ("--play-script" if p.vendor == "script" else p.vendor) in out
 
 
 def resume(task: str, out_dir: Path, players: list[Player], otel: str = "http://127.0.0.1:4318") -> dict[str, object]:
@@ -297,6 +319,7 @@ def resume(task: str, out_dir: Path, players: list[Player], otel: str = "http://
     from railhead import daemon
 
     out_dir = Path(out_dir).resolve()
+    setup(out_dir / "arena-run.jsonl")
     tasks_dir = Path(os.environ.get("RAILHEAD_TASKS", REPO_DIR / "tasks")).resolve()
     os.environ["RAILHEAD_TASKS"] = str(tasks_dir)
     result: dict[str, object] = {}
@@ -315,6 +338,7 @@ def resume(task: str, out_dir: Path, players: list[Player], otel: str = "http://
                       f"resume after restart (session {session or 'none: fresh start'})", tasks_dir, otel)
         result[p.label] = proc.pid
         print(json.dumps({"player": p.label, "resume": "restart", "session": session, "pid": proc.pid}), flush=True)
+        event(log, "resume after restart", player=p.label, task=task, session=session, pid=proc.pid)
     return result
 
 
@@ -326,6 +350,7 @@ def supervise(task: str, out_dir: Path, players: list[Player], max_resumes: int 
     import time
 
     out_dir = Path(out_dir).resolve()
+    setup(out_dir / "arena-run.jsonl")
     tasks_dir = Path(os.environ.get("RAILHEAD_TASKS", REPO_DIR / "tasks")).resolve()
     resumes = {p.label: 0 for p in players}
     status = {p.label: "wait" for p in players}
@@ -355,6 +380,8 @@ def supervise(task: str, out_dir: Path, players: list[Player], max_resumes: int 
                                         f"resume {resumes[p.label]} after provider error", tasks_dir, otel)
                 del due[p.label]
                 print(json.dumps({"player": p.label, "resume": resumes[p.label], "session": session}), flush=True)
+                event(log, "resume after provider error", player=p.label, task=task, resume=resumes[p.label],
+                      session=session)
                 continue
             session, failed = last_session(pdir / "agent.log")
             step = next_step(alive(p.label, int((pdir / "agent.pid").read_text())), _submitted(pdir), failed,
@@ -366,9 +393,12 @@ def supervise(task: str, out_dir: Path, players: list[Player], max_resumes: int 
                 due[p.label] = time.time() + wait_s
                 print(json.dumps({"player": p.label, "error": kind, "resume_in_s": round(wait_s),
                                   "resets_at": err.get("resets_at")}), flush=True)
+                event(log, "provider error", player=p.label, task=task, kind=kind, resume_in_s=round(wait_s),
+                      message=str(err.get("message", ""))[:300])
                 step = "wait"
             elif step in ("done", "failed") and status[p.label] != step:
                 print(json.dumps({"player": p.label, "status": step, "resumes": resumes[p.label]}), flush=True)
+                event(log, "player " + step, player=p.label, task=task, resumes=resumes[p.label])
             status[p.label] = step
         time.sleep(poll)
     return status
@@ -378,31 +408,63 @@ def launch(task: str, out_dir: Path, players: list[Player], otel: str = "http://
     from railhead.daemon import ensure_up
 
     out_dir = Path(out_dir).resolve()
+    setup(out_dir / "arena-run.jsonl")
     tasks_dir = Path(os.environ.get("RAILHEAD_TASKS", REPO_DIR / "tasks")).resolve()
+    os.environ["RAILHEAD_TASKS"] = str(tasks_dir)
     pids = []
     for p in players:
         pdir = out_dir / p.label
         state = pdir / "state"
         state.mkdir(parents=True, exist_ok=True)
-        os.environ["RAILHEAD_TASKS"] = str(tasks_dir)
         ensure_up(task, state)
-        log = open(pdir / "agent.log", "ab")
-        proc = subprocess.Popen(agent_command(p, PROMPT, pdir, otel), cwd=pdir, stdin=subprocess.DEVNULL,
-                                stdout=log, stderr=subprocess.STDOUT,
-                                env=agent_env(p, task, state, tasks_dir, otel), start_new_session=True)
-        (pdir / "agent.pid").write_text(str(proc.pid))
+        # _start closes the parent's copy of the log descriptor (the child keeps its own)
+        proc = _start(p, task, pdir, agent_command(p, PROMPT, pdir, otel), "launch", tasks_dir, otel)
         pids.append(proc.pid)
+        event(log, "launch", player=p.label, vendor=p.vendor, model=p.model, task=task, pid=proc.pid, dir=str(pdir))
     return pids
 
 
+def play_script(path: Path, workdir: Path | None = None) -> int:
+    """The scripted player: run each ``rh`` line of ``path`` in order, record progress after every line in
+    ``<workdir>/script.progress`` and skip the lines already done when started again. ``@sleep N`` pauses.
+    A failing ``rh`` command does not stop the script (a model would also go on)."""
+    workdir = Path(workdir or os.getcwd())
+    lines = [x.strip() for x in Path(path).read_text().splitlines()]
+    steps = [x for x in lines if x and not x.startswith("#")]
+    prog = workdir / "script.progress"
+    done = int(prog.read_text().strip() or 0) if prog.exists() else 0
+    print(f"script {path}: {len(steps)} steps, {done} already done", flush=True)
+    for i, step in enumerate(steps[done:], start=done):
+        if step.startswith("@sleep"):
+            time.sleep(float(step.split()[1]))
+        else:
+            argv = shlex.split(step)
+            print(f"$ {step}", flush=True)
+            r = subprocess.run(argv, check=False, capture_output=True, text=True, stdin=subprocess.DEVNULL)
+            print((r.stdout + r.stderr).rstrip() + f"\n[exit {r.returncode}]", flush=True)
+        prog.write_text(str(i + 1))
+    print(SCRIPT_DONE, flush=True)
+    return 0
+
+
+def _strip_opt(argv: list[str], flag: str) -> tuple[list[str], str | None]:
+    if flag not in argv:
+        return argv, None
+    i = argv.index(flag)
+    return argv[:i] + argv[i + 2:], argv[i + 1]
+
+
 def main(argv: list[str]) -> int:
-    otel = "http://127.0.0.1:4318"
-    if "--otel" in argv:  # strip it first: every mode passes the rest to parse_players
-        i = argv.index("--otel")
-        otel = argv[i + 1]
-        argv = argv[:i] + argv[i + 2:]
+    if argv and argv[0] == "--play-script":  # the scripted player itself (started by launch/resume)
+        return play_script(Path(argv[1]))
+    # strip the options first: every mode passes the rest to parse_players
+    argv, otel = _strip_opt(argv, "--otel")
+    otel = otel or "http://127.0.0.1:4318"
+    argv, poll = _strip_opt(argv, "--poll")
+    argv, max_resumes = _strip_opt(argv, "--max-resumes")
     if argv and argv[0] == "--supervise":  # railhead arena-run --supervise <task> <out_dir> <vendor:model> ...
-        print(json.dumps(supervise(argv[1], Path(argv[2]), parse_players(argv[3:]), otel=otel)))
+        tune = {k: int(v) for k, v in (("poll", poll), ("max_resumes", max_resumes)) if v is not None}
+        print(json.dumps(supervise(argv[1], Path(argv[2]), parse_players(argv[3:]), otel=otel, **tune)), flush=True)
         return 0
     if argv and argv[0] == "--resume":  # railhead arena-run --resume <task> <out_dir> <vendor:model> ...
         print(json.dumps(resume(argv[1], Path(argv[2]), parse_players(argv[3:]), otel)))
@@ -413,5 +475,5 @@ def main(argv: list[str]) -> int:
         return 2
     task, out, specs = argv[0], Path(argv[1]), argv[2:]
     pids = launch(task, out, parse_players(specs), otel)
-    print({"launched": len(pids), "pids": pids})
+    print(json.dumps({"launched": len(pids), "pids": pids}))
     return 0
