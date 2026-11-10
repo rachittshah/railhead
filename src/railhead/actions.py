@@ -166,12 +166,16 @@ _SPECS: list[ActionSpec] = [
     # ---------------------------------------------------------------- air / water
     _spec("air.airport", "Build an airport with its north corner at tile.",
           _tile("tile", "North corner of the airport."), _enum("type", AIRPORTS, "Airport type."), JOIN),
-    _spec("water.dock", "Build a dock on a sloped coast tile (the land tile next to water).",
-          _tile("tile", "Sloped land tile at the water's edge."), JOIN),
+    _spec("water.dock", "Build a dock on a shore tile that slopes down to the water on one side; the two tiles on "
+          "the low side must be flat water (rh map layer=dock marks such tiles, rh tile shows `dock`). "
+          "Catchment radius 5. Reply: station, water_tile (where ships stop).",
+          _tile("tile", "Inclined land or coast tile at the water's edge."), JOIN),
     _spec("water.canal", "Build a canal on a tile.", _tile("tile", "Tile to turn into canal.")),
     _spec("water.lock", "Build a lock on a straight sloped tile of a waterway.", _tile("tile", "Middle (sloped) tile of the lock.")),
-    _spec("water.ship_depot", "Build a ship depot (2 tiles) on water, oriented toward toward_tile.",
-          _tile("tile", "Water tile for the depot."), _tile("toward_tile", "Neighbour on the depot's axis.")),
+    _spec("water.ship_depot", "Build a ship depot on 2 flat open-water tiles: tile and the next tile in +x (if "
+          "toward_tile is beside tile in x) or in +y (if beside it in y). It must be on the same water as your docks.",
+          _tile("tile", "First (north-most) water tile of the depot."),
+          _tile("toward_tile", "Any x- or y-neighbour of tile; it only sets the axis.")),
     # ---------------------------------------------------------------- bridges / tunnels
     _spec("bridge.build", "Build a bridge between two tiles in a straight line (road bridges add road on both ends).",
           _tile("start_tile", "First bridge head."), _tile("end_tile", "Second bridge head (same x or same y)."),

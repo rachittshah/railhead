@@ -63,7 +63,7 @@ Action <- {
 		ERR_FLAT_LAND_REQUIRED = "needs flat land: land.level the site or pick a flat tile",
 		ERR_LAND_SLOPED_WRONG = "slope is incompatible with this piece: land.level / land.raise / land.lower it, or run straight along the slope",
 		ERR_VEHICLE_IN_THE_WAY = "a vehicle is on the tile: wait a few ticks and retry",
-		ERR_SITE_UNSUITABLE = "site unsuitable: docks need a straight sloped coast tile facing water, locks a straight slope on a waterway",
+		ERR_SITE_UNSUITABLE = "site unsuitable: a dock needs a tile that slopes down to two flat water tiles (rh map layer=dock shows d), a lock a straight slope on a waterway, a ship depot flat water",
 		ERR_TOO_CLOSE_TO_EDGE = "too close to the map edge: move inward",
 		ERR_STATION_TOO_SPREAD_OUT = "joining would spread the station too far: build a separate station (join=-1) or place it closer",
 		ERR_BRIDGE_TOO_LOW = "a bridge above is too low: pick another tile",
@@ -104,6 +104,7 @@ Action <- {
 		ERR_BRIDGE_CANNOT_END_IN_WATER = "bridge ends must be on land",
 		ERR_BRIDGE_HEADS_NOT_ON_SAME_HEIGHT = "bridge ends differ in height: pick ends of equal height (sloped up toward the span) or level the land",
 		ERR_TUNNEL_CANNOT_BUILD_ON_WATER = "tunnels cannot start on water",
+		ERR_CANNOT_BUILD_ON_WATER = "the tile is water or the low side of a shore (kind '~' or ',' in rh map): build on dry land; on a shore tile only track along its raised side fits",
 		ERR_TUNNEL_START_SITE_UNSUITABLE = "tunnel start needs a straight inclined tile facing into the hill",
 		ERR_TUNNEL_ANOTHER_TUNNEL_IN_THE_WAY = "another tunnel is in the way",
 		ERR_TUNNEL_END_SITE_UNSUITABLE = "the far end of the tunnel is unsuitable: start elsewhere",
@@ -246,10 +247,17 @@ Action <- {
 	}
 
 	/* The engine refused: typed code + hint (+ what is on the target tile when the code is vague). */
-	function Fail(ctx) {
+	function Fail(ctx) { return Action.FailWith(ctx, null); }
+
+	/* Fail with an extra, handler-specific hint appended (e.g. why a dock site is unsuitable). */
+	function FailWith(ctx, extra) {
 		local code = GSError.GetLastErrorString();
 		if (code == null || code == "ERR_NONE") code = "ERR_UNKNOWN";
+		/* The script API names the engine's "can't build on water" error after tunnels, although every
+		 * build on a water or shore tile raises it. Outside bridge.tunnel, report what it means. */
+		if (code == "ERR_TUNNEL_CANNOT_BUILD_ON_WATER" && !("tunnel" in ctx)) code = "ERR_CANNOT_BUILD_ON_WATER";
 		local hint = (code in Action.HINTS) ? Action.HINTS[code] : "the engine refused this command";
+		if (extra != null) hint += "; " + extra;
 		if (code == "ERR_UNKNOWN" || code == "ERR_AREA_NOT_CLEAR" || code == "ERR_PRECONDITION_FAILED") {
 			foreach (k in ["tile", "from_tile", "start_tile", "depot_tile"]) {
 				if ((k in ctx.p) && ctx.p[k] != null) { hint += " [" + k + " " + Action.Describe(ctx.p[k]) + "]"; break; }
@@ -453,6 +461,33 @@ Action <- {
 		return added;
 	}
 
+	/* What a new station part's catchment gives the player (the station window): cargo labels the
+	 * station accepts now, and labels produced around this part (w x h at tile). Adds to `out`. */
+	function Coverage(out, tile, w, h) {
+		local st = GSStation.GetStationID(tile);
+		if (!GSStation.IsValidStation(st)) return out;
+		local radius = GSStation.GetStationCoverageRadius(st);
+		local acc = [], sup = [];
+		foreach (c, _ in GSCargoList_StationAccepting(st)) acc.append(GSCargo.GetCargoLabel(c));
+		local cl = GSCargoList();
+		cl.Sort(GSList.SORT_BY_ITEM, GSList.SORT_ASCENDING);
+		foreach (c, _ in cl) if (GSTile.GetCargoProduction(tile, c, w, h, radius) > 0) sup.append(GSCargo.GetCargoLabel(c));
+		acc.sort();
+		out.radius <- radius;
+		out.accepts <- acc;
+		out.supplies <- sup;
+		return out;
+	}
+
+	/* True if a train leaving `depot` over `front` can continue onto some neighbour of `front`. */
+	function DepotExits(depot, front) {
+		local fx = Action.X(front), fy = Action.Y(front);
+		foreach (n in [Action.At(fx + 1, fy), Action.At(fx - 1, fy), Action.At(fx, fy + 1), Action.At(fx, fy - 1)]) {
+			if (n != null && n != depot && GSRail.AreTilesConnected(depot, front, n)) return true;
+		}
+		return false;
+	}
+
 	/* ------------------------------------------------------------ rail */
 	function H_rail_set_type(br, id, a) {
 		local ctx = Action.Begin(br, id, a, [["railtype", "int"]]);
@@ -518,7 +553,9 @@ Action <- {
 		if (join == null) return Action.Reject(ctx, "join_station " + p.join_station + " is not one of your stations (omit to join an adjacent one, -1 for a new station)");
 		Action.UseRailType();
 		local ok = GSRail.BuildRailStation(p.tile, p.axis, p.platforms, p.length, join);
-		Action.Done(ctx, ok, ok && !ctx.dry ? { station = GSStation.GetStationID(p.tile) } : null);
+		local x_axis = p.axis == GSRail.RAILTRACK_NE_SW;
+		Action.Done(ctx, ok, ok && !ctx.dry ? Action.Coverage({ station = GSStation.GetStationID(p.tile) }, p.tile,
+			x_axis ? p.length : p.platforms, x_axis ? p.platforms : p.length) : null);
 	}
 
 	function H_rail_depot(br, id, a) {
@@ -528,7 +565,13 @@ Action <- {
 		Action.UseRailType();
 		if (!GSRail.BuildRailDepot(ctx.p.tile, ctx.p.front_tile)) return Action.Fail(ctx);
 		local connected = Action.ConnectRailDepot(ctx, ctx.p.tile, ctx.p.front_tile);
-		Action.Ok(ctx, ctx.dry ? null : { depot_tile = ctx.p.tile, connected = connected });
+		local out = { depot_tile = ctx.p.tile, connected = connected };
+		if (!ctx.dry && !Action.DepotExits(ctx.p.tile, ctx.p.front_tile)) {
+			local rails = GSRail.IsRailTile(ctx.p.front_tile) ? Action.Describe(ctx.p.front_tile) : "no track";
+			out.hint <- "trains cannot leave yet: front_tile has " + rails + ". Build track on front_tile that points into the depot " +
+				"(a straight piece along the depot axis, or a curve that joins your line), then check it with rh tile";
+		}
+		Action.Ok(ctx, ctx.dry ? null : out);
 	}
 
 	function H_rail_signal(br, id, a) {
@@ -621,7 +664,7 @@ Action <- {
 			local back = Action.At(2 * Action.X(p.tile) - Action.X(p.front_tile), 2 * Action.Y(p.tile) - Action.Y(p.front_tile));
 			connected = Action.ConnectRoad(ctx, p.tile, back) || connected;
 		}
-		Action.Ok(ctx, ctx.dry ? null : { station = GSStation.GetStationID(p.tile), connected = connected });
+		Action.Ok(ctx, ctx.dry ? null : Action.Coverage({ station = GSStation.GetStationID(p.tile), connected = connected }, p.tile, 1, 1));
 	}
 
 	/* ------------------------------------------------------------ air / water */
@@ -642,6 +685,11 @@ Action <- {
 		if (ok && !ctx.dry) {
 			local hangar = GSAirport.GetHangarOfAirport(p.tile);
 			extra = { station = GSStation.GetStationID(p.tile), hangar_tile = GSMap.IsValidTile(hangar) ? hangar : -1 };
+			Action.Coverage(extra, p.tile, GSAirport.GetAirportWidth(p.type), GSAirport.GetAirportHeight(p.type));
+			if (extra.hangar_tile < 0) {
+				extra.note <- "this airport type has no hangar, so you cannot buy aircraft here: buy them in the hangar " +
+					"of another of your airports (a helidepot, helistation or any airport with a hangar) and give them orders to this one";
+			}
 		}
 		Action.Done(ctx, ok, extra);
 	}
@@ -651,8 +699,12 @@ Action <- {
 		if (ctx == null) return;
 		local join = Action.JoinId(ctx.p.join_station);
 		if (join == null) return Action.Reject(ctx, "join_station " + ctx.p.join_station + " is not one of your stations");
+		local chk = QH.DockCheck(ctx.p.tile);  // read before building: afterwards the water tile is a dock
 		local ok = GSMarine.BuildDock(ctx.p.tile, join);
-		Action.Done(ctx, ok, ok && !ctx.dry ? { station = GSStation.GetStationID(ctx.p.tile) } : null);
+		if (!ok) return Action.FailWith(ctx, chk.ok ? "geometry is fine here, so check ownership, town rating or a bridge above"
+			: "here: " + chk.why);
+		Action.Ok(ctx, ctx.dry ? null : Action.Coverage({ station = GSStation.GetStationID(ctx.p.tile), water_tile = chk.water_tile },
+			ctx.p.tile, 1, 1));
 	}
 
 	function H_water_canal(br, id, a) {
@@ -671,7 +723,11 @@ Action <- {
 		local ctx = Action.Begin(br, id, a, [["tile", "tile"], ["toward_tile", "tile"]]);
 		if (ctx == null) return;
 		if (!Action.Adjacent(ctx.p.tile, ctx.p.toward_tile)) return Action.Reject(ctx, "toward_tile must be a direct neighbour of tile (sets the depot axis)");
-		Action.Done(ctx, GSMarine.BuildWaterDepot(ctx.p.tile, ctx.p.toward_tile), { depot_tile = ctx.p.tile });
+		if (!GSMarine.BuildWaterDepot(ctx.p.tile, ctx.p.toward_tile)) {
+			return Action.FailWith(ctx, "a ship depot covers tile and the next tile in +x (toward_tile beside it in x) " +
+				"or +y (toward_tile beside it in y): both must be flat open water ('~'), not coast");
+		}
+		Action.Ok(ctx, ctx.dry ? null : { depot_tile = ctx.p.tile });
 	}
 
 	/* ------------------------------------------------------------ bridges / tunnels */
@@ -701,6 +757,7 @@ Action <- {
 		if (ctx == null) return;
 		local p = ctx.p;
 		if (p.vehicle == GSVehicle.VT_WATER) return Action.Reject(ctx, "tunnels are for rail or road");
+		ctx.tunnel <- true;  // keep the engine's tunnel error name (see FailWith)
 		if (p.vehicle == GSVehicle.VT_RAIL) Action.UseRailType(); else Action.UseRoadType();
 		local ok = GSTunnel.BuildTunnel(p.vehicle, p.start_tile);
 		Action.Done(ctx, ok, ok && !ctx.dry ? { other_end_tile = GSTunnel.GetOtherTunnelEnd(p.start_tile) } : null);
