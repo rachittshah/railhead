@@ -179,6 +179,7 @@ Other families do not accept `--years` or `--map`. The command stops with an err
 A line with `rejected` tells you that the seed does not give a good task.
 A line with `error` tells you that the generator stopped because of a problem.
 The task ID has the format `<family>-<split>-<seed>`, with a seed of four digits.
+The tasks in the tracked catalog have opaque IDs. To change the IDs of new tasks to opaque IDs, use `railhead harden <dir>` one time. Refer to [TASKS.md, 1.1](TASKS.md#11-task-id).
 For the contents of a task directory, refer to [TASKS.md](TASKS.md).
 
 ## 6. Start a task daemon
@@ -198,19 +199,19 @@ CAUTION: Use a new, empty state directory for each episode. If `run/actions.json
 2. Set a new state directory for this episode:
 
    ```bash
-   export RAILHEAD_STATE="$HOME/.railhead/episodes/deliver-train-0003"
+   export RAILHEAD_STATE="$HOME/.railhead/episodes/deliver-train-0189a7"
    ```
 
 3. Set the task ID. The `rh` command uses this value to start the daemon when no daemon runs:
 
    ```bash
-   export RAILHEAD_TASK=deliver-train-0003
+   export RAILHEAD_TASK=deliver-train-0189a7
    ```
 
 4. Start the daemon:
 
    ```bash
-   railhead up deliver-train-0003
+   railhead up deliver-train-0189a7
    ```
 
 5. Make sure that the output is `{"up": true, "pid": <number>}`.
@@ -483,7 +484,7 @@ The Harbor oracle uses this command.
 2. Play the oracle log of the task:
 
    ```bash
-   railhead play "$RAILHEAD_TASKS/deliver-train-0003/oracle.jsonl"
+   railhead play "$RAILHEAD_TASKS/deliver-train-0189a7/oracle.jsonl"
    ```
 
 3. Make sure that the output is `{"played": <number>}`.
@@ -504,11 +505,11 @@ CAUTION: Stop the daemon before you start the verifier. If the daemon runs, the 
 2. Run the verifier:
 
    ```bash
-   python -m railhead.verify tasks/deliver-train-0003 tasks/deliver-train-0003/start.sav \
-     "$RAILHEAD_STATE/run/actions.jsonl" out/deliver-train-0003
+   python -m railhead.verify tasks/deliver-train-0189a7 tasks/deliver-train-0189a7/start.sav \
+     "$RAILHEAD_STATE/run/actions.jsonl" out/deliver-train-0189a7
    ```
 
-3. Read `out/deliver-train-0003/reward.json`.
+3. Read `out/deliver-train-0189a7/reward.json`.
 
 The arguments are, in sequence:
 
@@ -553,10 +554,20 @@ The Dockerfile has two build arguments:
 | Build argument | Default | Description |
 |---|---|---|
 | `DEBIAN` | `trixie` | The Debian release of the base image |
-| `RAILHEAD_VERSION` | `0.1.0` | The version label in the image |
+| `RAILHEAD_VERSION` | `0.1.2` | The version label in the image. It must be the same as `__version__` in `src/railhead/__init__.py`. If it is not, the build stops. The workflow `image.yml` sets it from that file. |
 
 The workflow `.github/workflows/image.yml` builds the image for `linux/amd64` and `linux/arm64`.
 It pushes the image to `ghcr.io/<owner>/railhead` when you push a tag that starts with `v`.
+The tag must be `v` and the package version, for example `v0.1.2`. If it is not, the workflow stops before it builds.
+
+The image contains GPL-2.0 programs (OpenTTD and OpenGFX). The directory `/opt/railhead/licenses/` in the image contains:
+
+| File or directory | Contents |
+|---|---|
+| `LICENSE`, `NOTICE`, `LICENSES/` | The licences of Railhead, and which path has which licence |
+| `SOURCE-OFFER.txt` | The written offer of the source code of OpenTTD and OpenGFX |
+| `openttd/` | The licence and the third-party licences of OpenTTD, the upstream commit, and the Railhead patches and build script |
+| `OpenGFX-license.txt` | The licence of OpenGFX |
 
 ## 12. Export Harbor tasks
 
@@ -565,7 +576,7 @@ It also seals each task.
 
 CAUTION: Run `railhead export` inside the image. The manifest contains the absolute paths and the hashes of the engine, the scripts, and the package. A manifest from a different installation is not correct for the image. The verifier then sets `tamper` to 1.
 
-CAUTION: Mount the host `tasks/` directory on `/opt/railhead/tasks`. The image does not contain `secret.json` and `oracle.jsonl`. Without these files, the exported tests and solutions are not complete.
+CAUTION: Mount the host `tasks/` directory in the container and set `RAILHEAD_TASKS` to that directory, as in step 2. The image does not contain `secret.json` and `oracle.jsonl`. Without these files, the exported tests and solutions are not complete.
 
 1. Make the output directory:
 
@@ -587,10 +598,61 @@ Use the same `tasks/` directory that you used to build the image.
 | Option | Default | Description |
 |---|---|---|
 | `<task_id> ...` | All tasks | Export only these tasks. |
-| `--image <ref>` | `ghcr.io/rachittshah/railhead:0.1.0` | The image that `task.toml` names |
-| `--version <v>` | `0.1.0` | The version in `task.toml` |
+| `--image <ref>` | `ghcr.io/rachittshah/railhead:0.1.2` | The image that `task.toml` names |
+| `--version <v>` | `0.1.2` | The version in `task.toml` |
 
 For the layout of a Harbor task, refer to [ARCHITECTURE.md](ARCHITECTURE.md).
+
+Each exported task directory contains:
+
+| File | Contents |
+|---|---|
+| `task.toml` | The Harbor name `rachittshah/railhead-<task_id>`, the version, the image, `RAILHEAD_TASK`, and the health check `railhead-up <task_id>` |
+| `instruction.md` | The briefing, the horizon, the fork budget, and the rules of play |
+| `environment/Dockerfile` | `FROM <image>` and `ENV RAILHEAD_TASK=<task_id>` |
+| `tests/` | `task.json`, `secret.json`, `sealed.json`, `test.sh`, and one manifest for each CPU architecture (`sealed.<arch>.sha256`) |
+| `solution/` | `oracle.jsonl` and `solve.sh` |
+
+### 12.1 Make and publish the Harbor datasets
+
+The published datasets are `rachittshah/railhead` (the `dev` and `ood` tasks) and `rachittshah/railhead-train` (the `train` tasks).
+Each dataset is a directory: one exported task directory for each task, and a `dataset.toml` file.
+
+CAUTION: Publish only after the image with the same version is public. A Harbor task names its image in `task.toml`, and `harbor publish` does not build or push images.
+
+1. Export the `dev` and `ood` tasks into one directory and the `train` tasks into a different directory. Run the command in the published amd64 image of this version (`<image>`):
+
+   ```bash
+   mkdir -p harbor/railhead harbor/railhead-train
+   docker run --rm --platform linux/amd64 -e RAILHEAD_TASKS=/work/tasks -v "$PWD/tasks:/work/tasks:ro" \
+     -v "$PWD/harbor:/out" <image> railhead export /out/railhead $(ls tasks | grep -E -- '-(dev|ood)-')
+   docker run --rm --platform linux/amd64 -e RAILHEAD_TASKS=/work/tasks -v "$PWD/tasks:/work/tasks:ro" \
+     -v "$PWD/harbor:/out" <image> railhead export /out/railhead-train $(ls tasks | grep -- '-train-')
+   ```
+
+   Without `--image` and `--version`, `task.toml` names `ghcr.io/rachittshah/railhead:<version>` and the version of the package.
+
+2. Add the manifest of the second CPU architecture. Run the command in the arm64 image:
+
+   ```bash
+   docker run --rm --platform linux/arm64 -v "$PWD/harbor:/out" <image> railhead export-manifest /out/railhead
+   docker run --rm --platform linux/arm64 -v "$PWD/harbor:/out" <image> railhead export-manifest /out/railhead-train
+   ```
+
+3. Make sure that each `tests/` directory has `sealed.x86_64.sha256` and `sealed.aarch64.sha256`.
+
+4. Make or update `dataset.toml` in each dataset directory. `harbor init <org>/<name> --dataset` makes the file and adds the task directories. `harbor add --scan --to <dataset_dir>` adds new task directories to an existing file. Set `version` in `[dataset]` to the package version.
+
+5. Run one task of each dataset with the oracle agent (section 13).
+
+6. Publish each dataset:
+
+   ```bash
+   harbor publish harbor/railhead
+   harbor publish harbor/railhead-train
+   ```
+
+The `harbor` commands in steps 4 and 6 come from the Harbor 0.22 notes in `docs/research/04-harbor.md`. `harbor publish` calculates the digests again, publishes each task directory, and then registers the dataset version.
 
 ## 13. Run a Harbor task on your computer
 
@@ -599,14 +661,14 @@ CAUTION: Use a job directory below `$HOME`. If Docker runs in colima, colima sha
 1. Run one task with the oracle agent:
 
    ```bash
-   harbor run -p harbor/deliver-train-0003 -a oracle -o ~/.cache/harbor/jobs
+   harbor run -p harbor/deliver-train-0189a7 -a oracle -o ~/.cache/harbor/jobs
    ```
 
 2. Open the trial directory in `~/.cache/harbor/jobs/<job>/`.
 
 3. Read `verifier/reward.json` in the trial directory.
 
-4. Compare `reward` with `oracle_reward` in `tasks/deliver-train-0003/certificates.json`. The two values are usually equal.
+4. Compare `reward` with `oracle_reward` in `tasks/deliver-train-0189a7/certificates.json`. The two values are usually equal.
 
 To run all exported tasks, use `-p harbor`.
 To run a model, replace `-a oracle` with an agent and add `-m <model>`.
@@ -618,15 +680,16 @@ The healthcheck runs `railhead-up <task_id>` until the world answers.
 
 ## 14. Build the Hugging Face dataset
 
-The module `railhead.hub` makes the dataset.
-There is no `railhead` command for this procedure at this time.
+The command `railhead hub` makes the dataset (module `railhead.hub`).
 The `tasks` configuration has one row for each task.
 The `trajectories` configuration has one row for each oracle log.
+
+CAUTION: Export the Harbor tasks before you build the dataset (section 12). Each row contains the exported task directory. The command looks for `harbor/<task_id>` and for `harbor/<dataset>/<task_id>`. If a task is not in the Harbor directory, the command stops with an error.
 
 1. Build the dataset. This step replays each oracle log:
 
    ```bash
-   python -c "from pathlib import Path; from railhead.hub import build; print(build(Path('tasks'), Path('harbor'), Path('hf')))"
+   railhead hub build tasks harbor hf
    ```
 
 2. Set `HF_TOKEN` to a Hugging Face token that has write access:
@@ -638,8 +701,10 @@ The `trajectories` configuration has one row for each oracle log.
 3. Push the dataset:
 
    ```bash
-   python -c "from pathlib import Path; from railhead.hub import push; print(push(Path('hf')))"
+   railhead hub push hf
    ```
+
+To add the verified games of an arena to the trajectories, use `railhead hub add-games hf <arena_dir> tasks/<task_id>`.
 
 The default repository is `rachittshah/railhead`.
 
@@ -826,10 +891,19 @@ The charts and the maps need matplotlib. Install it with `uv pip install -e ".[v
 The viewer is a GUI client of OpenTTD 15.3 that joins as a spectator.
 It does not change the world.
 
-The viewer opens only on the LG monitor.
-It reads the list of connected displays from macOS and finds the display with "LG" in its name.
-If no LG display is connected, the command stops with an error and opens no window.
-After it places the window, it reads the window position again. If the window is not on the LG monitor, it closes the window and stops with an error.
+The viewer works only on macOS.
+It reads the list of connected displays from macOS and selects one display:
+
+1. If a display has "LG" in its name, the viewer uses that display.
+2. If no display has "LG" in its name, the viewer uses the main display.
+
+The window fills the lower half of the selected display.
+To set the window position and size yourself, add `--bounds x,y,w,h`.
+The values are in points, from the top-left corner of the main display.
+The bounds must be inside one connected display. If they are not, the command stops with an error before it starts an engine.
+
+After it places the window, the viewer reads the window position again. If the window is not on the selected display, the viewer closes the window and stops with an error.
+Each call to `osascript` has a time limit of 10 seconds. If macOS does not reply in that time, the command stops with an error.
 
 - To watch a live player, attach to its daemon:
 
@@ -841,4 +915,10 @@ After it places the window, it reads the window position again. If the window is
 
   ```bash
   railhead view arena-dev-0005 --log arena/a/state/run/actions.jsonl --speed 1000
+  ```
+
+- To put the window at a known position, give the bounds:
+
+  ```bash
+  railhead view arena-dev-0005 --bounds 0,0,1280,800
   ```

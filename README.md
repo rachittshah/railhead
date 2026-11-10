@@ -8,12 +8,23 @@ If a road has to be laid, the model lays it, tile coordinate by tile coordinate.
 
 [Code](https://github.com/rachittshah/railhead) ·
 Harbor datasets `rachittshah/railhead` (dev + ood) and `rachittshah/railhead-train` ·
-image `ghcr.io/rachittshah/railhead:0.1.1` (amd64 + arm64) ·
+image `ghcr.io/rachittshah/railhead:0.1.1` (amd64 + arm64; the latest published image) ·
 [flowcharts](docs/DIAGRAMS.md) ·
-[reference docs](docs/USAGE.md)
+[reference docs](docs/USAGE.md) ·
+[changelog](CHANGELOG.md)
 
 > The reference documents in [`docs/`](docs/) are written in ASD-STE100 Simplified Technical English ([rules](docs/STE.md)).
 > This README is not. It is the feature story.
+
+**Results at a glance.** Arena 2 (`arena-dev-0100`), one game per model, net worth after the run-off year. [What this does not show](#what-the-arena-does-not-show).
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/img/arena2-networth-dark.svg"><img alt="Bar chart: net worth after the run-off year for each model in Arena 2. Claude Opus 5.5 leads with £45.8M, then gpt-6-astra £27.9M and gpt-6-sol £27.2M." src="docs/img/arena2-networth.svg" width="560"></picture>
+
+| | Model | Harness | Net worth |
+|---|---|---|---|
+| 1 | claude-opus-5-5 | Claude Code | £45,758,664 |
+| 2 | gpt-6-astra | Codex | £27,935,307 |
+| 3 | gpt-6-sol | Codex | £27,232,656 |
 
 ---
 
@@ -198,11 +209,12 @@ The top six all hit the cap, so this table reports raw net worth.
 
 Why each model played the way it did, from its action log, its own words and its telemetry, is in **[docs/model-economics-behaviour.md](docs/model-economics-behaviour.md)**. The short version: the winners all landed on ~460-tile air routes on their own, and two models never found air because an error message told them the wrong airport type.
 
-The fine print, which matters:
+### What the arena does not show
 
-- This is **one world and one run per model**. It shows that the environment separates models clearly. It is not a benchmark.
-- The Claude models played through Claude Code and the OpenAI models through Codex. The harnesses are different, and that is part of what was measured.
-- Fable stopped in 1963 at a usage limit of its Claude session, not by choice. The rules let its company run on, as they did for Opus and Sonnet in Arena 1.
+- **A ranking with error bars.** There was one map and one game per model, so there are no confidence intervals. Second and third place (gpt-6-astra and gpt-6-sol) are £0.7 million apart, about 2.5%. Another map could swap them, and nothing here says how likely that is. The arena shows that the environment separates models clearly. It is not a benchmark.
+- **The model apart from its harness.** The Claude models played through Claude Code and the OpenAI models through Codex. Every gap between a Claude model and an OpenAI model is a gap between model-plus-harness pairs, and this arena cannot split the two. The players also ran with the operator's own Claude Code and Codex settings, not in clean configurations.
+- **Full games for everyone.** Fable stopped in 1963 at a usage limit of its Claude session, not by choice. In Arena 1, Opus and Sonnet stopped at usage limits after about 2.3 game years. The rules let their companies run on, so their results measure what they had built by then, not what they would have built with the whole mandate.
+- **What a game costs.** The dollar figures (about $15 for Opus, $35.58 for Fable) are API-equivalent estimates: the price that Claude Code reports for the tokens at API rates. There is no dollar figure for the Codex players.
 - "Net worth" is cash minus loan. Vehicles and buildings count only for what they earn during the run-off year, so selling everything at the end does not help.
 
 ### The free models
@@ -364,7 +376,9 @@ Each task is certified: the generator plays it with a scripted oracle and with a
 
 `D` is the cargo delivered, `B` the promise, `K` the cargo delivered during the run-off (`K0` when doing nothing, `K*` after the oracle's repair), and `W` the net worth after the run-off.
 The `train` and `dev` splits are temperate; the `ood` split moves to arctic or tropic maps, with cargo chains that do not exist in training.
-Task IDs are opaque, and the facts that would give a task away (which contract is impossible, the seeds, the oracle's targets) live in `secret.json`, which never enters the image.
+The IDs of `deliver`, `deliver_bid` and `simops` tasks are opaque, and the facts that would give a task away (which contract is impossible, the seeds, the oracle's targets) live in `secret.json`, which never enters the image, so a model playing inside it cannot read them.
+They are not secret from the world, though: this public repository tracks the `secret.json` of all 1,565 tasks and the oracle log (`oracle.jsonl`) of 1,562 of them.
+Anyone who trains on the repository sees the answers, so no split here is held out.
 The details are in [docs/TASKS.md](docs/TASKS.md).
 
 ## 14. Try it yourself
@@ -394,22 +408,25 @@ Run everything from the root of the repository:
    pytest -q -m integration
    ```
 
-4. Generate `deliver` tasks for the training seeds 0 to 7. The certifier rejects some seeds; that is it doing its job:
+4. Generate `deliver` tasks for the training seeds 0 to 7. The certifier rejects some seeds; that is it doing its job.
+   The new tasks go to `runs/my-tasks` (git-ignored), not into `tasks/`, because step 8 copies all of `tasks/` into the image.
+   They get seed IDs of the form `deliver-train-<seed>`; the tracked catalog uses opaque IDs, which `railhead harden` makes:
 
    ```bash
-   python -m railhead.gen.build deliver train 0 8 --out tasks --jobs 4
+   python -m railhead.gen.build deliver train 0 8 --out runs/my-tasks --jobs 4
    ```
 
-5. Start a task and play it yourself:
+5. Start a task and play it yourself, then stop its engines:
 
    ```bash
    export RAILHEAD_TASKS="$PWD/tasks" RAILHEAD_TASK=arena-dev-0005
    export RAILHEAD_STATE="$HOME/.railhead/episodes/arena-dev-0005"
    railhead up arena-dev-0005
    rh brief && rh help
+   railhead down
    ```
 
-6. Run an arena of your own, with every LLM call traced:
+6. Run an arena of your own, with every LLM call traced. This needs the `claude` and `codex` command-line tools, signed in. In Arena 2 the Claude players needed 17 to 79 minutes of wall-clock time each:
 
    ```bash
    railhead otel serve --dir traces &
@@ -434,18 +451,18 @@ Run everything from the root of the repository:
    docker build -f docker/Dockerfile -t railhead:dev .
    ```
 
-9. Export the Harbor tasks inside the image:
+9. Export a Harbor task inside the image (leave out the task ID to export all of them):
 
    ```bash
    mkdir -p harbor
    docker run --rm -e RAILHEAD_TASKS=/work/tasks -v "$PWD/tasks:/work/tasks:ro" \
-     -v "$PWD/harbor:/out" railhead:dev railhead export /out --image railhead:dev
+     -v "$PWD/harbor:/out" railhead:dev railhead export /out deliver-train-0189a7 --image railhead:dev
    ```
 
-10. Run one task with the oracle agent. The reward lands in `verifier/reward.json` of the trial directory:
+10. Run that task with the oracle agent. The reward lands in `verifier/reward.json` of the trial directory, and should match `oracle_reward` in `tasks/deliver-train-0189a7/certificates.json`:
 
     ```bash
-    harbor run -p harbor/deliver-train-0000 -a oracle -o ~/.cache/harbor/jobs
+    harbor run -p harbor/deliver-train-0189a7 -a oracle -o ~/.cache/harbor/jobs
     ```
 
 The full procedures and cautions are in [docs/USAGE.md](docs/USAGE.md).
@@ -476,9 +493,11 @@ The full procedures and cautions are in [docs/USAGE.md](docs/USAGE.md).
 | [docs/STE.md](docs/STE.md) | The STE rules, technical names and technical verbs of the reference documents |
 | [docs/DESIGN.md](docs/DESIGN.md) | The design notes |
 | `docs/research/` | The research notes on the RL landscape, OpenTTD and Harbor |
+| [CHANGELOG.md](CHANGELOG.md) | What changed in each release |
 
 ## License
 
-The Python package is MIT.
-OpenTTD is GPL-2.0.
-The environment image contains both.
+Railhead is MIT ([LICENSE](LICENSE)), except the engine patches and the GameScript.
+The engine patches in `engine/patches/` change OpenTTD, so they are GPL-2.0-only ([LICENSES/GPL-2.0-only.txt](LICENSES/GPL-2.0-only.txt)), and the GameScript in `gamescript/` is offered on the same terms.
+[NOTICE](NOTICE) says which path is under which licence.
+The environment image contains both: the patched OpenTTD binary and OpenGFX are GPL-2.0-only, and the image carries their licences and a written offer of their source code in `/opt/railhead/licenses/`.
