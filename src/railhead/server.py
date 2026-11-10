@@ -14,6 +14,7 @@ import subprocess
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Self
 
 from railhead.admin_client import AdminClient
 from railhead.engine import find_openttd, scripts_dir
@@ -212,7 +213,7 @@ class OpenTTDServer:
     def admin(self, **kw) -> AdminClient:
         return AdminClient.connect("127.0.0.1", self.admin_port, self.admin_password, **kw)
 
-    def __enter__(self) -> OpenTTDServer:
+    def __enter__(self) -> Self:
         return self.start()
 
     def __exit__(self, *exc: object) -> None:

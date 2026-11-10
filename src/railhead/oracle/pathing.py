@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import heapq
+import itertools
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -68,7 +69,7 @@ def segments(path: list[Tile]) -> list[tuple[Tile, Tile]]:
     out = []
     seg_start = path[0]
     direction = (path[1][0] - path[0][0], path[1][1] - path[0][1])
-    for prev, cur in zip(path[1:], path[2:]):
+    for prev, cur in itertools.pairwise(path[1:]):
         d = (cur[0] - prev[0], cur[1] - prev[1])
         if d != direction:
             out.append((seg_start, prev))

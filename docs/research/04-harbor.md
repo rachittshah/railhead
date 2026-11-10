@@ -442,7 +442,7 @@ harbor-toy-task/
 Command and result:
 
 ```bash
-harbor run -p /Users/rachitt/railhead/docs/research/assets/harbor-toy-task \
+harbor run -p docs/research/assets/harbor-toy-task \
   -a oracle -e docker -o ~/.cache/harbor/railhead-probe-jobs --job-name toy-final -q
 # Total runtime: 4s   (wall 6.24s, images cached)
 ```

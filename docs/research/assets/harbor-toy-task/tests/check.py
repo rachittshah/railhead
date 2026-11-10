@@ -13,7 +13,7 @@ def fetch(url: str, method: str = "GET") -> bytes | None:
         req = urllib.request.Request(url, method=method)
         with urllib.request.urlopen(req, timeout=3) as resp:
             return resp.read()
-    except Exception:
+    except Exception:  # noqa: BLE001 - a probe: any failure means "not there"
         return None
 
 
@@ -22,14 +22,14 @@ def pid_alive(pid_file: str) -> int:
         pid = int(Path(pid_file).read_text().strip())
         os.kill(pid, 0)
         return 1
-    except Exception:
+    except Exception:  # noqa: BLE001 - a probe: any failure means "not there"
         return 0
 
 
 def read(path: str) -> str:
     try:
         return Path(path).read_text().strip()
-    except Exception:
+    except Exception:  # noqa: BLE001 - a probe: any failure means "not there"
         return ""
 
 

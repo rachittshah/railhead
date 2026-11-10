@@ -35,12 +35,22 @@ def _tar_dir(path: Path) -> bytes:
     return buf.getvalue()
 
 
+def harbor_task_dir(harbor_dir: Path, task_id: str) -> Path:
+    """The exported Harbor task: ``<harbor_dir>/<id>``, or ``<harbor_dir>/<dataset>/<id>`` (the published layout:
+    ``harbor/railhead`` for dev + ood, ``harbor/railhead-train`` for train). A missing task is an error, so a
+    wrong directory cannot give rows with an empty ``task_binary``."""
+    found = [d for d in (Path(harbor_dir) / task_id, *Path(harbor_dir).glob(f"*/{task_id}")) if d.is_dir()]
+    if not found:
+        raise FileNotFoundError(f"no exported Harbor task {task_id!r} in {harbor_dir} (run railhead export first)")
+    return found[0]
+
+
 def task_rows(tasks_dir: Path, harbor_dir: Path, image: str = DEFAULT_IMAGE) -> list[dict]:
     rows = []
     for tdir in sorted(p for p in Path(tasks_dir).iterdir() if (p / "task.json").exists()):
         spec = TaskSpec.load(tdir)
         certs = json.loads((tdir / "certificates.json").read_text()) if (tdir / "certificates.json").exists() else {}
-        hdir = Path(harbor_dir) / spec.task_id
+        hdir = harbor_task_dir(harbor_dir, spec.task_id)
         rows.append({
             "task_id": spec.task_id,
             "family": spec.family,
@@ -53,7 +63,7 @@ def task_rows(tasks_dir: Path, harbor_dir: Path, image: str = DEFAULT_IMAGE) -> 
             "harbor_name": f"{ORG}/railhead-{spec.task_id}",
             "docker_image": image,
             "title": spec.title,
-            "instruction": (hdir / "instruction.md").read_text() if (hdir / "instruction.md").exists() else spec.briefing,
+            "instruction": (hdir / "instruction.md").read_text(),
             "horizon_days": spec.horizon_days,
             "runoff_days": spec.runoff_days,
             "limits": json.dumps(spec.limits),
@@ -62,7 +72,7 @@ def task_rows(tasks_dir: Path, harbor_dir: Path, image: str = DEFAULT_IMAGE) -> 
             "idle_reward": float(certs.get("idle_reward", 0.0)),
             "oracle_reward": float(certs.get("oracle_reward", 0.0)),
             "start_sav": (tdir / "start.sav").read_bytes(),
-            "task_binary": _tar_dir(hdir) if hdir.exists() else b"",
+            "task_binary": _tar_dir(hdir),
         })
     return rows
 
@@ -207,7 +217,7 @@ The documents of Railhead follow ASD-STE100 Simplified Technical English.
 
 * Code: https://github.com/rachittshah/railhead
 * Environment image: `{image}`
-* Harbor registry: `rachittshah/railhead` and one task package for each task
+* Harbor registry: `rachittshah/railhead` (`dev` and `ood`), `rachittshah/railhead-train` (`train`), and one task package for each task
 
 ## Contents
 
@@ -249,6 +259,7 @@ The `turn_credit` column contains the leave-one-turn-out credit for each turn.
 | `impossible` | A contract that no company can complete. | 1 if the agent abstains, else 0 |
 | `simops` | Repair a truck route that has faults. | Run-off deliveries between the broken and the repaired network |
 | `tycoon` | Open play for 365 days. | Net worth after a 730-day run-off, 0.5 at the scripted baseline |
+| `arena` | Open play for 5 or 10 years. Many models play the same task. | Net worth after a 365-day run-off, on a log scale: approximately 0.18 at the scripted baseline, 1 at 50 times its gain |
 
 The `ood` split uses the arctic and tropic climates.
 The cargo chains of these climates are not in the `train` split.
@@ -266,7 +277,13 @@ A change to the live game that is not in the action log has no effect on the rew
 ## License
 
 The dataset and the Railhead code have the MIT license.
-The environment image contains OpenTTD, which has the GPL-2.0 license.
+The engine patches and the GameScript of Railhead have the GPL-2.0-only license.
+The file `NOTICE` in the code repository tells which path has which license.
+The environment image contains OpenTTD and OpenGFX, which have the GPL-2.0-only license.
+The image contains their license texts and a written offer of their source code in `/opt/railhead/licenses/`.
+
+The `tasks` configuration contains the secret facts of each task (in `task_binary`, in `tests/secret.json`) and the oracle solutions.
+Do not use a split of this dataset as a held-out split.
 """
 
 

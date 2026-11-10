@@ -124,7 +124,7 @@ def gen_simops(seed: int, split: str, out: Path) -> TaskSpec:
             for m, a in fix:
                 try:
                     w.act(m, **a)
-                except Exception:  # noqa: BLE001 - a redundant repair step may legitimately fail
+                except Exception:  # noqa: BLE001, S110 - a redundant repair step may legitimately fail
                     pass
             w.note("submit")
         k0 = verify(tdir, start, _empty_log(work / "idle.jsonl"), work / "k0")["runoff_delivered"]

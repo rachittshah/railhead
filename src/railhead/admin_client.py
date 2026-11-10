@@ -10,7 +10,7 @@ import queue
 import socket
 import threading
 import time
-from typing import Any
+from typing import Any, Self
 
 from railhead import admin_protocol as ap
 from railhead.wire import FrameDecoder
@@ -71,7 +71,7 @@ class AdminClient:
             pass
         self._sock.close()
 
-    def __enter__(self) -> AdminClient:
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, *exc: object) -> None:
