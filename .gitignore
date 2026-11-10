@@ -16,3 +16,4 @@ jobs/
 traces/
 !tasks/**/start.sav
 harbor/
+out/
