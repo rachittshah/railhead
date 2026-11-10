@@ -1,22 +1,37 @@
 """Append-only action log — the trajectory *is* the proof (proof-of-play, DESIGN.md M1).
 
 JSONL, one record per line:
-  {"kind":"header","v":1,"company":C,"ticks":T,"checksum":H}
+  {"kind":"header","v":2,"company":C,"ticks":T,"checksum":H}
   {"kind":"act","seq":n,"ticks":T,"m":"road_line","a":{...},"ok":true,"ret":{...}|"code":"ERR_.."}
   {"kind":"wait","seq":n,"ticks":T0,"end_ticks":T1,"a":{"days":30,"until":[...]},"reason":"elapsed","checksum":H}
   {"kind":"meta","seq":n,"ticks":T,"m":"forecast|promise|abstain|flag|submit","a":{...}}
 Replay needs only: the sealed start savegame + this file.
+
+Versions (``LOG_VERSION``; replay.py enforces the rules, the verifier chooses the minimum version):
+  v1  the meta records are passive: the world does not see them.
+  v2  the live world and the replay also send each meta record to the GameScript as a digest
+      (``meta_digest``), so every later wait checksum binds the meta records before it, and the
+      header ticks and checksum must match the start state.
+Every version: one header first, ``seq`` contiguous, every record at the replayed tick, and a
+checksum on every wait.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-LOG_VERSION = 1
+LOG_VERSION = 2
+
+
+def meta_digest(m: str, a: dict[str, Any]) -> int:
+    """31-bit nonzero digest of one meta decision; the GameScript folds it into the world checksum."""
+    blob = json.dumps({"m": m, "a": a}, separators=(",", ":"), sort_keys=True).encode()
+    return int.from_bytes(hashlib.sha256(blob).digest()[:4], "little") & 0x7FFFFFFF or 1
 
 
 class ActionLog:

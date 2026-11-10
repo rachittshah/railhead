@@ -54,8 +54,24 @@ class Bridge:
         raise TimeoutError("RailheadBridge GameScript did not answer hello")
 
     def call(self, method: str, timeout: float = 30.0, **args: Any) -> Any:
+        """Convenience for trusted callers. Arguments from a player or a log go through :meth:`request`:
+        here an argument named ``timeout`` would set the wait instead of reaching the GameScript."""
+        return self.request(method, args, timeout=timeout)
+
+    def request(self, method: str, args: dict[str, Any] | None = None, timeout: float = 30.0) -> Any:
+        """Send ``method`` with ``args`` as one dict (no name can collide with ``timeout``).
+
+        A request that cannot be encoded (floats, too large, not an object) raises ``BridgeError``
+        ERR_BAD_ARG before anything is sent: like a GameScript refusal, it changed nothing."""
+        if args is not None and not isinstance(args, dict):
+            raise BridgeError("ERR_BAD_ARG", f"arguments of {method!r} must be an object")
         rid = self._new_id()
-        self.admin.send_gs({"id": rid, "m": method, "a": args})
+        msg = {"id": rid, "m": method, "a": dict(args or {})}
+        try:
+            ap.dumps_gs(msg)
+        except (ValueError, TypeError) as e:
+            raise BridgeError("ERR_BAD_ARG", str(e)) from None
+        self.admin.send_gs(msg)
         rows: list | None = None
         deadline = time.monotonic() + timeout
         while True:

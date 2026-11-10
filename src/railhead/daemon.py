@@ -2,6 +2,10 @@
 
 * Boot: load the sealed ``start.sav``; if ``run/actions.jsonl`` already exists (daemon was killed),
   *replay* it to recover the exact state, then keep appending (the log is the source of truth).
+  The fork budget is kept in ``run/forks.json``, so a restart does not reset it.
+* World fault: if the engine does not answer a world-changing request, it is unknown whether the
+  change happened. The daemon then rebuilds the world from the log (the same recovery), so the live
+  world never differs from the log, and replies ``ERR_INFRA``.
 * Ops: info · query (read-only GS methods) · act (whitelisted player actions, logged) · wait
   (capped at the task horizon, logged) · fork_* (priced, reseeded sandboxes) · meta (forecast,
   promise, abstain, flag, submit — logged) · history · shutdown.
@@ -25,26 +29,19 @@ from pathlib import Path
 from typing import Any
 
 from railhead.actionlog import ActionLog, read_log
+from railhead.actions import META_SCHEMAS, check_until, validate
 from railhead.bridge import BridgeError
 from railhead.client import Client, DaemonError, socket_path
 from railhead.replay import default_whitelist, replay
 from railhead.task import TaskSpec, state_root, task_dir
-from railhead.world import World
+from railhead.world import World, WorldFault
 
 READ_METHODS = {
     "state", "checksum", "companies", "map_info", "towns", "industries", "cargos", "engines", "stations",
     "vehicles", "orders", "depots", "company", "tile", "tiles", "subsidies", "catchment", "monitor_read",
 }
-# Meta decisions: exact argument schemas {name: (type, required)}. Unknown keys are refused, and the
+# Meta decisions: exact argument schemas (actions.META_SCHEMAS). Unknown keys are refused, and the
 # irreversible `submit` needs confirm=yes (a model once ended a 5-year game by probing `submit vtype=road`).
-META_SCHEMAS: dict[str, dict[str, tuple[type, bool]]] = {
-    "submit": {"confirm": (str, True)},
-    "promise": {"quantity": (int, True)},
-    "forecast": {"metric": (str, True), "p10": (int, False), "p50": (int, True), "p90": (int, False),
-                 "by_day": (int, False)},
-    "abstain": {"reason": (str, True), "max_possible": (int, False)},
-    "flag": {"note": (str, True)},
-}
 META_METHODS = set(META_SCHEMAS)
 WAIT_KEYS = {"days", "ticks", "until"}
 
@@ -81,32 +78,31 @@ class Railheadd:
         self.whitelist = default_whitelist() or set()
         self.lock = threading.Lock()
         self.forks: dict[str, World] = {}
-        self.fork_days_used = 0
-        self.forks_created = 0
         self.submitted = False
         self.run_dir = self.state / "run"
         self.run_dir.mkdir(parents=True, exist_ok=True)
+        self.fork_days_used, self.forks_created = self._load_budget()
         self.world = self._boot()
+
+    # ------------------------------------------------------------------ fork budget (survives restarts)
+    def _load_budget(self) -> tuple[int, int]:
+        path = self.run_dir / "forks.json"
+        if not path.exists():
+            return 0, 0
+        b = json.loads(path.read_text())
+        return int(b["fork_days_used"]), int(b["forks_created"])
+
+    def _save_budget(self) -> None:
+        path = self.run_dir / "forks.json"
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps({"fork_days_used": self.fork_days_used, "forks_created": self.forks_created}))
+        os.replace(tmp, path)
 
     # ------------------------------------------------------------------ boot / recovery
     def _boot(self) -> World:
-        start = self.tdir / "start.sav"
-        log_path = self.run_dir / "actions.jsonl"
-        wdir = self.state / "world"
-        shutil.rmtree(wdir, ignore_errors=True)
         shutil.rmtree(self.state / "forks", ignore_errors=True)
         meta_path = self.run_dir / "meta.json"
-        recovering = log_path.exists() and log_path.stat().st_size > 0
-        if recovering:
-            res = replay(start, log_path, wdir, allowed=self.whitelist, keep_open=True)
-            world = res.world
-            assert world is not None
-            for rec in read_log(log_path):
-                if rec.kind == "meta" and rec.raw.get("m") == "submit":
-                    self.submitted = True
-        else:
-            world = World.load(wdir, start)
-        self._record_child(world)
+        world = self._load_world()
         if meta_path.exists():
             meta = json.loads(meta_path.read_text())
         else:
@@ -115,8 +111,61 @@ class Railheadd:
                     "end_date": st["date"] + self.spec.horizon_days}
             meta_path.write_text(json.dumps(meta))
         self.meta = meta
-        world.attach_log(ActionLog(log_path), header=not recovering)
         return world
+
+    def _load_world(self) -> World:
+        """The live world: the sealed start, plus a replay of the log if there is one. Logged."""
+        start = self.tdir / "start.sav"
+        log_path = self.run_dir / "actions.jsonl"
+        wdir = self.state / "world"
+        shutil.rmtree(wdir, ignore_errors=True)
+        recovering = log_path.exists() and log_path.stat().st_size > 0
+        if recovering:
+            res = replay(start, log_path, wdir, allowed=self.whitelist, keep_open=True)
+            world = res.world
+            assert world is not None
+            for rec in read_log(log_path):
+                if rec.kind == "meta" and rec.raw.get("m") == "submit":
+                    self.submitted = True
+            self._record_child(world)
+            world.attach_log(ActionLog(log_path), header=False, version=res.version)
+        else:
+            world = World.load(wdir, start)
+            self._record_child(world)
+            world.attach_log(ActionLog(log_path))
+        return world
+
+    def _rebuild(self, fault: Exception) -> OpError:
+        """After a WorldFault: drop the live world and recover it from the log, which does not hold
+        the request that failed. The live world then equals the log again."""
+        old, self.world = self.world, None  # type: ignore[assignment]
+        try:
+            old.close()
+        except Exception:  # noqa: BLE001 - the old engine may be hung or gone
+            pass
+        if old.log is not None:
+            old.log.close()
+        try:
+            self.world = self._load_world()
+        except Exception as e:  # noqa: BLE001
+            return OpError("ERR_INFRA", f"the engine failed ({fault}) and the rebuild from the log failed "
+                           f"({type(e).__name__}: {e}); retry the request to try again")
+        return OpError("ERR_INFRA", f"the engine failed ({fault}); the world was rebuilt from the action log "
+                       "and the last request did not happen")
+
+    def _live(self) -> World:
+        if self.world is None:
+            try:
+                self.world = self._load_world()
+            except Exception as e:  # noqa: BLE001
+                raise OpError("ERR_INFRA", f"the world is not available ({type(e).__name__}: {e})") from e
+        return self.world
+
+    def _logged(self, fn, *args, **kw) -> Any:
+        try:
+            return fn(*args, **kw)
+        except WorldFault as e:
+            raise self._rebuild(e) from e
 
     def _record_child(self, w: World) -> None:
         pids_path = self.state / "children.json"
@@ -127,10 +176,10 @@ class Railheadd:
 
     # ------------------------------------------------------------------ helpers
     def days_left(self) -> int:
-        return max(0, self.meta["end_date"] - self.world.state()["date"])
+        return max(0, self.meta["end_date"] - self._live().state()["date"])
 
     def info(self) -> dict:
-        st = self.world.state()
+        st = self._live().state()
         return {
             "task_id": self.task_id, "family": self.spec.family, "title": self.spec.title,
             "date": st["ymd"], "company": st["company"], "days_left": max(0, self.meta["end_date"] - st["date"]),
@@ -160,7 +209,7 @@ class Railheadd:
             m = req.get("m")
             if m not in READ_METHODS:
                 raise OpError("ERR_NOT_A_QUERY", f"{m!r} is not a read-only query")
-            return self.world.call(m, **a)
+            return self._live().call_args(m, self._obj(a))
         if op == "act":
             m = req.get("m")
             if m not in self.whitelist:
@@ -169,15 +218,17 @@ class Railheadd:
                 raise OpError("ERR_SUBMITTED", "you already submitted; the world now runs without you")
             if self.days_left() <= 0:
                 raise OpError("ERR_HORIZON", "the task horizon has been reached; no more actions")
-            return self.world.act(m, **a)
+            # Canonical arguments only (also for `rh do`): the GameScript and the log see exactly these.
+            args = validate(m, self._obj(a), map_size_x=self.world.admin.welcome.map_x)
+            return self._logged(self.world.act, m, **args)
         if op == "wait":
             return self._wait(req)
         if op == "meta":
             m = req.get("m")
             if m not in META_METHODS:
                 raise OpError("ERR_BAD_ARG", f"unknown meta decision {m!r}")
-            check_meta(m, a)
-            self.world.note(m, **a)
+            check_meta(m, self._obj(a))
+            self._logged(self._live().note, m, **a)
             if m == "submit":
                 self.submitted = True
             return {"recorded": m}
@@ -189,19 +240,25 @@ class Railheadd:
             return self._fork_op(op, req, a)
         raise OpError("ERR_UNKNOWN_OP", f"unknown op {op!r}")
 
+    @staticmethod
+    def _obj(a: Any) -> dict:
+        if not isinstance(a, dict):
+            raise OpError("ERR_BAD_ARG", "arguments must be an object")
+        return a
+
     def _wait(self, req: dict) -> dict:
         unknown = set(req) - WAIT_KEYS - {"op"}
         if unknown:
             raise OpError("ERR_BAD_ARG", f"wait: unknown argument(s) {sorted(unknown)} (arguments: days, ticks, until)")
+        until = check_until(req.get("until"))
         left = self.days_left()
         if left <= 0:
             raise OpError("ERR_HORIZON", "the task horizon has been reached")
-        until = req.get("until")
         if req.get("ticks") is not None:
             ticks = max(1, min(int(req["ticks"]), left * TICKS_PER_DAY))
-            return self.world.wait(ticks=ticks, until=until)
+            return self._logged(self.world.wait, ticks=ticks, until=until)
         days = max(1, min(int(req.get("days", 1)), left))
-        return self.world.wait(days=days, until=until)
+        return self._logged(self.world.wait, days=days, until=until)
 
     def _fork_op(self, op: str, req: dict, a: dict) -> Any:
         name = str(req.get("name", "f"))
@@ -212,9 +269,10 @@ class Railheadd:
                 raise OpError("ERR_BAD_ARG", f"fork {name!r} exists")
             exact = bool(req.get("exact")) and bool(self.spec.limits.get("allow_exact_forks"))
             self.forks_created += 1
+            self._save_budget()
             seed = None if exact else int.from_bytes(
                 hashlib.sha256(f"{self.task_id}:{self.forks_created}".encode()).digest()[:4], "little")
-            child = self.world.fork(self.state / "forks" / name, reseed=seed)
+            child = self._live().fork(self.state / "forks" / name, reseed=seed)
             self._record_child(child)
             self.forks[name] = child
             return {"fork": name, "exact": exact, "fork_days_left": self.spec.max_fork_days - self.fork_days_used}
@@ -225,19 +283,25 @@ class Railheadd:
             m = req.get("m")
             if m not in READ_METHODS:
                 raise OpError("ERR_NOT_A_QUERY", f"{m!r} is not a read-only query")
-            return w.call(m, **a)
+            return w.call_args(m, self._obj(a))
         if op == "fork_act":
             m = req.get("m")
             if m not in self.whitelist:
                 raise OpError("ERR_NOT_A_PLAYER_ACTION", f"{m!r} is not a player action")
-            return w.call(m, **a)
+            return w.call_args(m, validate(m, self._obj(a), map_size_x=w.admin.welcome.map_x))
         if op == "fork_wait":
             days = max(1, int(req.get("days", 1)))
+            until = check_until(req.get("until"))
             left = self.spec.max_fork_days - self.fork_days_used
             if days > left:
                 raise OpError("ERR_FORK_BUDGET", f"only {left} fork-days left in the imagination budget")
-            out = w.step(days=days, until=req.get("until"))
-            self.fork_days_used += max(1, int(out.get("days", days)))
+            # Charge first (a step that fails or times out still used the engine), refund what an
+            # early wake left unused.
+            self.fork_days_used += days
+            self._save_budget()
+            out = w.step(days=days, until=until)
+            self.fork_days_used -= days - min(days, max(1, int(out.get("days", days))))
+            self._save_budget()
             out["fork_days_left"] = self.spec.max_fork_days - self.fork_days_used
             return out
         if op == "fork_drop":
@@ -248,7 +312,8 @@ class Railheadd:
     def close(self) -> None:
         for w in self.forks.values():
             w.close()
-        self.world.close()
+        if self.world is not None:
+            self.world.close()
 
 
 # ---------------------------------------------------------------------- socket server
