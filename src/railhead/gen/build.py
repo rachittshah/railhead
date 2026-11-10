@@ -166,10 +166,10 @@ def deliver_text(spec: TaskSpec) -> tuple[str, str]:
     dx, dy = o["dest_xy"]
     title = f"Deliver {o['cargo_name']} to {o['dest_name']}"
     lines = [
-        f"You run a young transport company. A customer needs **{o['cargo_name']}** delivered to "
-        f"**{o['dest_name']}** (industry id {o['dest']}, near tile {dx},{dy}).",
-        f"A likely supplier is **{o['source_name']}** (industry id {o['source']}, near tile {sx},{sy}); any "
-        "source counts, only what your company delivers to that industry is counted.",
+        (f"You run a young transport company. A customer needs **{o['cargo_name']}** delivered to "
+         f"**{o['dest_name']}** (industry id {o['dest']}, near tile {dx},{dy})."),
+        (f"A likely supplier is **{o['source_name']}** (industry id {o['source']}, near tile {sx},{sy}); any "
+         "source counts, only what your company delivers to that industry is counted."),
         f"**Contract:** deliver at least **{o['quantity']:,} units** within the horizon.",
     ]
     if o.get("bid"):
@@ -362,7 +362,7 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     # Run through the package module so worker processes and simops share one Rejected class.
-    from railhead.gen import build as _pkg
+    from railhead.gen import build as _pkg  # noqa: PLW0406 - on purpose, see above
 
     raise SystemExit(_pkg.main())
 

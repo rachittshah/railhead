@@ -10,11 +10,10 @@ pytestmark = pytest.mark.integration
 
 @pytest.fixture
 def world(tmp_path):
-    with OpenTTDServer(tmp_path / "inst", ServerConfig(seed=7)) as srv:
-        with srv.admin() as admin:
-            bridge = Bridge(admin)
-            bridge.wait_ready(timeout=30)
-            yield srv, admin, bridge
+    with OpenTTDServer(tmp_path / "inst", ServerConfig(seed=7)) as srv, srv.admin() as admin:
+        bridge = Bridge(admin)
+        bridge.wait_ready(timeout=30)
+        yield srv, admin, bridge
 
 
 def test_bridge_handshake_reports_protocol_version(world):

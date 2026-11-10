@@ -104,7 +104,7 @@ def encode_rcon(command: str) -> bytes:
 
 def _reject_floats(obj: Any) -> None:
     if isinstance(obj, float):
-        raise ValueError("GameScript JSON cannot carry floats; use fixed-point integers")
+        raise ValueError("GameScript JSON cannot carry floats; use fixed-point integers")  # noqa: TRY004 - callers catch ValueError
     if isinstance(obj, dict):
         for v in obj.values():
             _reject_floats(v)
@@ -116,7 +116,7 @@ def _reject_floats(obj: Any) -> None:
 def dumps_gs(obj: dict) -> str:
     """Serialize for the GS: compact, ASCII-only (the server rewrites \\n\\t\\r to '?'), no floats."""
     if not isinstance(obj, dict):
-        raise ValueError("GameScript JSON root must be an object")
+        raise ValueError("GameScript JSON root must be an object")  # noqa: TRY004 - callers catch ValueError
     _reject_floats(obj)
     s = json.dumps(obj, separators=(",", ":"), ensure_ascii=True)
     if len(s) > MAX_GS_JSON_BYTES:

@@ -31,7 +31,7 @@ def make_server(out_dir: Path, port: int = 4318, host: str = "127.0.0.1") -> Thr
         def log_message(self, *args: Any) -> None:  # quiet
             pass
 
-        def do_POST(self) -> None:  # noqa: N802 - http.server API
+        def do_POST(self) -> None:  # the name is the http.server API
             signal = SIGNALS.get(self.path.split("?")[0])
             if signal is None:
                 self.send_response(404)

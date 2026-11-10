@@ -149,13 +149,13 @@ def _labels(c: Client) -> dict[int, str]:
 def _status(c: Client, info: dict) -> str:
     from railhead.observe import format_status, money
 
-    q = lambda m: c.request("query", m=m)  # noqa: E731
+    q = lambda m: c.request("query", m=m)
     text = format_status(q("map_info"), q("company"), q("vehicles"), q("stations"), labels=_labels(c))
     obj = info.get("objective") or {}
     lines = [text, "",
              f"task {info['task_id']} ({info['family']}): {info.get('title', '')}",
-             f"days left {info['days_left']} of {info['horizon_days']} | run-off after: {info['runoff_days']} days | "
-             f"fork-days left {info['fork_days_left']} | forks {info['forks_alive'] or '-'}"]
+             (f"days left {info['days_left']} of {info['horizon_days']} | run-off after: {info['runoff_days']} days | "
+              f"fork-days left {info['fork_days_left']} | forks {info['forks_alive'] or '-'}")]
     if "monitor" in obj:
         done = next((m["total"] for m in c.request("query", m="monitor_read") if m["id"] == obj["monitor"]), 0)
         target = obj.get("quantity")

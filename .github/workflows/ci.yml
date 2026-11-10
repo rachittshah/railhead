@@ -9,39 +9,73 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# The patched engine is built once per change to engine/** and cached as an installed engine directory
+# (binary + lang/ baseset/ ai/ game/, the layout engine.py needs). Caching the source tree did not help:
+# engine/build.sh resets it with `git checkout -- .`, which changes file times, so ninja rebuilt everything.
+# The cache key is written out in each step: workflow-level env cannot use runner or hashFiles().
+env:
+  ENGINE_DIR: .cache/engine
+
 jobs:
-  test:
+  lint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      # Same version as the dev extra in pyproject.toml: the default rule set changes between ruff releases.
+      - name: Ruff
+        run: uvx ruff@0.17.4 check .
+
+  engine:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-      - name: Engine build deps
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake ninja-build zlib1g-dev liblzma-dev liblzo2-dev unzip
-      - name: Restore engine build
+      - name: Restore engine
         id: engine-cache
         uses: actions/cache/restore@v4
         with:
-          path: .cache/openttd-src
-          key: engine-${{ runner.os }}-${{ hashFiles('engine/**') }}
+          path: ${{ env.ENGINE_DIR }}
+          key: engine-dir-${{ runner.os }}-${{ hashFiles('engine/**') }}
+          lookup-only: true
+      - name: Engine build deps
+        if: steps.engine-cache.outputs.cache-hit != 'true'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake ninja-build zlib1g-dev liblzma-dev liblzo2-dev unzip
       - name: Build patched OpenTTD 15.3
-        run: engine/build.sh
-      # Save right after the build: actions/cache only saves on job success, and a red test run
-      # must not cost the next run an 8-minute engine build.
-      - name: Save engine build
+        if: steps.engine-cache.outputs.cache-hit != 'true'
+        run: PREFIX="$GITHUB_WORKSPACE/$ENGINE_DIR" engine/build.sh
+      - name: Save engine
         if: steps.engine-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
-          path: .cache/openttd-src
-          key: engine-${{ runner.os }}-${{ hashFiles('engine/**') }}
+          path: ${{ env.ENGINE_DIR }}
+          key: engine-dir-${{ runner.os }}-${{ hashFiles('engine/**') }}
+
+  test:
+    needs: engine
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Engine runtime libraries
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends zlib1g liblzma5 liblzo2-2
+      - name: Restore engine
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.ENGINE_DIR }}
+          key: engine-dir-${{ runner.os }}-${{ hashFiles('engine/**') }}
+          fail-on-cache-miss: true
       - uses: astral-sh/setup-uv@v6
       - name: Install
         run: uv venv --python 3.12 .venv && uv pip install -e ".[dev,viz]"
       - name: Unit + integration tests (Linux determinism)
-        run: .venv/bin/pytest -q -x
+        run: RAILHEAD_OPENTTD="$GITHUB_WORKSPACE/$ENGINE_DIR/openttd" .venv/bin/pytest -q -x
 
   # Every oracle log in the catalog was recorded on macOS; replay all of them on Linux amd64.
   # Six shards run in parallel so the full catalog fits the timeout.
   recheck:
+    needs: engine
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     strategy:
@@ -50,17 +84,18 @@ jobs:
         shard: [0, 1, 2, 3, 4, 5]
     steps:
       - uses: actions/checkout@v4
-      - name: Engine build deps
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cmake ninja-build zlib1g-dev liblzma-dev liblzo2-dev unzip
-      - name: Restore engine build
+      - name: Engine runtime libraries
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends zlib1g liblzma5 liblzo2-2
+      - name: Restore engine
         uses: actions/cache/restore@v4
         with:
-          path: .cache/openttd-src
-          key: engine-${{ runner.os }}-${{ hashFiles('engine/**') }}
-      - name: Build patched OpenTTD 15.3
-        run: engine/build.sh
+          path: ${{ env.ENGINE_DIR }}
+          key: engine-dir-${{ runner.os }}-${{ hashFiles('engine/**') }}
+          fail-on-cache-miss: true
       - uses: astral-sh/setup-uv@v6
       - name: Install
         run: uv venv --python 3.12 .venv && uv pip install -e .
       - name: Cross-platform determinism, shard ${{ matrix.shard }} of 6
-        run: .venv/bin/railhead recheck tasks --shard ${{ matrix.shard }}/6 --jobs 4
+        run: |
+          RAILHEAD_OPENTTD="$GITHUB_WORKSPACE/$ENGINE_DIR/openttd" \
+            .venv/bin/railhead recheck tasks --shard ${{ matrix.shard }}/6 --jobs 4
