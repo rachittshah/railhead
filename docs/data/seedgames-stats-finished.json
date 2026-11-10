@@ -1,0 +1,533 @@
+{
+ "maps": [
+  "arena-train-0201",
+  "arena-train-0203",
+  "arena-train-0204",
+  "arena-train-0205",
+  "arena-train-0206",
+  "arena-train-0207",
+  "arena-train-0208",
+  "arena-train-0210",
+  "arena-train-0224",
+  "arena-train-0225"
+ ],
+ "boot": 10000,
+ "seed": 0,
+ "finished_only": true,
+ "unit": "map (several games of one player on one map are averaged first)",
+ "rank_basis": "separated pairwise wins minus losses on asinh(net_worth/100k), then mean asinh",
+ "cells": {
+  "arena-train-0201": {
+   "claude-opus-5-5": {
+    "games": 1,
+    "net_worth": 102747512.0,
+    "asinh": 7.628007149333714,
+    "score_k50": 1.0,
+    "score_k1000": 0.881
+   },
+   "gpt-6-astra": {
+    "games": 1,
+    "net_worth": 47697377.0,
+    "asinh": 6.8606097792985645,
+    "score_k50": 1.0,
+    "score_k1000": 0.771
+   },
+   "gpt-6-sol": {
+    "games": 1,
+    "net_worth": 2111143.0,
+    "asinh": 3.7435222340479193,
+    "score_k50": 0.59,
+    "score_k1000": 0.336
+   }
+  },
+  "arena-train-0203": {
+   "gpt-6-sol": {
+    "games": 1,
+    "net_worth": 2246493.0,
+    "asinh": 3.80559760962732,
+    "score_k50": 0.691,
+    "score_k1000": 0.393
+   }
+  },
+  "arena-train-0204": {
+   "claude-opus-5-5": {
+    "games": 1,
+    "net_worth": 115448029.0,
+    "asinh": 7.744552924454575,
+    "score_k50": 1.0,
+    "score_k1000": 1.0
+   },
+   "gpt-6-sol": {
+    "games": 1,
+    "net_worth": 13476963.0,
+    "asinh": 5.596727820992213,
+    "score_k50": 1.0,
+    "score_k1000": 1.0
+   }
+  },
+  "arena-train-0205": {
+   "gpt-6-astra": {
+    "games": 1,
+    "net_worth": 20479253.0,
+    "asinh": 6.015150559296723,
+    "score_k50": 1.0,
+    "score_k1000": 0.615
+   }
+  },
+  "arena-train-0206": {
+   "claude-opus-5-5": {
+    "games": 1,
+    "net_worth": 55095462.0,
+    "asinh": 7.004800450558335,
+    "score_k50": 1.0,
+    "score_k1000": 0.863
+   },
+   "gpt-6-astra": {
+    "games": 1,
+    "net_worth": 27044175.0,
+    "asinh": 6.293207331841361,
+    "score_k50": 1.0,
+    "score_k1000": 0.761
+   },
+   "gpt-6-sol": {
+    "games": 1,
+    "net_worth": 5743119.0,
+    "asinh": 4.743810503149917,
+    "score_k50": 0.949,
+    "score_k1000": 0.54
+   }
+  },
+  "arena-train-0207": {
+   "gpt-6-astra": {
+    "games": 1,
+    "net_worth": 9572844.0,
+    "asinh": 5.254689893296376,
+    "score_k50": 1.0,
+    "score_k1000": 0.718
+   }
+  },
+  "arena-train-0208": {
+   "gpt-6-astra": {
+    "games": 1,
+    "net_worth": 15368350.0,
+    "asinh": 5.728053058059294,
+    "score_k50": 0.942,
+    "score_k1000": 0.536
+   }
+  },
+  "arena-train-0210": {
+   "gpt-6-sol": {
+    "games": 1,
+    "net_worth": 4333690.0,
+    "asinh": 4.462284734262546,
+    "score_k50": 0.837,
+    "score_k1000": 0.476
+   }
+  },
+  "arena-train-0224": {
+   "gpt-6-astra": {
+    "games": 1,
+    "net_worth": 22583708.0,
+    "asinh": 6.112965936609329,
+    "score_k50": 1.0,
+    "score_k1000": 0.602
+   }
+  },
+  "arena-train-0225": {
+   "gpt-6-astra": {
+    "games": 1,
+    "net_worth": 24414094.0,
+    "asinh": 6.190897056310832,
+    "score_k50": 1.0,
+    "score_k1000": 0.685
+   }
+  }
+ },
+ "players": [
+  {
+   "player": "claude-opus-5-5",
+   "n_maps": 3,
+   "n_games": 3,
+   "maps": [
+    "arena-train-0201",
+    "arena-train-0204",
+    "arena-train-0206"
+   ],
+   "mean_net_worth": 91097001.0,
+   "median_net_worth": 102747512.0,
+   "mean_asinh": 7.459120174782208,
+   "mean_score_k50": 1.0,
+   "mean_score_k1000": 0.9146666666666666
+  },
+  {
+   "player": "gpt-6-astra",
+   "n_maps": 7,
+   "n_games": 7,
+   "maps": [
+    "arena-train-0201",
+    "arena-train-0205",
+    "arena-train-0206",
+    "arena-train-0207",
+    "arena-train-0208",
+    "arena-train-0224",
+    "arena-train-0225"
+   ],
+   "mean_net_worth": 23879971.57142857,
+   "median_net_worth": 22583708.0,
+   "mean_asinh": 6.0650819449589255,
+   "mean_score_k50": 0.9917142857142858,
+   "mean_score_k1000": 0.6697142857142857
+  },
+  {
+   "player": "gpt-6-sol",
+   "n_maps": 5,
+   "n_games": 5,
+   "maps": [
+    "arena-train-0201",
+    "arena-train-0203",
+    "arena-train-0204",
+    "arena-train-0206",
+    "arena-train-0210"
+   ],
+   "mean_net_worth": 5582281.6,
+   "median_net_worth": 4333690.0,
+   "mean_asinh": 4.4703885804159835,
+   "mean_score_k50": 0.8134,
+   "mean_score_k1000": 0.549
+  }
+ ],
+ "pairs": [
+  {
+   "a": "claude-opus-5-5",
+   "b": "gpt-6-astra",
+   "n": 2,
+   "maps": [
+    "arena-train-0201",
+    "arena-train-0206"
+   ],
+   "net_worth": {
+    "mean": 41550711.0,
+    "median": 41550711.0,
+    "lo": 28051287.0,
+    "hi": 55050135.0,
+    "tied": false
+   },
+   "asinh": {
+    "mean": 0.7394952443760614,
+    "median": 0.7394952443760614,
+    "lo": 0.7115931187169737,
+    "hi": 0.7673973700351491,
+    "tied": false
+   },
+   "sign_p": 0.5,
+   "n_nonzero": 2,
+   "wins_a": 2,
+   "wins_b": 0
+  },
+  {
+   "a": "claude-opus-5-5",
+   "b": "gpt-6-sol",
+   "n": 3,
+   "maps": [
+    "arena-train-0201",
+    "arena-train-0204",
+    "arena-train-0206"
+   ],
+   "net_worth": {
+    "mean": 83986592.66666667,
+    "median": 100636369.0,
+    "lo": 49352343.0,
+    "hi": 101971066.0,
+    "tied": false
+   },
+   "asinh": {
+    "mean": 2.7644333220521915,
+    "median": 2.260989947408418,
+    "lo": 2.1478251034623614,
+    "hi": 3.8844849152857943,
+    "tied": false
+   },
+   "sign_p": 0.25,
+   "n_nonzero": 3,
+   "wins_a": 3,
+   "wins_b": 0
+  },
+  {
+   "a": "gpt-6-astra",
+   "b": "gpt-6-sol",
+   "n": 2,
+   "maps": [
+    "arena-train-0201",
+    "arena-train-0206"
+   ],
+   "net_worth": {
+    "mean": 33443645.0,
+    "median": 33443645.0,
+    "lo": 21301056.0,
+    "hi": 45586234.0,
+    "tied": false
+   },
+   "asinh": {
+    "mean": 2.3332421869710447,
+    "median": 2.3332421869710447,
+    "lo": 1.5493968286914441,
+    "hi": 3.1170875452506452,
+    "tied": false
+   },
+   "sign_p": 0.5,
+   "n_nonzero": 2,
+   "wins_a": 2,
+   "wins_b": 0
+  }
+ ],
+ "ranking": [
+  {
+   "rank": 1,
+   "player": "claude-opus-5-5",
+   "separated_wins_minus_losses": 2,
+   "mean_asinh": 7.459120174782208,
+   "tied_with": [],
+   "not_compared": []
+  },
+  {
+   "rank": 2,
+   "player": "gpt-6-astra",
+   "separated_wins_minus_losses": 0,
+   "mean_asinh": 6.0650819449589255,
+   "tied_with": [],
+   "not_compared": []
+  },
+  {
+   "rank": 3,
+   "player": "gpt-6-sol",
+   "separated_wins_minus_losses": -2,
+   "mean_asinh": 4.4703885804159835,
+   "tied_with": [],
+   "not_compared": []
+  }
+ ],
+ "excluded": [
+  {
+   "map": "arena-train-0203",
+   "player": "claude-opus-5-5",
+   "reason": "end=stopped"
+  },
+  {
+   "map": "arena-train-0203",
+   "player": "gpt-6-astra",
+   "reason": "end=stopped"
+  },
+  {
+   "map": "arena-train-0204",
+   "player": "gpt-6-astra",
+   "reason": "end=stopped"
+  },
+  {
+   "map": "arena-train-0205",
+   "player": "claude-opus-5-5",
+   "reason": "end=stopped"
+  },
+  {
+   "map": "arena-train-0205",
+   "player": "gpt-6-sol",
+   "reason": "end=stopped"
+  },
+  {
+   "map": "arena-train-0207",
+   "player": "gpt-6-sol",
+   "reason": "end=stopped"
+  },
+  {
+   "map": "arena-train-0208",
+   "player": "gpt-6-sol",
+   "reason": "end=stopped"
+  },
+  {
+   "map": "arena-train-0210",
+   "player": "gpt-6-astra",
+   "reason": "end=stopped"
+  }
+ ],
+ "fleet": [
+  {
+   "map": "arena-train-0201",
+   "player": "claude-opus-5-5",
+   "road": 0,
+   "rail": 0,
+   "air": 163,
+   "water": 0,
+   "total": 163,
+   "air_share": 1.0,
+   "winner": true,
+   "end": "submitted"
+  },
+  {
+   "map": "arena-train-0201",
+   "player": "gpt-6-astra",
+   "road": 3,
+   "rail": 0,
+   "air": 64,
+   "water": 0,
+   "total": 67,
+   "air_share": 0.955,
+   "winner": false,
+   "end": "submitted"
+  },
+  {
+   "map": "arena-train-0201",
+   "player": "gpt-6-sol",
+   "road": 8,
+   "rail": 0,
+   "air": 13,
+   "water": 0,
+   "total": 21,
+   "air_share": 0.619,
+   "winner": false,
+   "end": "submitted"
+  },
+  {
+   "map": "arena-train-0203",
+   "player": "gpt-6-sol",
+   "road": 21,
+   "rail": 0,
+   "air": 32,
+   "water": 0,
+   "total": 53,
+   "air_share": 0.604,
+   "winner": true,
+   "end": "submitted"
+  },
+  {
+   "map": "arena-train-0204",
+   "player": "claude-opus-5-5",
+   "road": 0,
+   "rail": 0,
+   "air": 118,
+   "water": 0,
+   "total": 118,
+   "air_share": 1.0,
+   "winner": true,
+   "end": "submitted"
+  },
+  {
+   "map": "arena-train-0204",
+   "player": "gpt-6-sol",
+   "road": 0,
+   "rail": 8,
+   "air": 45,
+   "water": 0,
+   "total": 53,
+   "air_share": 0.849,
+   "winner": false,
+   "end": "submitted"
+  },
+  {
+   "map": "arena-train-0205",
+   "player": "gpt-6-astra",
+   "road": 12,
+   "rail": 8,
+   "air": 55,
+   "water": 0,
+   "total": 75,
+   "air_share": 0.733,
+   "winner": true,
+   "end": "submitted"
+  },
+  {
+   "map": "arena-train-0206",
+   "player": "claude-opus-5-5",
+   "road": 0,
+   "rail": 0,
+   "air": 96,
+   "water": 0,
+   "total": 96,
+   "air_share": 1.0,
+   "winner": true,
+   "end": "submitted"
+  },
+  {
+   "map": "arena-train-0206",
+   "player": "gpt-6-astra",
+   "road": 7,
+   "rail": 5,
+   "air": 42,
+   "water": 0,
+   "total": 54,
+   "air_share": 0.778,
+   "winner": false,
+   "end": "submitted"
+  },
+  {
+   "map": "arena-train-0206",
+   "player": "gpt-6-sol",
+   "road": 4,
+   "rail": 4,
+   "air": 14,
+   "water": 0,
+   "total": 22,
+   "air_share": 0.636,
+   "winner": false,
+   "end": "horizon"
+  },
+  {
+   "map": "arena-train-0207",
+   "player": "gpt-6-astra",
+   "road": 4,
+   "rail": 5,
+   "air": 32,
+   "water": 0,
+   "total": 41,
+   "air_share": 0.78,
+   "winner": true,
+   "end": "submitted"
+  },
+  {
+   "map": "arena-train-0208",
+   "player": "gpt-6-astra",
+   "road": 11,
+   "rail": 6,
+   "air": 29,
+   "water": 0,
+   "total": 46,
+   "air_share": 0.63,
+   "winner": true,
+   "end": "submitted"
+  },
+  {
+   "map": "arena-train-0210",
+   "player": "gpt-6-sol",
+   "road": 4,
+   "rail": 0,
+   "air": 20,
+   "water": 0,
+   "total": 24,
+   "air_share": 0.833,
+   "winner": true,
+   "end": "submitted"
+  },
+  {
+   "map": "arena-train-0224",
+   "player": "gpt-6-astra",
+   "road": 5,
+   "rail": 7,
+   "air": 31,
+   "water": 0,
+   "total": 43,
+   "air_share": 0.721,
+   "winner": true,
+   "end": "submitted"
+  },
+  {
+   "map": "arena-train-0225",
+   "player": "gpt-6-astra",
+   "road": 6,
+   "rail": 0,
+   "air": 52,
+   "water": 0,
+   "total": 58,
+   "air_share": 0.897,
+   "winner": true,
+   "end": "submitted"
+  }
+ ]
+}
