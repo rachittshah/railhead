@@ -1,0 +1,36 @@
+Railhead
+Copyright (c) 2026 Rachitt Shah
+
+Railhead contains files under two licences.
+
+1. MIT (the text is in LICENSE)
+
+   All files in this repository, except the files in section 2:
+   the Python package (src/), the tests (tests/), the task catalog (tasks/),
+   the documents (docs/, README.md), the image files (docker/), the CI files
+   (.github/) and engine/build.sh.
+
+2. GPL-2.0-only (the text is in LICENSES/GPL-2.0-only.txt)
+
+   engine/patches/*.patch
+       Changes to OpenTTD, which is licensed under the GNU General Public
+       License, version 2 only. The patches are derived from OpenTTD and are
+       licensed under the same terms.
+
+   gamescript/ (the GameScript RailheadBridge and the AI RailheadIdle)
+       These Squirrel scripts run inside OpenTTD and call the OpenTTD script
+       API. They are offered under the same terms as the engine patches
+       (GPL-2.0-only) unless the copyright holder states otherwise.
+
+Third-party software that this repository does not contain
+
+   engine/build.sh downloads OpenTTD 15.3 (https://github.com/OpenTTD/OpenTTD,
+   tag 15.3, GPL-2.0-only, with the third-party parts that its README.md lists)
+   and OpenGFX 8.0 (https://github.com/OpenTTD/OpenGFX, GPL-2.0-only).
+
+The environment image
+
+   The image ghcr.io/rachittshah/railhead contains the patched OpenTTD binary,
+   OpenGFX, the Railhead package and Debian packages, each under its own
+   licence. The image holds the licence texts and the written offer for the
+   source code of OpenTTD and OpenGFX in /opt/railhead/licenses/.
