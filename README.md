@@ -189,7 +189,7 @@ In the first arena it tripped over an unguarded `rh submit`, which ends a mandat
 
 "Gain / baseline gain" compares a player with a simple scripted truck route that the task generator certified: (W − W_idle) / (W_base − W_idle).
 The official arena score puts that gain on a log scale and caps it at 50× the baseline.
-The top five all hit the cap, so this table reports raw net worth.
+The top six all hit the cap, so this table reports raw net worth.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/img/arena2-growth-dark.svg">
@@ -243,10 +243,10 @@ Opus and Sonnet both reached a usage limit after about 2.3 game years, and their
 
 | Model | Net worth after run-off | Gain / baseline gain | Arena score | Actions | Replay |
 |---|---|---|---|---|---|
-| Claude Sonnet 5.5 | £2,574,034 | 12.9 | 0.671 | 524 | valid, 0 divergences |
+| Claude Sonnet 5.5 | £2,574,034 | 13.0 | 0.671 | 524 | valid, 0 divergences |
 | Claude Opus 5.5 | £1,598,757 | 8.1 | 0.561 | 417 | valid, 0 divergences |
 | Claude Haiku 5.5 | £749,707 | 3.8 | 0.400 | 479 | valid, 0 divergences |
-| Scripted truck route (baseline) | £185,775 | 1.0 | 0.178 | – | certificate |
+| Scripted truck route (baseline) | £185,775 | 1.0 | 0.176 | – | certificate |
 | No play | -£13,800 | 0.0 | 0.000 | 0 | certificate |
 
 ## 9. Why the scoreboard does not trust the game
@@ -379,11 +379,11 @@ Run everything from the root of the repository:
    engine/build.sh
    ```
 
-2. Make a virtual environment and install the package with the test and dataset extras:
+2. Make a virtual environment and install the package with the test, dataset and chart extras (step 7 needs the charts):
 
    ```bash
    uv venv --python 3.12 .venv
-   uv pip install -e ".[dev,hub]"
+   uv pip install -e ".[dev,hub,viz]"
    source .venv/bin/activate
    ```
 
