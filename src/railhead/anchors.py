@@ -28,8 +28,9 @@ import re
 import shutil
 import tarfile
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from railhead import rewards
 from railhead.bridge import BridgeError
@@ -80,7 +81,7 @@ def pick_content(rows: list[dict], name: str) -> dict:
 
 _NAME_RE = re.compile(r"GetName\s*\(\s*\)\s*\{\s*return\s*\"([^\"]+)\"")
 _VER_RE = re.compile(r"GetVersion\s*\(\s*\)\s*\{\s*return\s*(\d+)")
-_LIC_RE = re.compile(r"^(licen[cs]e|copying|gpl)", re.I)
+_LIC_RE = re.compile(r"^(licen[cs]e|copying|gpl)", re.IGNORECASE)
 
 
 def tar_provenance(path: Path) -> dict:
@@ -408,7 +409,7 @@ def merge_doc(doc: dict, task: str, rows: list[dict], curves: dict, fleet: dict)
     """Add rows to an anchors document: one task -> arena shape; several tasks -> {"tasks": [...]}."""
     if not doc:
         return _merge_task({"task": task}, rows, curves, fleet)
-    tasks = doc["tasks"] if "tasks" in doc else [doc]
+    tasks = doc.get("tasks", [doc])
     for entry in tasks:
         if entry["task"] == task:
             _merge_task(entry, rows, curves, fleet)
