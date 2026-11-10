@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import math
+import sys
 from datetime import date
 from pathlib import Path
 
@@ -112,7 +113,9 @@ def networth(doc: dict, out: Path, theme: str, title: str) -> Path:
     ax.legend(handles=[Patch(color=t[v], label=VENDOR_LABEL[v]) for v in present]
               + [Patch(color=t["muted"], label="certified reference")], loc="lower right", fontsize=9)
     note = _playing_note(doc)
-    sub = f"{doc['task']}: every model bar is the replay of its own action log (proof-of-play), 0 divergences"
+    div = sum(int(r.get("divergences") or 0) for r in doc["results"] if r.get("status") == "verified")
+    sub = (f"{doc['task']}: every model bar is the replay of its own action log (proof-of-play), "
+           f"{div} divergence{'' if div == 1 else 's'}")
     _header(fig, title, sub, t)
     if note:
         fig.text(0.012, 0.012, note, fontsize=8.5, color=t["ink2"], ha="left", va="bottom")
@@ -218,6 +221,9 @@ def build(paths: list[Path], out_dir: Path) -> list[Path]:
 def main(argv: list[str]) -> int:
     out = Path(argv[argv.index("--out") + 1]) if "--out" in argv else Path("docs/img")
     paths = [Path(a) for a in argv if a.endswith(".json")]
+    if not paths:
+        print("usage: railhead figures docs/data/<arena>.json ... [--out docs/img]", file=sys.stderr)
+        return 2
     for p in build(paths, out):
         print(p)
     return 0

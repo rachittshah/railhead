@@ -106,7 +106,7 @@ import json
 import os
 
 # Arena 2, claude-fable-5-1: the five-hour window ran out at 11:31:49 UTC (2026-10-16)
-CLAUDE_SID = "44aaef25-7d0c-4014-9899-83dbf58fcd49"
+CLAUDE_SID = "00000000-0000-4000-8000-00000000c1a0"
 CLAUDE_START = [
     {"type": "system", "subtype": "hook_started", "hook_name": "SessionStart:startup", "session_id": CLAUDE_SID},
     {"type": "system", "subtype": "init", "cwd": "/arena/claude-fable-5-1", "session_id": CLAUDE_SID,
@@ -129,7 +129,7 @@ CLAUDE_LIMIT = [
 CLAUDE_DONE = {"type": "result", "subtype": "success", "is_error": False, "stop_reason": "end_turn",
                "result": "Submitted.", "session_id": CLAUDE_SID}
 
-CODEX_SID = "01a15876-fb28-76d2-9ba5-132ad579c619"
+CODEX_SID = "00000000-0000-7000-8000-00000000c0de"
 CODEX_START = f"""WARNING: proceeding, even though we could not create PATH aliases: operation would block
 Reading additional input from stdin...
 2026-10-20T08:39:15.126060Z ERROR codex_core::session::session: failed to load skill /x/SKILL.md: missing YAML frontmatter
@@ -346,3 +346,14 @@ def test_an_agent_error_that_is_not_the_providers_never_restarts_the_player(tmp_
     assert last_session(log) == (CODEX_SID, False)
     too_long = {"type": "result", "is_error": True, "result": "Prompt is too long", "session_id": CLAUDE_SID}
     assert last_session(_jsonl(log, CLAUDE_START + [too_long])) == (CLAUDE_SID, False)
+
+
+def test_supervise_accepts_otel_after_the_players(monkeypatch):
+    """`--otel` is stripped before `--supervise` parses players, and reaches the resumed agents."""
+    import railhead.arena_run as ar
+
+    seen = {}
+    monkeypatch.setattr(ar, "supervise", lambda task, out, players, otel: seen.update(
+        task=task, players=[p.label for p in players], otel=otel) or {})
+    assert ar.main(["--supervise", "t", "out", "claude:claude-opus-5-5", "--otel", "http://sink:9"]) == 0
+    assert seen == {"task": "t", "players": ["claude-opus-5-5"], "otel": "http://sink:9"}

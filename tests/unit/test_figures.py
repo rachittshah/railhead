@@ -48,3 +48,22 @@ def test_free_models_get_their_own_colour_and_legend_entry(tmp_path):
     build([src], tmp_path / "img")
     svg = (tmp_path / "img/arena-y-networth.svg").read_text()
     assert "#1baf7a" in svg and "OpenCode Zen free models" in svg and "Claude (Claude Code)" not in svg
+
+
+def test_networth_subtitle_counts_divergences_from_the_data(tmp_path):
+    """The subtitle used to say "0 divergences" whatever the data held."""
+    rows = [{"player": "claude-a", "status": "verified", "net_worth": 9_000_000, "divergences": 2},
+            {"player": "baseline", "status": "certificate", "net_worth": 150_000, "gain_x_baseline": 1.0}]
+    src = tmp_path / "arena-d.json"
+    curves = {"claude-a": [{"date": "1960-06-01", "net_worth": 0}, {"date": "1961-06-01", "net_worth": 9e6}]}
+    mix = {"claude-a": {"road": 1, "rail": 0, "air": 0, "water": 0}}
+    src.write_text(json.dumps({"task": "arena-d", "results": rows, "curves": curves, "fleet_mix": mix}))
+    build([src], tmp_path / "img")
+    svg = (tmp_path / "img/arena-d-networth.svg").read_text()
+    assert "2 divergences" in svg and "0 divergences" not in svg
+
+
+def test_figures_cli_without_data_prints_usage(capsys):
+    from railhead.figures import main
+
+    assert main([]) == 2 and "usage: railhead figures" in capsys.readouterr().err

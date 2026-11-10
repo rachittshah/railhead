@@ -318,7 +318,8 @@ def resume(task: str, out_dir: Path, players: list[Player], otel: str = "http://
     return result
 
 
-def supervise(task: str, out_dir: Path, players: list[Player], max_resumes: int = 6, poll: int = 30) -> dict[str, str]:
+def supervise(task: str, out_dir: Path, players: list[Player], max_resumes: int = 6, poll: int = 30,
+              otel: str = "http://127.0.0.1:4318") -> dict[str, str]:
     """Watch the players; after an infrastructure failure, resume the same session after a wait that depends on
     the failure (outage, stall, or quota: until the reported reset time if there is one). Never blocks one
     player on another's wait, and reaps the processes it starts, so a dead agent never looks alive."""
@@ -326,7 +327,6 @@ def supervise(task: str, out_dir: Path, players: list[Player], max_resumes: int 
 
     out_dir = Path(out_dir).resolve()
     tasks_dir = Path(os.environ.get("RAILHEAD_TASKS", REPO_DIR / "tasks")).resolve()
-    otel = "http://127.0.0.1:4318"
     resumes = {p.label: 0 for p in players}
     status = {p.label: "wait" for p in players}
     due: dict[str, float] = {}
@@ -396,17 +396,21 @@ def launch(task: str, out_dir: Path, players: list[Player], otel: str = "http://
 
 
 def main(argv: list[str]) -> int:
-    if argv and argv[0] == "--supervise":  # railhead arena-run --supervise <task> <out_dir> <vendor:model> ...
-        print(json.dumps(supervise(argv[1], Path(argv[2]), parse_players(argv[3:]))))
-        return 0
     otel = "http://127.0.0.1:4318"
-    if "--otel" in argv:
+    if "--otel" in argv:  # strip it first: every mode passes the rest to parse_players
         i = argv.index("--otel")
         otel = argv[i + 1]
         argv = argv[:i] + argv[i + 2:]
+    if argv and argv[0] == "--supervise":  # railhead arena-run --supervise <task> <out_dir> <vendor:model> ...
+        print(json.dumps(supervise(argv[1], Path(argv[2]), parse_players(argv[3:]), otel=otel)))
+        return 0
     if argv and argv[0] == "--resume":  # railhead arena-run --resume <task> <out_dir> <vendor:model> ...
         print(json.dumps(resume(argv[1], Path(argv[2]), parse_players(argv[3:]), otel)))
         return 0
+    if len(argv) < 3:
+        print("usage: railhead arena-run [--supervise|--resume] <task> <dir> <vendor:model> ... [--otel URL]",
+              file=sys.stderr)
+        return 2
     task, out, specs = argv[0], Path(argv[1]), argv[2:]
     pids = launch(task, out, parse_players(specs), otel)
     print({"launched": len(pids), "pids": pids})
