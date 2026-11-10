@@ -246,6 +246,33 @@ META_SCHEMAS: dict[str, dict[str, tuple[type, bool]]] = {
     "flag": {"note": (str, True)},
 }
 
+META_INT_LIMIT = 2 ** 53  # every meta int must be exact as a float (the verifier computes in floats)
+
+
+def meta_args_problem(m: str, a: Any, require_confirm: bool = True) -> str | None:
+    """Why ``a`` is not a meta record the daemon could have written, or None. The daemon and the replay
+    both use this. ``require_confirm=False`` for replay: 1,379 tracked oracle logs have ``submit {}``."""
+    schema = META_SCHEMAS.get(m)
+    if schema is None:
+        return f"unknown meta decision {m!r}"
+    if not isinstance(a, dict):
+        return f"{m}: arguments must be an object"
+    unknown = set(a) - set(schema)
+    if unknown:
+        return f"{m}: unknown argument(s) {sorted(unknown)} (arguments: {', '.join(schema)})"
+    for k, (typ, required) in schema.items():
+        if k not in a:
+            if required and (require_confirm or (m, k) != ("submit", "confirm")):
+                return f"{m}: missing required argument '{k}' (arguments: {', '.join(schema)})"
+            continue
+        v = a[k]
+        if not isinstance(v, typ) or isinstance(v, bool):
+            return f"{m}: '{k}' must be {typ.__name__}"
+        if typ is int and not -META_INT_LIMIT <= v <= META_INT_LIMIT:
+            return f"{m}: '{k}' must be between -2**53 and 2**53"
+    return None
+
+
 # Wake conditions of a wait (gamescript main.nut UNTIL_KINDS); only cash_below takes a value.
 UNTIL_KINDS = frozenset({"vehicle_crashed", "industry_open", "industry_close", "company_bankrupt",
                          "company_in_trouble", "station_first_vehicle", "cash_below", "new_month"})

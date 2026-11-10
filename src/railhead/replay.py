@@ -74,6 +74,12 @@ def default_whitelist() -> set[str] | None:
     return set(WHITELIST)
 
 
+def meta_args_problem(m: str, a: object, require_confirm: bool = True) -> str | None:
+    from railhead.actions import meta_args_problem as check
+
+    return check(m, a, require_confirm=require_confirm)
+
+
 def _meta_names() -> set[str]:
     from railhead.actions import META_SCHEMAS
 
@@ -149,6 +155,10 @@ def replay(
                 m = r.get("m")
                 if m not in metas or not isinstance(r.get("a", {}), dict):
                     raise ReplayRejected(f"meta seq={seq}: unknown decision {m!r}")
+                # The daemon's argument schema (not confirm): a NaN, float or padded promise is not play.
+                problem = meta_args_problem(m, r.get("a") or {}, require_confirm=False)
+                if problem:
+                    raise ReplayRejected(f"meta seq={seq}: {problem}")
                 if version >= 2:
                     world.call_args("note", {"d": meta_digest(m, r.get("a") or {})})
                 result.metas.append(dict(r, ticks=ticks, a=dict(r.get("a") or {})))

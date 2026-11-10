@@ -76,6 +76,8 @@ def read_log(path: Path) -> Iterator[Record]:
                 raw = json.loads(line)
             except json.JSONDecodeError as e:
                 raise ValueError(f"{path}:{n}: not JSON ({e})") from None
+            except RecursionError:  # deeply nested JSON: a log fault (rejected), not a verifier error (dropout)
+                raise ValueError(f"{path}:{n}: JSON nested too deeply") from None
             if not isinstance(raw, dict) or "kind" not in raw:
                 raise ValueError(f"{path}:{n}: record without kind")
             yield Record(kind=raw["kind"], raw=raw)

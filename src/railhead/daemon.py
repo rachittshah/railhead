@@ -22,6 +22,7 @@ import os
 import shutil
 import signal
 import socketserver
+import stat
 import subprocess
 import sys
 import threading
@@ -30,7 +31,7 @@ from pathlib import Path
 from typing import Any
 
 from railhead.actionlog import ActionLog, read_log
-from railhead.actions import META_SCHEMAS, check_until, validate
+from railhead.actions import META_SCHEMAS, check_until, meta_args_problem, validate
 from railhead.bridge import BridgeError
 from railhead.client import Client, DaemonError, socket_path
 from railhead.replay import default_whitelist, replay
@@ -48,20 +49,44 @@ WAIT_KEYS = {"days", "ticks", "until"}
 
 
 def check_meta(m: str, a: dict) -> None:
-    schema = META_SCHEMAS[m]
-    unknown = set(a) - set(schema)
-    if unknown:
-        raise OpError("ERR_BAD_ARG", f"{m}: unknown argument(s) {sorted(unknown)} (arguments: {', '.join(schema)})")
-    for k, (typ, required) in schema.items():
-        if k not in a:
-            if required:
-                raise OpError("ERR_BAD_ARG", f"{m}: missing required argument '{k}' (arguments: {', '.join(schema)})")
-            continue
-        if not isinstance(a[k], typ) or isinstance(a[k], bool):
-            raise OpError("ERR_BAD_ARG", f"{m}: '{k}' must be {typ.__name__}")
+    problem = meta_args_problem(m, a)
+    if problem:
+        raise OpError("ERR_BAD_ARG", problem)
     if m == "submit" and a["confirm"] != "yes":
         raise OpError("ERR_BAD_ARG", "submit is irreversible: run `rh submit confirm=yes` to end your mandate")
 TICKS_PER_DAY = 74
+
+
+def _drop_torn_tail(log_path: Path) -> None:
+    """A kill -9 during ActionLog.write can leave a last line without its newline. That record was not
+    acknowledged, so it did not happen: cut it, or the recovery fails and the next record is appended to
+    the torn line (the verifier would then reject an honest game)."""
+    if not log_path.exists() or log_path.stat().st_size == 0:
+        return
+    with open(log_path, "rb+") as fh:
+        fh.seek(-1, os.SEEK_END)
+        if fh.read(1) == b"\n":
+            return
+        fh.seek(0)
+        data = fh.read()
+        fh.truncate(data.rfind(b"\n") + 1)
+
+
+def _is_process(pid: int, needle: str) -> bool:
+    """True if ``pid`` is a live process whose command line contains ``needle``. Pid files under the state
+    dir are agent-writable: never signal init, this process, or its parent (test.sh) on their word."""
+    if pid <= 1 or pid in (os.getpid(), os.getppid()):
+        return False
+    proc = Path(f"/proc/{pid}/cmdline")
+    try:
+        if proc.exists():
+            cmd = proc.read_bytes().replace(b"\0", b" ").decode(errors="replace")
+        else:  # macOS: no /proc
+            cmd = subprocess.run(["ps", "-o", "command=", "-p", str(pid)], capture_output=True, text=True,
+                                 timeout=5, check=False).stdout
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return needle in cmd
 
 
 class OpError(Exception):
@@ -120,6 +145,7 @@ class Railheadd:
         log_path = self.run_dir / "actions.jsonl"
         wdir = self.state / "world"
         shutil.rmtree(wdir, ignore_errors=True)
+        _drop_torn_tail(log_path)
         recovering = log_path.exists() and log_path.stat().st_size > 0
         if recovering:
             res = replay(start, log_path, wdir, allowed=self.whitelist, keep_open=True)
@@ -386,8 +412,12 @@ def _kill_stale_children(state: Path) -> None:
     path = state / "children.json"
     if not path.exists():
         return
-    for pid in json.loads(path.read_text()):
-        if _alive(pid):
+    try:
+        pids = json.loads(path.read_text())
+    except ValueError:
+        pids = []
+    for pid in pids if isinstance(pids, list) else []:
+        if isinstance(pid, int) and not isinstance(pid, bool) and _is_process(pid, "openttd"):
             try:
                 os.kill(pid, signal.SIGKILL)
             except OSError:
@@ -395,11 +425,24 @@ def _kill_stale_children(state: Path) -> None:
     path.unlink()
 
 
+def _clean_state_files(state: Path) -> None:
+    """The lock and pid files are agent-writable. A FIFO there blocks `railhead down` (test.sh) for ever
+    and a symlink makes open(..., "w") truncate its target. Remove any of them that is not a plain file."""
+    for name in ("up.lock", "daemon.pid", "children.json"):
+        p = state / name
+        try:
+            if not stat.S_ISREG(os.lstat(p).st_mode):
+                p.unlink()
+        except FileNotFoundError:
+            pass
+
+
 def ensure_up(task_id: str | None = None, state: Path | None = None, timeout: float = 180.0) -> int:
     """Start railheadd for ``task_id`` unless it already runs. Returns the daemon pid."""
     state = Path(state or state_root()).resolve()
     state.mkdir(parents=True, exist_ok=True)
     task_id = task_id or os.environ.get("RAILHEAD_TASK")
+    _clean_state_files(state)
     with open(state / "up.lock", "w") as lockf:
         fcntl.flock(lockf, fcntl.LOCK_EX)
         pidf = state / "daemon.pid"
@@ -439,6 +482,7 @@ def ensure_up(task_id: str | None = None, state: Path | None = None, timeout: fl
 def shutdown(state: Path | None = None) -> None:
     state = Path(state or state_root())
     state.mkdir(parents=True, exist_ok=True)
+    _clean_state_files(state)
     with open(state / "up.lock", "w") as lockf:
         fcntl.flock(lockf, fcntl.LOCK_EX)
         _shutdown_locked(state)
@@ -458,7 +502,7 @@ def _shutdown_locked(state: Path) -> None:
         time.sleep(0.1)
     if pidf.exists():
         pid = int(pidf.read_text() or 0)
-        if pid and _alive(pid):
+        if pid and _is_process(pid, "railhead.daemon"):
             os.kill(pid, signal.SIGKILL)
         pidf.unlink(missing_ok=True)
     _kill_stale_children(state)
