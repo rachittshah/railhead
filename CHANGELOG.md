@@ -29,6 +29,10 @@ Not published yet. The latest published image and Harbor datasets are 0.1.1.
 
 ### Changed
 
+- A build on water or on the low side of a shore now fails with `ERR_CANNOT_BUILD_ON_WATER`. It was
+  `ERR_TUNNEL_CANNOT_BUILD_ON_WATER`, the engine's name, which misled players (no tunnel was involved). Only
+  `bridge.tunnel` keeps the old code. Code that matches on the old code must accept both. Replay is not
+  affected: it compares success or failure, not the code.
 - CI caches the installed engine directory, builds it once per change to `engine/`, and runs `ruff check`
   (ruff pinned to 0.17.4).
 - The internal working ledger under `thoughts/` is no longer tracked.
