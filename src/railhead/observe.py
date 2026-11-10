@@ -22,7 +22,7 @@ STATUS_MAX_BYTES = 1536
 
 #: ``tiles`` row layers: each is a string with one char per tile, starting at column ``x``.
 #: Consumers (oracle planner, CLI map) rely on these keys plus ``y`` and ``x``.
-MAP_LAYERS = ("kind", "height", "owner", "slope", "build")
+MAP_LAYERS = ("kind", "height", "owner", "slope", "build", "dock")
 
 #: ``kind`` layer: what is on the tile. Mirrors QH.Kind in gamescript/.../lib/query.nut.
 #: ``.``/``t``/``f``/``^``/``,`` and a lone town road piece are buildable (see the ``build`` layer).
@@ -39,8 +39,11 @@ SLOPE_LEGEND: dict[str, str] = {"0": "flat", "1": "sloped", "s": "steep"}
 BUILD_LEGEND: dict[str, str] = {"1": "buildable", "0": "occupied/water/off-map"}
 #: ``height`` layer: base-36 height of the tile's lowest corner (0-9, then a=10 ... z=35).
 HEIGHT_LEGEND = "height of the lowest corner, base-36 (0-9, then a=10 ... z=35)"
+#: ``dock`` view: the kind map with ``d`` on every tile where a dock fits (inclined shore tile with two
+#: flat water tiles on its low side; the ``dock`` layer of ``tiles``).
+DOCK_LEGEND: dict[str, str] = {"d": "a dock fits here", **KIND_LEGEND}
 _LAYER_LEGENDS: dict[str, dict[str, str]] = {
-    "kind": KIND_LEGEND, "owner": OWNER_LEGEND, "slope": SLOPE_LEGEND, "build": BUILD_LEGEND,
+    "kind": KIND_LEGEND, "owner": OWNER_LEGEND, "slope": SLOPE_LEGEND, "build": BUILD_LEGEND, "dock": DOCK_LEGEND,
 }
 
 #: Integer fields rendered as money by ``format_table``.
@@ -106,7 +109,7 @@ def _cell(field: str, v: Any, labels: Mapping[int, str] | None) -> str:
         return "yes" if v else "no"
     if isinstance(v, int) and field in MONEY_FIELDS:
         return money(v)
-    if isinstance(v, int) and field == "cargo":
+    if isinstance(v, int) and field in ("cargo", "refit_cargos"):
         return label(v, labels)
     if isinstance(v, (list, tuple)):
         return ",".join(_cell(field, x, labels) for x in v) or "-"
@@ -264,24 +267,33 @@ def render_map(
 
     ``layer`` is one of MAP_LAYERS: ``kind`` (terrain + infrastructure, KIND_LEGEND), ``height``
     (base-36 min corner height), ``owner`` (``*`` yours, ``o`` other company, ``.`` town/none),
-    ``slope`` (``0`` flat, ``1`` sloped, ``s`` steep) or ``build`` (``1`` buildable).
+    ``slope`` (``0`` flat, ``1`` sloped, ``s`` steep), ``build`` (``1`` buildable) or ``dock`` (the kind
+    map with ``d`` where a dock fits). Rows with ``step`` > 1 (an overview) show one sampled tile per
+    character; the ruler then labels real x coordinates every 10 characters.
     """
     if layer not in MAP_LAYERS:
         raise ValueError(f"layer must be one of {', '.join(MAP_LAYERS)}")
     if not tiles_rows:
         return "(empty map area)"
     rows = sorted(tiles_rows, key=lambda r: r["y"])
+    if layer == "dock":
+        rows = [{**r, "dock": "".join("d" if d == "1" else k for k, d in zip(r["kind"], r.get("dock") or "0" * len(r["kind"])))}
+                for r in rows]
     x0 = rows[0]["x"]
+    step = int(rows[0].get("step", 1))
     width = max(len(r[layer]) for r in rows)
     margin = len(str(rows[-1]["y"]))
     pad = " " * (margin + 1)
     tens = [" "] * (width + 8)
     for c in range(width):
-        x = x0 + c
+        x = x0 + c * step
         lab = str(x)
-        if x % ruler == 0 and (c == 0 or tens[c - 1] == " ") and all(t == " " for t in tens[c : c + len(lab)]):
+        due = (c % ruler == 0) if step > 1 else (x % ruler == 0)
+        if due and (c == 0 or tens[c - 1] == " ") and all(t == " " for t in tens[c : c + len(lab)]):
             tens[c : c + len(lab)] = lab
-    out = [pad + "".join(tens).rstrip(), pad + "".join(str((x0 + c) % 10) for c in range(width))]
+    second = ("".join("|" if c % ruler == 0 else " " for c in range(width)) if step > 1
+              else "".join(str((x0 + c) % 10) for c in range(width)))
+    out = [pad + "".join(tens).rstrip(), pad + second.rstrip()]
     body = [f"{r['y']:>{margin}} {r[layer]}" for r in rows]
     tail: list[str] = []
     if legend:
@@ -292,6 +304,8 @@ def render_map(
             items = [f"{'(blank)' if ch == ' ' else ch} {name}"
                      for ch, name in _LAYER_LEGENDS[layer].items() if ch in shown]
             tail.append("Legend: " + "  ".join(items))
+        if step > 1:
+            tail.append(f"Overview: one character = one sampled tile every {step} tiles (x = {x0} + column*{step})")
         tail.append("x grows east (right), y grows south (down); tile index = y * map_size_x + x")
     text = "\n".join(out + body + tail)
     while len(text.encode()) > max_bytes and len(body) > 1:
@@ -332,6 +346,21 @@ def format_tile(tile_info: Mapping[str, Any], labels: Mapping[int, str] | None =
         "(acceptance in 1/8: a station accepts a cargo at >= 8)",
         f"Industries in catchment: {inds}",
     ]
+    if t.get("incline"):
+        lines.append(f"Inclined: slopes down toward {t['incline']}")
+    dock = t.get("dock")
+    if isinstance(dock, Mapping):
+        lines.append(f"Dock: {'yes' if dock.get('ok') else 'no'} ({dock.get('why', '')})")
+    mx = (t["tile"] - t["x"]) // t["y"] if t.get("y") else None
+
+    def xy(i: int) -> str:
+        return f"{i % mx},{i // mx}" if mx else f"#{i}"
+
+    if "tracks" in t:
+        sig = ", ".join(f"{s['type']} facing {xy(int(s['front_tile']))}" for s in t.get("signals", [])) or "none"
+        lines.append(f"Rail pieces: {', '.join(t['tracks']) or 'none'} | signals: {sig}")
+    if "depot_front" in t:
+        lines.append(f"Depot entrance faces {xy(int(t['depot_front']))}")
     return _fit("\n".join(lines), MAX_BYTES)
 
 

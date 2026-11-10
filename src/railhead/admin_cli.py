@@ -9,6 +9,7 @@
     railhead arena-run <task> <dir> claude:<model> codex:<model> ...   launch an arena (headless, traced)
     railhead arena-run --supervise|--resume <task> <dir> <players...>   resume after provider errors | after a crash or reboot
     railhead arena <dir> [--json]  scoreboard of several players on one task (growth curves)
+    railhead ab plan|run|status|collect|report <plan.json>   A/B experiment between checkouts (docs/AB.md)
     railhead view --attach <state_dir> [--bounds x,y,w,h]  spectate a live daemon world
     railhead view <task_id> [--days N] [--speed PCT] [--log L] [--bounds x,y,w,h]   watch a task live in the GUI (macOS)
     railhead export-manifest <out>  add this CPU architecture's sealed manifest to exported tasks
@@ -177,6 +178,10 @@ def main(argv: list[str] | None = None) -> int:
             from railhead.econ import main as econ_main
 
             return econ_main(argv[1:])
+        if cmd == "ab":  # railhead ab plan|run|status|collect|report <plan> | ab behaviour <player_dir> (A/B tests)
+            from railhead.ab import main as ab_main
+
+            return ab_main(argv[1:])
         if cmd == "figures":
             from railhead.figures import main as figures_main
 

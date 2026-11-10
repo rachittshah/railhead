@@ -1,0 +1,17 @@
+{
+ "name": "pilot-water-rail",
+ "hypothesis": "With water and rail transport fixed (treatment = this branch), the same Codex models on the same three 5-year maps put a larger share of their vehicle spend into non-air modes than with the current environment (control = the main branch in a sibling checkout). Direction: treatment - control > 0.",
+ "primary_metric": "non_air_vehicle_spend_share",
+ "secondary_metrics": ["net_worth", "score_k50", "rail_route", "water_route", "failed_rate"],
+ "arms": [
+  {"name": "control", "checkout": "../../../railhead"},
+  {"name": "treatment", "checkout": "../.."}
+ ],
+ "models": ["codex:gpt-6-astra", "codex:gpt-6-sol"],
+ "tasks": ["arena-dev-0005", "arena-dev-0008", "arena-dev-0014"],
+ "replicates": 1,
+ "parallel": 3,
+ "billing": "subscription",
+ "seed": 20261110,
+ "notes": "Pilot, n = 3 tasks x 2 models x 1 replicate = 6 pairs, 12 games. Step 0 (before this plan): run the A/A check (docs/AB.md) and confirm a zero difference. Tasks: tracked 5-year (1825-day) dev tasks, identical task.json/start.sav/secret.json in both checkouts on 2026-11-10, briefing states the log-scale reward, quantity_sea_lakes = 2 (water is possible), positive scripted baseline, three start years (1975, 1960, 2000) so that the available aircraft differ. WHAT IT CAN SHOW: whether the harness, both arms and the metrics work end to end on real models; the direction and rough size of the change in mode mix for these 6 pairs; which water/rail failures (error codes, abandoned attempts) remain. WHAT IT CANNOT SHOW: a significant effect. With 3 tasks the smallest two-sided sign-test p is 0.25 and the task bootstrap has only 10 distinct resamples, so even a 3-of-3 result is not evidence. One replicate per cell cannot separate the arm effect from run-to-run variance of the same model on the same map. Seed-game logs show 68-99% of Codex vehicle spend in air on 10-year maps, so a ceiling/floor effect on the primary metric is likely. Use the pilot to size a confirmatory run (at least 6 tasks with a non-zero difference for p < 0.05, plus replicates). If the treatment arm regenerates task saves, add a task_map and expect a task-hash warning in the report."
+}

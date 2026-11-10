@@ -922,3 +922,129 @@ Each call to `osascript` has a time limit of 10 seconds. If macOS does not reply
   ```bash
   railhead view arena-dev-0005 --bounds 0,0,1280,800
   ```
+
+## Build a ship route
+
+This procedure builds a passenger ferry between two towns on one lake or sea.
+It uses only player commands. The water oracle (`src/railhead/oracle/water.py`) does the same steps.
+On `arena-dev-0100` the procedure needs 13 actions. Two ferries earn approximately £25,000 each year (`docs/MODES.md`).
+
+1. Find water. Show the overview map:
+
+   ```bash
+   rh map x=0 y=0 w=512 h=512 step=8
+   ```
+
+   Each character is one tile out of 8 x 8 tiles. The `~` character is water.
+2. Find two towns on the shore of the same water. Use `rh towns near_tile=X,Y radius=40`.
+3. Find the dock sites near each town:
+
+   ```bash
+   rh map x=X y=Y w=40 h=30 layer=dock
+   ```
+
+   The `d` character shows a tile where a dock fits. The tile slopes down to two flat water tiles.
+4. Examine a dock site with `rh tile tile=X,Y`.
+   Make sure that the line `Dock:` shows `yes`, and that the station accepts `PASS`.
+   The catchment radius of a dock is 5.
+5. Build the two docks:
+
+   ```bash
+   rh water dock tile=A join_station=-1
+   ```
+
+   Do this at the dock site `A` of the first town and at the site `B` of the second town.
+   The reply gives `water_tile`, `accepts`, and `supplies`.
+   Ships stop on `water_tile`.
+6. Build a ship depot near the first dock:
+
+   ```bash
+   rh water ship_depot tile=T toward_tile=T2
+   ```
+
+   The depot covers `tile` and the next tile in +x or +y. Both tiles must be flat open water (`~`).
+   The argument `toward_tile` only sets the direction.
+7. Find a ferry with `rh engines vtype=water cargo=0`. Use an engine with `carries` set to `yes`.
+8. Buy the ferry, give it the orders, and start it:
+
+   ```bash
+   rh vehicle buy depot_tile=T engine=E cargo=PASS
+   rh order append vehicle=V tile=A
+   rh order append vehicle=V tile=B
+   rh vehicle start vehicle=V
+   ```
+
+9. To add a ferry, use `rh vehicle clone depot_tile=T vehicle=V share_orders=true`. Then start it.
+
+Ships cannot cross land. Ships also cannot sail up or down a sloped river tile (rapids). The `slope` layer of `rh map` shows these tiles as `1`.
+If no flat water joins the two docks, the ferry does not arrive. Then build canals and locks, or choose another pair of towns.
+In 1960 a ferry has a speed of 32 km/h. A short crossing earns more for each ship than a long voyage.
+
+## Build a train route
+
+This procedure builds one coal train between a coal mine and a power station.
+It uses only player commands. The rail oracle (`src/railhead/oracle/rail.py`) does the same steps.
+On `arena-dev-0100` the procedure needs 21 actions. The train earns approximately £47,000 each year (`docs/MODES.md`).
+
+1. Find a coal mine and a power station 20 to 60 tiles apart:
+
+   ```bash
+   rh industries cargo=1 role=produces
+   rh industries cargo=1 role=accepts
+   ```
+
+   In the temperate climate, `COAL` has the cargo id 1. Use `rh cargos` to find the ids.
+2. Find a station site near each industry. The site must be three flat, clear tiles in a line.
+   Make sure that the tile after each end of the platform is also clear.
+3. Examine the catchment of each site:
+
+   ```bash
+   rh catchment tile=X,Y w=3 h=1 radius=4
+   ```
+
+   For a station on the y axis, use `w=1 h=3`.
+   At the mine, `produces` must show `COAL`. At the power station, `accepts` must show `COAL` as accepted.
+4. Build the two stations:
+
+   ```bash
+   rh rail station tile=X,Y axis=x platforms=1 length=3 join_station=-1
+   ```
+
+   The reply gives `accepts` and `supplies`. Make sure that they show `COAL`.
+5. Build the track. Start on the tile after the platform end.
+   - For each straight part, use `rh rail line from_tile=A to_tile=B`. The two tiles must have the same x or the same y.
+   - At each turn, build one corner piece: `rh rail track tile=T track=P`.
+   - The sides of a tile are `ne` (x-1), `sw` (x+1), `nw` (y-1), and `se` (y+1).
+     The piece `P` names the two sides that the train uses: `nw_ne`, `sw_se`, `nw_sw`, or `ne_se`.
+     For example, a train that comes from x-1 and goes to y+1 needs `ne_se`.
+   - Put two or more straight tiles between two turns. OpenTTD does not let trains make a 90-degree turn.
+6. Build the depot on the tile behind the other end of the first platform:
+
+   ```bash
+   rh rail depot tile=D front_tile=E
+   ```
+
+   `E` is the end tile of the platform. If the reply contains `hint`, no track joins the depot. Repair the front tile.
+7. Find a locomotive and a wagon with `rh engines vtype=rail cargo=1`.
+   Use a locomotive with `wagon` set to `no`, and a wagon with `carries` set to `yes`.
+8. Buy the train in the depot:
+
+   ```bash
+   rh vehicle buy depot_tile=D engine=LOCO
+   rh vehicle buy depot_tile=D engine=WAGON cargo=COAL
+   rh vehicle attach vehicle=W train_vehicle=V
+   ```
+
+   Do the second and the third command one time for each wagon. Use four wagons for a platform of three tiles.
+9. Give the orders and start the train:
+
+   ```bash
+   rh order append vehicle=V tile=<mine station> flags='["full_load_any"]'
+   rh order append vehicle=V tile=<power station> flags='["unload","no_load"]'
+   rh vehicle start vehicle=V
+   ```
+
+10. To examine the track, use `rh tile tile=X,Y`. The line `Rail pieces:` shows the pieces on the tile.
+
+Use only one train on a single track.
+For a second train, build a passing loop and signals (`rh rail signal`).
