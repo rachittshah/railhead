@@ -9,8 +9,8 @@
     railhead arena-run <task> <dir> claude:<model> codex:<model> ...   launch an arena (headless, traced)
     railhead arena-run --supervise|--resume <task> <dir> <players...>   resume after provider errors | after a crash or reboot
     railhead arena <dir> [--json]  scoreboard of several players on one task (growth curves)
-    railhead view --attach <state_dir>  spectate a live daemon world
-    railhead view <task_id> [--days N] [--speed PCT]   watch a task live in the GUI (macOS)
+    railhead view --attach <state_dir> [--bounds x,y,w,h]  spectate a live daemon world
+    railhead view <task_id> [--days N] [--speed PCT] [--log L] [--bounds x,y,w,h]   watch a task live in the GUI (macOS)
     railhead export-manifest <out>  add this CPU architecture's sealed manifest to exported tasks
     railhead hub build <tasks> <harbor> <out> [--credit] | railhead hub push <out> [--repo R]
     railhead hub add-games <out> <arena_dir> <task_dir> [--rename a=b,...]   add an arena's verified games
@@ -135,20 +135,9 @@ def main(argv: list[str] | None = None) -> int:
 
             return arena_main(argv[1:])
         if cmd == "view":
-            from railhead.viewer import attach, view
+            from railhead.viewer import main as view_main
 
-            try:
-                if len(argv) > 2 and argv[1] == "--attach":
-                    attach(Path(argv[2]))
-                    return 0
-                days = int(argv[argv.index("--days") + 1]) if "--days" in argv else 365
-                speed = int(argv[argv.index("--speed") + 1]) if "--speed" in argv else 300
-                log = Path(argv[argv.index("--log") + 1]) if "--log" in argv else None
-                view(argv[1], days=days, speed=speed, log=log)
-            except RuntimeError as e:  # no LG monitor, or the window did not land on it
-                print(f"railhead view: {e}", file=sys.stderr)
-                return 1
-            return 0
+            return view_main(argv[1:])
         if cmd == "export-manifest":
             from railhead.harbor_export import add_arch_manifests
 
@@ -211,9 +200,9 @@ def main(argv: list[str] | None = None) -> int:
 
             return gen_main(argv[1:])
         if cmd == "export":
-            from railhead.harbor_export import DEFAULT_IMAGE, export_all
+            from railhead.harbor_export import DEFAULT_IMAGE, DEFAULT_VERSION, export_all
 
-            image, version, rest = DEFAULT_IMAGE, "0.1.0", []
+            image, version, rest = DEFAULT_IMAGE, DEFAULT_VERSION, []
             it = iter(argv[1:])
             for a in it:
                 if a == "--image":

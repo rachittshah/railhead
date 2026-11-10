@@ -1,7 +1,9 @@
 """Export catalog tasks as Harbor task directories (run *inside* the Railhead image so the sealed
 hashes are of the exact files the verifier will trust).
 
-    railhead export <out_dir> [task_id ...] [--image ghcr.io/rachittshah/railhead:0.1.0]
+    railhead export <out_dir> [task_id ...] [--image <ref>] [--version <v>]
+
+The default image and the task version follow ``railhead.__version__``.
 """
 
 from __future__ import annotations
@@ -11,11 +13,13 @@ import platform
 import shutil
 from pathlib import Path
 
+from railhead import __version__
 from railhead.seal import seal_task, write_sha256_manifest
 from railhead.task import TaskSpec, tasks_root
 
 ORG = "rachittshah"
-DEFAULT_IMAGE = "ghcr.io/rachittshah/railhead:0.1.0"
+DEFAULT_VERSION = __version__
+DEFAULT_IMAGE = f"ghcr.io/{ORG}/railhead:{DEFAULT_VERSION}"
 
 HOW_TO_PLAY = """\
 ## How to play
@@ -57,8 +61,8 @@ Any build command accepts `dry_run=true` to get its cost without doing it. Error
 
 def instruction_md(spec: TaskSpec) -> str:
     lines = [f"# {spec.title or spec.task_id}", "", spec.briefing.strip(), "",
-             f"* Horizon: **{spec.horizon_days} game-days** from now. After that (or after `rh submit`) the "
-             f"world runs **{spec.runoff_days} more days** without you before scoring.",
+             (f"* Horizon: **{spec.horizon_days} game-days** from now. After that (or after `rh submit`) the "
+              f"world runs **{spec.runoff_days} more days** without you before scoring."),
              f"* Imagination budget: **{spec.max_fork_days} fork-days**, at most **{spec.max_forks}** live forks.",
              "", HOW_TO_PLAY]
     return "\n".join(lines)
@@ -140,7 +144,7 @@ set -e
 """
 
 
-def export_task(task_id: str, out_dir: Path, image: str = DEFAULT_IMAGE, version: str = "0.1.0") -> Path:
+def export_task(task_id: str, out_dir: Path, image: str = DEFAULT_IMAGE, version: str = DEFAULT_VERSION) -> Path:
     src = tasks_root() / task_id
     spec = TaskSpec.load(src)
     dst = Path(out_dir) / spec.task_id
@@ -171,7 +175,7 @@ def export_task(task_id: str, out_dir: Path, image: str = DEFAULT_IMAGE, version
 
 
 def export_all(out_dir: Path, task_ids: list[str] | None = None, image: str = DEFAULT_IMAGE,
-               version: str = "0.1.0") -> list[Path]:
+               version: str = DEFAULT_VERSION) -> list[Path]:
     ids = task_ids or sorted(p.name for p in tasks_root().iterdir() if (p / "task.json").exists())
     return [export_task(t, out_dir, image, version) for t in ids]
 
