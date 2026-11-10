@@ -37,6 +37,8 @@ Refer to [DIAGRAMS.md](DIAGRAMS.md) for the sequence of one action and one wait,
 | Packages | `src/railhead/harbor_export.py`, `hub.py`, `docker/` | Harbor tasks, the image, and the dataset |
 | Arenas and telemetry | `src/railhead/arena.py`, `arena_run.py`, `otel.py`, `trace.py` | Runs several players on one task, records the LLM traces, and joins them with the game |
 | Charts and maps | `src/railhead/figures.py`, `render.py` | Makes the result charts and the route maps in `docs/img/` |
+| Statistics, anchors, and timelapse | `src/railhead/stats.py`, `anchors.py`, `timelapse.py` | Calculates the differences between players on many maps with intervals ([SEEDGAMES.md](SEEDGAMES.md)), runs script AIs as a ceiling ([ANCHORS.md](ANCHORS.md)), and makes a video from replays ([TIMELAPSE.md](TIMELAPSE.md)) |
+| A/B experiments and run records | `src/railhead/ab.py`, `behaviour.py`, `log.py` | Runs the same models on the same tasks with two checkouts, calculates behaviour metrics, and writes a manifest and an event log for each game ([AB.md](AB.md)) |
 
 ## 1. Engine and patches
 
@@ -429,5 +431,5 @@ The module `railhead.hub` writes Parquet files for the Hugging Face dataset.
 
 | Workflow | Trigger | Steps |
 |---|---|---|
-| `ci.yml` | A push to `main`, a pull request, or a manual start | Job `test`: builds the engine, keeps it in the cache, and runs all tests. Job `recheck`: six parallel shards replay the oracle log of each task on Linux amd64 and compare the reward with the certificate (`railhead recheck tasks --shard i/6 --jobs 4`). |
+| `ci.yml` | A push to `main`, a pull request, or a manual start | Job `lint`: runs `ruff check` with ruff 0.17.4. Job `engine`: builds the engine one time for each change in `engine/` and keeps the installed engine in the cache. Job `test`: restores the engine and runs all tests. Job `recheck`: six parallel shards replay the oracle log of each task on Linux amd64 and compare the reward with the certificate (`railhead recheck tasks --shard i/6 --jobs 4`). |
 | `image.yml` | A tag that starts with `v`, or a manual start | Builds the image for `linux/amd64` and `linux/arm64` and pushes it to `ghcr.io/<owner>/railhead`. |

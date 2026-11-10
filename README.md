@@ -278,6 +278,8 @@ The reward comes from a **replay of the model's action log**, started from a sea
 If something changed the live game without going into the log (a lucky glitch, a tampered save, a clever exploit), it does not exist for the verifier.
 After each wait the log carries a checksum of the world, and the replay must reproduce every one.
 Across 1,539 oracle games and every verified model game the number of divergences is zero, and logs recorded on macOS replay identically on Linux.
+The replay proves that a log is legal play from the sealed start. It cannot prove that the play happened live: an agent with root in the same container can run a private engine, or cut its log at the best point.
+[docs/VERIFICATION.md](docs/VERIFICATION.md) lists every attack that was tried, the test that closes each closed one, and the ones that are still open.
 
 **M2, the run-off.**
 After the mandate, the model is gone and the world keeps running.
@@ -476,14 +478,17 @@ The full procedures and cautions are in [docs/USAGE.md](docs/USAGE.md).
 
 | Directory | Contents |
 |---|---|
-| `engine/` | `build.sh` and the three patches for OpenTTD 15.3 |
+| `engine/` | `build.sh`, the three patches for OpenTTD 15.3, and optional patches for a variant build (`engine/optional/`) |
 | `gamescript/` | The GameScript `RailheadBridge` and the idle AI `RailheadIdle` |
-| `src/railhead/` | The Python package: daemon, CLIs, replay, verifier, rewards, arena tools, charts and Harbor export |
+| `src/railhead/` | The Python package: daemon, CLIs, replay, verifier, rewards, arena tools, statistics, A/B experiments, charts and Harbor export |
 | `src/railhead/gen/` | The task generators |
 | `src/railhead/oracle/` | The scripted oracle player |
 | `docker/` | The Dockerfile of the environment image and its start scripts |
 | `docs/data/` | The arena results and growth curves that the charts are drawn from |
 | `docs/img/` | The charts (SVG, light and dark) and the route maps |
+| `docs/video/` | The Arena 2 timelapse |
+| `experiments/` | A/B experiment plans and their results |
+| `LICENSES/` | The GPL-2.0 text that covers the engine patches and the GameScript |
 | `tests/unit/`, `tests/integration/` | The tests |
 | `.github/workflows/` | CI and the multi-arch image build |
 
@@ -494,7 +499,12 @@ The full procedures and cautions are in [docs/USAGE.md](docs/USAGE.md).
 | [docs/USAGE.md](docs/USAGE.md) | Procedures: build, install, test, generate, play, verify, export, run, trace and chart |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Each layer of the system |
 | [docs/TASKS.md](docs/TASKS.md) | The task families, their rewards and their secrets |
-| [docs/VERIFICATION.md](docs/VERIFICATION.md) | The threat model and the protection against each attack |
+| [docs/VERIFICATION.md](docs/VERIFICATION.md) | The threat model, the protection against each attack, and the attacks that are still open |
+| [docs/SEEDGAMES.md](docs/SEEDGAMES.md) | Twenty-three more verified games on ten other maps, with intervals |
+| [docs/ANCHORS.md](docs/ANCHORS.md) | The script-AI ceiling on the Arena 2 map |
+| [docs/MODES.md](docs/MODES.md) | Water and rail: what works, what stopped the models, and what each mode earns |
+| [docs/AB.md](docs/AB.md) | How to compare two versions of the environment with the same models on the same maps |
+| [docs/TIMELAPSE.md](docs/TIMELAPSE.md) | The Arena 2 timelapse and how to make it again |
 | [docs/STE.md](docs/STE.md) | The STE rules, technical names and technical verbs of the reference documents |
 | [docs/DESIGN.md](docs/DESIGN.md) | The design notes |
 | `docs/research/` | The research notes on the RL landscape, OpenTTD and Harbor |

@@ -305,11 +305,13 @@ A query reads the world. It does not change the world.
 | `rh depots` | The depots of the company |
 | `rh orders` | The orders of the vehicles |
 | `rh subsidies` | The subsidies |
-| `rh catchment tile=12,40` | The cargo acceptance and the cargo production near a possible station site |
+| `rh catchment tile=12,40` | The cargo acceptance and the cargo production near a possible station site. Add `w=W h=H radius=R` for a station of W x H tiles (the radius of a train station is 4, of a dock 5). |
 | `rh monitor_read` | The objective ledger |
 | `rh map_info` | The date, the map size, the climate, and the number of towns and industries |
 | `rh map x=0 y=0 w=40 h=24` | A text map of one area, with a legend |
-| `rh tile tile=12,40` | One tile in detail, with the cargo acceptance near it |
+| `rh map x=0 y=0 w=40 h=24 layer=dock` | The same area with one layer. The layers are `kind`, `height`, `owner`, `slope`, `build`, and `dock`. In the layer `dock`, the letter `d` shows a tile where a dock fits. |
+| `rh map x=0 y=0 w=512 h=512 step=8` | An overview of the full map. It shows each eighth tile. Use it to find lakes and the sea. |
+| `rh tile tile=12,40` | One tile in detail: the slope, if a dock fits, the rail pieces, the signals, and the cargo acceptance near it |
 
 ### 7.4 Player actions
 
@@ -476,11 +478,16 @@ The exit code is 1 for a daemon error and 2 for an incorrect argument.
 | `ERR_FORK_LIMIT` | The number of live forks is at the maximum. |
 | `ERR_FORK_BUDGET` | The fork-day budget is too small. |
 | `ERR_BUSY` | The world is in a step. |
+| `ERR_INFRA` | The engine did not reply. The daemon made the world again from the action log, and the last request did not occur. Send the request again. |
 | `ERR_UNKNOWN_OP`, `ERR_UNKNOWN_METHOD` | The daemon or the GameScript does not know the request. |
 | `ERR_INTERNAL`, `ERR_DAEMON` | A problem in the daemon. Read `daemon.log`. |
 
 The engine refuses an incorrect action with a typed error code, for example `ERR_AREA_NOT_CLEAR`.
 The message of the error tells a possible correction.
+
+A build on water, or on the low side of a shore, gives `ERR_CANNOT_BUILD_ON_WATER`.
+Before version 0.1.2 this code was `ERR_TUNNEL_CANNOT_BUILD_ON_WATER`. Only `bridge.tunnel` keeps the old code.
+A program that compares the code must accept the two codes.
 
 ## 8. Stop the daemon
 
@@ -544,8 +551,20 @@ The verifier then writes `credit.json` in the output directory.
 This option replays the log one time for each turn.
 Because of this, the verifier takes much more time.
 
+The verifier accepts only an action log of version 2. This is the version that the daemon writes now.
+To verify an old log again, for example an Arena 2 game, add `--min-log-version=1`.
+
 The verifier writes `reward.json` and `reward.txt`.
 For the fields of `reward.json`, refer to [VERIFICATION.md](VERIFICATION.md).
+These are the results that are not a usual reward:
+
+| Result | Cause |
+|---|---|
+| `rejected = 1`, reward 0 | The log contains something that a player cannot do. Or a checksum in the log is different from the replay, and a second replay agrees with the first replay. Then the log is false. |
+| `valid = 0` | An infrastructure problem: an internal error, or two replays that do not agree. Do not use this result. |
+| `tamper = 1`, reward 0 | The hash of a trusted file or of the start state is incorrect. |
+
+[VERIFICATION.md](VERIFICATION.md) also gives the threat model: each attack, the test for it, and the attacks that stay open.
 If the task directory has no `sealed.json`, the verifier does not examine the hash of the start state.
 
 ## 11. Build the image
@@ -1069,3 +1088,18 @@ On `arena-dev-0100` the procedure needs 21 actions. The train earns approximatel
 
 Use only one train on a single track.
 For a second train, build a passing loop and signals (`rh rail signal`).
+
+## Compare players, environment versions, and anchors
+
+These operator tools have their own documents. Each document gives the full procedure and the results.
+
+| Task | Command | Document |
+|---|---|---|
+| Calculate the differences between players on more than one map, with intervals | `railhead stats docs/data/seedgames.json` | [SEEDGAMES.md](SEEDGAMES.md) |
+| Run community script AIs on a task. They give a ceiling for the models. | `railhead anchor tasks/arena-dev-0100 --ai AAAHogEx --seeds 3` | [ANCHORS.md](ANCHORS.md) |
+| Make a video of the networks of an arena | `railhead timelapse <arena directory> --task tasks/arena-dev-0100 --out out/timelapse` | [TIMELAPSE.md](TIMELAPSE.md) |
+| Compare two checkouts with the same models on the same tasks | `railhead ab plan experiments/pilot-water-rail/plan.json`, then `run`, `collect`, and `report` | [AB.md](AB.md) |
+| Read what each transport mode earns, and what stopped the models | None | [MODES.md](MODES.md) |
+
+`railhead ab` writes a `manifest.json` and an `events.jsonl` for each game.
+The player `script:<path>` in `railhead arena-run` is a scripted player. Use it to test an experiment without a model.
