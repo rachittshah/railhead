@@ -134,6 +134,14 @@ def main(argv: list[str] | None = None) -> int:
             from railhead.arena import main as arena_main
 
             return arena_main(argv[1:])
+        if cmd == "anchor":  # railhead anchor fetch <AI>... | anchor <task_dir> --ai <AI> [--seeds N] [--out F]
+            from railhead.anchors import main as anchor_main
+
+            return anchor_main(argv[1:])
+        if cmd == "stats":  # railhead stats <exports|map dirs>... | stats collect ... (multi-map intervals)
+            from railhead.stats import main as stats_main
+
+            return stats_main(argv[1:])
         if cmd == "view":
             from railhead.viewer import main as view_main
 
@@ -177,6 +185,10 @@ def main(argv: list[str] | None = None) -> int:
             from railhead.render import main as render_main
 
             return render_main(argv[1:])
+        if cmd == "timelapse":
+            from railhead.timelapse import main as timelapse_main
+
+            return timelapse_main(argv[1:])
         if cmd == "harden":
             from railhead.gen.build import harden_catalog
 
