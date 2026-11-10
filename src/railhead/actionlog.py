@@ -11,9 +11,10 @@ Replay needs only: the sealed start savegame + this file.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 LOG_VERSION = 1
 
@@ -22,8 +23,9 @@ class ActionLog:
     def __init__(self, path: Path) -> None:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._fh = open(self.path, "a", encoding="utf-8")
-        self._seq = sum(1 for _ in open(self.path, encoding="utf-8")) if self.path.stat().st_size else 0
+        self._fh = open(self.path, "a", encoding="utf-8")  # noqa: SIM115 - held open for the log's lifetime
+        with open(self.path, encoding="utf-8") as fh:
+            self._seq = sum(1 for _ in fh)
 
     def write(self, record: dict[str, Any]) -> dict[str, Any]:
         rec = dict(record)

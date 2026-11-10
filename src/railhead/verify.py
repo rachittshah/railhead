@@ -159,6 +159,7 @@ def turn_credit(spec: TaskSpec, start_sav: Path, log: Path, workdir: Path, full_
     """Leave-one-turn-out counterfactual credit by exact replay (DESIGN.md M5)."""
     credits = []
     records = [r.raw for r in read_log(log)]
+    d0, t0 = _start_point(start_sav, workdir)  # the same for every ablation: boot the probe engine once
     for k, turn in enumerate(_turns(log)):
         drop = set(turn)
         tmp = Path(tempfile.mkdtemp(dir=workdir))
@@ -171,7 +172,6 @@ def turn_credit(spec: TaskSpec, start_sav: Path, log: Path, workdir: Path, full_
         al.close()
         res = replay(start_sav, ablated, tmp / "w", allowed=default_whitelist() or set(), keep_open=True)
         try:
-            d0, t0 = _start_point(start_sav, tmp)
             r = score(spec, res.world, ablated, d0, t0)["reward"]
         finally:
             res.world.close()

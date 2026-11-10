@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import json
 import sys
-
 from pathlib import Path
 
 from railhead.actionlog import read_log
@@ -52,13 +51,18 @@ def shard_dirs(dirs: list[Path], i: int, n: int) -> list[Path]:
 
 
 def _recheck_one(tdir_s: str) -> dict:
+    import shutil
     import tempfile
 
     from railhead.verify import verify
 
     tdir = Path(tdir_s)
     cert = json.loads((tdir / "certificates.json").read_text())
-    out = verify(tdir, tdir / "start.sav", tdir / "oracle.jsonl", Path(tempfile.mkdtemp(prefix="rh-recheck-")))
+    work = Path(tempfile.mkdtemp(prefix="rh-recheck-"))
+    try:
+        out = verify(tdir, tdir / "start.sav", tdir / "oracle.jsonl", work)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)  # replay + probe engine dirs (saves, logs) per task
     same = out["valid"] == 1 and abs(out["reward"] - cert["oracle_reward"]) < 1e-9
     return {"task": tdir.name, "match": same, "reward": out["reward"], "cert": cert["oracle_reward"],
             "delivered": out.get("delivered"), "valid": out["valid"]}
