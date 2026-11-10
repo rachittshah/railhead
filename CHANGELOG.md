@@ -26,6 +26,9 @@ Not published yet. The latest published image and Harbor datasets are 0.1.1.
 - `docs/TASKS.md`: the opaque task ID format and the `arena` family.
 - `docs/USAGE.md`: how to make and publish the two Harbor datasets.
 - README: results at a glance, and what the arena does not show.
+- `engine/build.sh` takes `CXX_FLAGS` and `EXTRA_PATCHES` to build a variant engine into its own tree, and
+  `engine/optional/0004-stdin-poll.patch` is one such patch (about 11% faster on an M4 Max, same checksums).
+  The default build is unchanged, so sealed tasks pin the same engine binary.
 
 ### Changed
 
