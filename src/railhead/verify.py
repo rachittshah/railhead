@@ -22,9 +22,11 @@ sets the minimum. ``--min-log-version=1`` re-verifies old (v1) agent logs; the P
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 from railhead import rewards
@@ -34,6 +36,8 @@ from railhead.seal import check_start
 from railhead.task import TaskSpec
 
 TICKS_PER_DAY = 74
+# Turn credit stops starting new turns after this many seconds of verify time (Harbor verifier: 900 s).
+CREDIT_BUDGET_S = 600.0
 
 
 def _meta(log: Path, name: str) -> list[dict]:
@@ -98,8 +102,9 @@ def score(spec: TaskSpec, world, log: Path, start_date: int, start_ticks: int = 
             r = rewards.abstain(abstained, feasible=False)
         elif obj.get("bid"):
             deadline = start_ticks + int(obj.get("bid_deadline_days", 30)) * TICKS_PER_DAY
+            # int only, as the daemon writes it (not bool, float or NaN; the replay rejects the others)
             bids = [m["a"].get("quantity") for m in meta("promise")
-                    if isinstance(m["a"].get("quantity"), (int, float)) and int(m.get("ticks", 0)) <= deadline]
+                    if type(m["a"].get("quantity")) is int and int(m.get("ticks", 0)) <= deadline]
             b = float(bids[-1]) if bids else 0.0
             out["bid"] = b
             r = 0.0 if abstained else rewards.bid(at_horizon, b, scale=float(obj.get("bid_scale", obj["quantity"])))
@@ -126,6 +131,8 @@ def verify(task_dir: Path, start_sav: Path, log: Path, workdir: Path, credit: bo
         return base | {"tamper": 1}
     # One private copy: the replay, the second replay, the meta decisions and the credit all read it.
     workdir.mkdir(parents=True, exist_ok=True)
+    if not Path(log).is_file():  # a directory, device or FIFO in place of the log: log fault, not infra
+        return base | {"rejected": 1}
     snap = workdir / "actions.jsonl"
     shutil.copyfile(log, snap)
     log = snap
@@ -192,12 +199,16 @@ def _turns(log: Path) -> list[list[int]]:
     return turns
 
 
-def turn_credit(spec: TaskSpec, start_sav: Path, log: Path, workdir: Path, full_reward: float) -> list[dict]:
-    """Leave-one-turn-out counterfactual credit by exact replay (DESIGN.md M5)."""
+def turn_credit(spec: TaskSpec, start_sav: Path, log: Path, workdir: Path, full_reward: float,
+                deadline: float | None = None) -> list[dict]:
+    """Leave-one-turn-out counterfactual credit by exact replay (DESIGN.md M5). With ``deadline`` (a
+    ``time.monotonic()`` value) it stops before a turn that starts after it: the result is then partial."""
     credits = []
     records = [r.raw for r in read_log(log)]
     d0, t0 = _start_point(start_sav, workdir)  # the same for every ablation: boot the probe engine once
     for k, turn in enumerate(_turns(log)):
+        if deadline is not None and time.monotonic() > deadline:
+            break
         drop = set(turn)
         tmp = Path(tempfile.mkdtemp(dir=workdir))
         ablated = tmp / "ablated.jsonl"
@@ -232,18 +243,32 @@ def main(argv: list[str] | None = None) -> int:
     task_dir, start_sav, log, out_dir = map(Path, argv)
     out_dir.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix="rh-verify-"))
+    t0 = time.monotonic()
     try:
-        out = verify(task_dir, start_sav, log, work, credit=credit, min_version=min_version)
-    except Exception as e:  # noqa: BLE001 - infra failure must still produce a (masked) reward file
-        out = {"reward": 0.0, "valid": 0, "tamper": 0, "rejected": 0, "error": 1}
-        print(f"verifier error: {type(e).__name__}: {e}", file=sys.stderr)
+        try:
+            out = verify(task_dir, start_sav, log, work, min_version=min_version)
+        except Exception as e:  # noqa: BLE001 - infra failure must still produce a (masked) reward file
+            out = {"reward": 0.0, "valid": 0, "tamper": 0, "rejected": 0, "error": 1}
+            print(f"verifier error: {type(e).__name__}: {e}", file=sys.stderr)
+        # The reward files first: turn credit replays the log once per turn, so it can be slow, and a
+        # failure or a Harbor time-out in it must not cost the reward (a dropout on demand).
+        (out_dir / "reward.json").write_text(json.dumps(out))
+        (out_dir / "reward.txt").write_text(f"{out['reward']}\n")
+        print(json.dumps(out))
+        if credit and out.get("valid") == 1 and not out.get("rejected") and not out.get("tamper"):
+            try:
+                # work/actions.jsonl: the private copy of the log that verify() scored
+                credits = turn_credit(TaskSpec.load(task_dir), start_sav, work / "actions.jsonl", work, out["reward"],
+                                      deadline=t0 + CREDIT_BUDGET_S)
+                out["credit_turns"] = len(credits)
+                tmp = out_dir / "reward.json.tmp"  # atomic: a kill here must not leave a torn reward.json
+                tmp.write_text(json.dumps(out))
+                os.replace(tmp, out_dir / "reward.json")
+                shutil.copy(work / "credit.json", out_dir / "credit.json")
+            except Exception as e:  # noqa: BLE001 - credit is a diagnostic; the reward stands
+                print(f"credit error: {type(e).__name__}: {e}", file=sys.stderr)
     finally:
-        if credit and (work / "credit.json").exists():
-            shutil.copy(work / "credit.json", out_dir / "credit.json")
         shutil.rmtree(work, ignore_errors=True)
-    (out_dir / "reward.json").write_text(json.dumps(out))
-    (out_dir / "reward.txt").write_text(f"{out['reward']}\n")
-    print(json.dumps(out))
     return 0
 
 

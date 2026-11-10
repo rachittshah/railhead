@@ -276,6 +276,14 @@ class RailheadBridge extends GSController {
 	function H_checksum(id, a) {
 		local h = 17;
 		local mix = function(h, v) { return ((h * 1000003) ^ (v & 0xFFFFFFFF)) & 0x7FFFFFFFFFFF; };
+		// Only a v2 log sends meta digests; with none the checksum is the same as before (v1 logs).
+		// The digest goes in FIRST: each mix step can be undone (1000003 is odd), so a digest mixed last
+		// could be stripped from a logged checksum and replaced, with the log alone. Mixed first, that
+		// needs every world value below at that wait.
+		if (this.meta_digest != 0) {
+			h = mix(h, this.meta_digest);
+			h = mix(h, this.meta_digest >> 32);
+		}
 		h = mix(h, GSDate.GetCurrentDate());
 		h = mix(h, this.ticks);
 		for (local c = GSCompany.COMPANY_FIRST; c <= GSCompany.COMPANY_LAST; c++) {
@@ -298,11 +306,6 @@ class RailheadBridge extends GSController {
 		local il = GSIndustryList();
 		il.Sort(GSList.SORT_BY_ITEM, GSList.SORT_ASCENDING);
 		foreach (i, _ in il) h = mix(h, GSIndustry.GetLocation(i));
-		// Only a v2 log sends meta digests; with none the checksum is the same as before (v1 logs).
-		if (this.meta_digest != 0) {
-			h = mix(h, this.meta_digest);
-			h = mix(h, this.meta_digest >> 32);
-		}
 		Proto.Ok(id, { h = h, date = GSDate.GetCurrentDate(), ticks = this.ticks, vehicles = vl.Count() });
 	}
 
