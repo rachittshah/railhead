@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import fcntl
 import hashlib
 import json
@@ -139,10 +140,8 @@ class Railheadd:
         """After a WorldFault: drop the live world and recover it from the log, which does not hold
         the request that failed. The live world then equals the log again."""
         old, self.world = self.world, None  # type: ignore[assignment]
-        try:
+        with contextlib.suppress(Exception):  # the old engine may be hung or gone
             old.close()
-        except Exception:  # noqa: BLE001 - the old engine may be hung or gone
-            pass
         if old.log is not None:
             old.log.close()
         try:
@@ -157,7 +156,7 @@ class Railheadd:
         if self.world is None:
             try:
                 self.world = self._load_world()
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 raise OpError("ERR_INFRA", f"the world is not available ({type(e).__name__}: {e})") from e
         return self.world
 
