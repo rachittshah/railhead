@@ -26,6 +26,10 @@ image `ghcr.io/rachittshah/railhead:0.1.1` (amd64 + arm64; the latest published 
 | 2 | gpt-6-astra | Codex | £27,935,307 |
 | 3 | gpt-6-sol | Codex | £27,232,656 |
 
+All eleven networks, growing over the decade, every frame from a replay ([60-second cut](docs/video/arena2-timelapse-dark.mp4), [how it was made](docs/TIMELAPSE.md)):
+
+<img alt="Timelapse: eleven transport networks grow on the same map from 1960 to 1971. The richest companies cover the map in long air routes; the poorest build a few short road lines." src="docs/img/arena2-timelapse.gif" width="720">
+
 ---
 
 ## 1. Friday, 15:43
@@ -211,7 +215,7 @@ Why each model played the way it did, from its action log, its own words and its
 
 ### What the arena does not show
 
-- **A ranking with error bars.** There was one map and one game per model, so there are no confidence intervals. Second and third place (gpt-6-astra and gpt-6-sol) are £0.7 million apart, about 2.5%. Another map could swap them, and nothing here says how likely that is. The arena shows that the environment separates models clearly. It is not a benchmark.
+- **A ranking with error bars.** There was one map and one game per model, so there are no confidence intervals. Second and third place (gpt-6-astra and gpt-6-sol) are £0.7 million apart, about 2.5%. Another map could swap them, and nothing here says how likely that is. The arena shows that the environment separates models clearly. It is not a benchmark. Twenty-three more games, on ten other maps, are scored with intervals in [docs/SEEDGAMES.md](docs/SEEDGAMES.md): Opus, gpt-6-astra and gpt-6-sol finish in that order on every map they share, and Opus reaches £103 million and £115 million on two of them.
 - **The model apart from its harness.** The Claude models played through Claude Code and the OpenAI models through Codex. Every gap between a Claude model and an OpenAI model is a gap between model-plus-harness pairs, and this arena cannot split the two. The players also ran with the operator's own Claude Code and Codex settings, not in clean configurations.
 - **Full games for everyone.** Fable stopped in 1963 at a usage limit of its Claude session, not by choice. In Arena 1, Opus and Sonnet stopped at usage limits after about 2.3 game years. The rules let their companies run on, so their results measure what they had built by then, not what they would have built with the whole mandate.
 - **What a game costs.** The dollar figures (about $15 for Opus, $35.58 for Fable) are API-equivalent estimates: the price that Claude Code reports for the tokens at API rates. There is no dollar figure for the Codex players.
