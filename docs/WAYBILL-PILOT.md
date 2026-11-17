@@ -1,6 +1,6 @@
 # Waybill pilot (Phase 5)
 
-**Pilot v1: FAILED.**
+**Pilot v1: FAILED. Pilot v2: the gate passes (section 9).**
 
 This document gives the numbers of the first Waybill pilot: four agents, one world, two game years.
 The text follows ASD-STE100. Refer to [STE.md](STE.md). For the runner, refer to [WAYBILL.md](WAYBILL.md), section 12.
@@ -263,3 +263,114 @@ Provisional decision of the lead (the user can change it): tender awards are rep
 ### 8.5 Roster for v2
 
 The Claude seat is pinned to `claude:claude-opus-5-5`; the runner's `run.json` seat spec is checked at launch. The opencode filler seat is replaced.
+
+## 9. Pilot v2
+
+### 9.1 Setup
+
+| Item | Value |
+|---|---|
+| Commit | `7e18ed6` (branch `waybill/licences`): licences, cross-only tenders, seed minimum, run-off |
+| Task | Short track, **seed 2** (seed 1 rejected: 2 cross-region needs; seed 2: **7**), rotation 0, 730 days, run-off 365 days. Cross-only tender pool: 7. Same `start.sav` and regions in both arms. |
+| Roster (`run.json`, both arms) | s0 `claude:claude-opus-5-5`, s1 `codex:default`, s2 `claude:claude-opus-5-5`, s3 `codex:default` |
+| Models that ran (`model_used`) | s0, s2 `claude-opus-5-5`; s1, s3 `gpt-6.1-terra` (both arms) |
+| Runner | `--all-slots --turn-s 300 --run-s 9000 --usd-cap 60 --max-turns 200 --grace-s 180`, sandbox isolation |
+
+### 9.2 Numbers per arm
+
+| Item | `enforced` | `cheap_talk` |
+|---|---|---|
+| Wall time | 3284 s (55 min) | 2410 s (40 min) |
+| End | horizon | horizon |
+| Verify | clean, replay = live | clean, replay = live |
+| World steps | 201 | 149 |
+| Actions (failed) | 2122 (1201) | 3565 (3047) |
+| Contract offers (all licences) | 16 | 27 |
+| Supply contracts offered / signed | 0 / 0 | 0 / 0 |
+| Licences signed | 6 | 19 |
+| Licence counters / withdrawals / expiries | 3 / 1 / 9 | 0 / 1 / 7 |
+| Licence fees of signed licences | £8,000 to £30,000 | £0 (all 19) |
+| Supply kept / partial / broken | 0 / 0 / 0 | 0 / 0 / 0 |
+| Amendments | 0 | 0 |
+| Tenders opened / bids / won | 24 / 8 / 8 | 24 / 0 / 0 |
+| Tender contracts kept / partial / broken | 6 / 2 / 0 | 0 / 0 / 0 |
+| Messages | 30 | 32 |
+| Ledger payments (`pay`) | 0 | 0 |
+| Runner submits | 0 | 0 |
+| Resumes / continuations | 0 / 1 (s0 at its 200-turn cap) | 0 / 1 (s1 stopped early) |
+| Failures | None | None |
+
+Builds under licences (`enforced`): s0 built rail stations, lines, depots and signals in s1's region (an oil corridor of about 180 tiles and an iron ore line); s2 and s3 built airports, a road stop and rail in each other's regions.
+
+### 9.3 Scores (net worth after the 365-day run-off, plus ledger balance)
+
+| Slot | Model | `enforced` net worth at horizon | after run-off | ledger | score | `cheap_talk` net worth at horizon | after run-off | ledger | score |
+|---|---|---|---|---|---|---|---|---|---|
+| s0 | Claude | -70,594 | 284,638 | 34,098 | 318,736 | -179,091 | 95,648 | 0 | 95,648 |
+| s1 | Codex | 121,866 | 429,972 | 50,000 | 479,972 | 248,357 | 917,446 | 0 | 917,446 |
+| s2 | Claude | -33,886 | 65,243 | 125,500 | 190,743 | -175,411 | 107,698 | 0 | 107,698 |
+| s3 | Codex | 57,914 | 263,495 | 24,000 | 287,495 | -56,349 | 27,972 | 0 | 27,972 |
+
+All eight companies end positive after the run-off. At the horizon, five of the eight had a negative net worth.
+
+### 9.4 Cost per seat per game year
+
+| Seat | `enforced`: 2000 / 2001 / Jan 2002 | total | `cheap_talk`: 2000 / 2001 / Jan 2002 | total |
+|---|---|---|---|---|
+| s0 Claude | $7.62 / $7.04 / $0.35 (301 requests) | $15.01 | $2.69 / $1.62 / $0.19 (135 requests) | $4.50 |
+| s2 Claude | $4.81 / $2.71 / $0.39 (225 requests) | $7.91 | $2.40 / $0.89 / $0.20 (105 requests) | $3.49 |
+| s1 Codex (input tokens) | 6.63M / 3.96M / 0.70M | 11.3M | 11.38M / 6.52M / 1.62M | 19.5M |
+| s3 Codex (input tokens) | 7.39M / 5.73M / 0.57M | 13.7M | 6.08M / 2.63M / 0.91M | 9.6M |
+
+Claude total: $22.92 (`enforced`) + $7.99 (`cheap_talk`) = **$30.91**, that is $3.86 per Claude seat per game year (4 seat-arms, 2 game years each). Codex reports tokens only: 6.8M input tokens per Codex seat per game year (about half are cache reads). The run-off adds no agent cost.
+
+**Projection for the decade track** (8 seats, 3 seeds, 2 arms; 10 played years, plus a run-off year without agents):
+
+- Method: $3.86 per Claude seat per game year, constant over the years. The pilot cost is front-loaded (about 60% in the first year), which argues for less; a 512 x 512 map with 8 companies gives more counterparties and longer sessions, which argues for more.
+- All 8 seats Claude Opus: 8 x 10 x 3 x 2 x $3.86 = **about $1,850** (about $2,040 if the 11th year is counted).
+- Half the seats Claude (the v2 mix): **about $930** in Claude dollars, plus about 1.6 billion Codex input tokens (4 x 10 x 3 x 2 x 6.8M).
+- Treat this as a range of 0.5x to 2x until one decade game is measured.
+
+### 9.5 Gate
+
+| Criterion | Target | Result |
+|---|---|---|
+| Bilateral contracts signed, across both arms | 10 or more | **Pass: 25** (6 `enforced` + 19 `cheap_talk`), all licences, no supply contracts |
+| Tender contracts (separate line, provisional rule) | reported | 8 (`enforced`): 6 kept, 2 partial; 0 in `cheap_talk` |
+| Breach or renegotiation | 1 or more | **Met by tender partials only**: 2 partial tender contracts (`enforced`, s0). No bilateral supply contract exists, so none was broken. No amendment. |
+| Replay deterministic | verify clean | Pass in both arms (replay = live) |
+| Cost per game year measured | measured | Pass (9.4) |
+
+**Verdict: the gate passes** under the provisional rule (tender awards on a separate line; the breach criterion met by the agents' tender breaches). The user may change the rule.
+
+### 9.6 Transcript excerpts
+
+The names are agent slots; the text is quoted from the messages (`rh msg`) and transcripts.
+
+1. A licence negotiation with counters (`enforced`, s0 and s1):
+   > s1 → s0: I have offered the requested iron ore licence for 40k, extending south to y99 to cover the mine. I need to rebuild my finances before committing to oil infrastructure [...]
+   > s0 → s1: Thanks. Iron ore is low value per ton and I carry all the build cost; I countered 20k. Happy to cut the oil licences to 25k each when you are ready.
+   > s0 → s1: Offered to take the iron ore licence 18,75,32,99 at 30k (up from 20k) - please accept soon, I want to build this week.
+
+2. A corridor licence after an expiry (`enforced`, s0 and s1):
+   > s0 → s1: B, the corridor licence offer C14 (70,75,84,226, 25k) is waiting for you; happy to adjust rect or fee. It gives you 25k now and costs you nothing.
+   > s1 → s0: Sorry, your corridor offer expired during my 90-day wait. I have sent the same licence at your latest proposed 30k, open for 90 days.
+
+3. A message thread about a useless licence (`enforced`, s2 to s3; no payment followed):
+   > s2 → s3: I signed C11 [...] but the town refuses another airport (town already has 2 airports, yours). Since the rect is useless for me, would you consider refunding part of the fee (e.g. 7000 via rh pay) [...]
+
+4. A tender partial (`enforced`, s0, final report):
+   > I won four iron-ore tenders: T4 lost about £4.7k, T7 made +£2.8k, and T10 and T19 were delivered in full (T19: 230 of 170 units).
+
+   T4 settled with 41 of 154 units delivered and T7 with 80 of 218.
+
+5. Zero-fee swaps (`cheap_talk`, s2 to all):
+   > Proposal: reciprocal zero-fee licences for small rectangles (e.g. 12x12 around a town) so each of us can build an airport/station in the other's region.
+
+### 9.7 What pilot v2 does not show
+
+One seed, one rotation and one game for each arm is no evidence of an arm effect. The two arms differ in many uncontrolled ways (the agents' early choices, which then compound), so this pilot makes **no claim about enforcement**. The difference in licence counts (6 against 19) is also partly mechanical: in `cheap_talk` a licence fee moves no money, so all 19 licences were reciprocal zero-fee swaps, and a licence is the same build right in both arms. No supply contract was offered, so the pilot does not test the promise-keeping that Waybill wants to measure: the only performance obligations were tender contracts with the exchange, and the only breaches (two partial tenders) are against the exchange, not against another agent. Failed actions are high (57% and 85%), mostly dry-run site probes. The agents also reported `rh` problems (for example, the signal direction is the reverse of the help text), which are not examined here.
+
+### 9.8 Notable: no supply contract
+
+Hypothesis: a licence lets one company run the whole cross-region route and keep all the delivery income, while the buyer of a supply contract gets nothing from the game for cargo delivered to an industry (only a tender holder has a reason to buy), so licences replace supply contracts.
