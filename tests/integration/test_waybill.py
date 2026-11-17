@@ -183,3 +183,34 @@ def test_an_act_moved_to_another_company_is_rejected(game, tmp_path):
     forged.write_text("".join(json.dumps(r, separators=(",", ":"), sort_keys=True) + "\n" for r in recs))
     out = verify_multi(game["task"], game["task"] / "start.sav", forged, tmp_path / "v")
     assert out["rejected"] == 1
+
+
+def test_a_restarted_coordinator_recovers_the_world_and_the_barrier(game, tmp_path):
+    from railhead.multi.log import LogState
+
+    recs = [r.raw for r in read_log(game["log"])]
+    # cut the log in the middle of the game, just after a wait request: some companies wait, some do not
+    expect = LogState(recs[0])
+    for k, r in enumerate(recs[1:], 1):
+        expect.check(r)
+        if k > len(recs) // 2 and r["kind"] == "wait_req" and 0 < len(expect.waiting) < 3:
+            break
+    cut = recs[:k + 1]
+    state = tmp_path / "state"
+    (state / "run").mkdir(parents=True)
+    (state / "run" / "actions.jsonl").write_text(
+        "".join(json.dumps(r, separators=(",", ":"), sort_keys=True) + "\n" for r in cut))
+    coord = Coordinator(game["task"], state)
+    try:
+        assert coord.sw.ticks == expect.now
+        assert {c: w.target for c, w in coord.barrier.waiting.items()} == \
+            {c: w["target"] for c, w in expect.waiting.items()}
+        assert 0 < len(coord.barrier.waiting) < 3
+        c = next(x["id"] for x in game["companies"] if x["id"] not in expect.waiting)
+        slot = next(x["slot"] for x in game["companies"] if x["id"] == c)
+        assert coord.handle(slot, {"op": "info"})["company"] == c
+        coord.handle(slot, {"op": "act", "m": "company_loan", "a": {"amount": 300_000}})
+        last = [r.raw for r in read_log(state / "run" / "actions.jsonl")][-1]
+        assert last["kind"] == "act" and last["company"] == c and last["seq"] == k + 1
+    finally:
+        coord.close()
