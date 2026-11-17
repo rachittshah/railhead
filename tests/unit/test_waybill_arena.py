@@ -165,7 +165,8 @@ def test_the_sandbox_lets_an_agent_reach_only_its_own_socket_and_directory(tmp_p
                             str(own), str(other), str(adir / "mine.txt"), str(other_dir / "agent.log"),
                             str(task / "task.json")], check=False, capture_output=True, text=True, timeout=60)
         # own socket, other socket, own file, other agent's transcript, task.json, resolve own path, list agents/
-        assert r.stdout.split() == ["ok", "denied", "ok", "denied", "denied", "ok", "denied"], r
+        # (the parents of the agent directory show their names: Bun's realpath opens each of them)
+        assert r.stdout.split() == ["ok", "denied", "ok", "denied", "denied", "ok", "ok"], r
     finally:
         for s in servers:
             s.close()
@@ -467,3 +468,10 @@ def test_opencode_cost_per_game_year_comes_from_its_own_step_events(tmp_path):
 def test_all_slots_refuses_a_company_without_a_player(task, tmp_path):
     with pytest.raises(ValueError, match="never trades"):
         wa.Runner.create(task, tmp_path / "run", ["stub:/x", "stub:/y"], all_slots=True)
+
+
+def test_an_opencode_profile_denies_only_the_engine_ports():
+    prof = wa.sandbox_profile(Path("/r/agents/a"), Path("/r"), Path("/t"), Path("/o.sock"), [], [4318],
+                              home=Path("/h"), deny_ports=[5001, 5002])
+    assert "localhost:*" not in prof and "localhost:4318" not in prof
+    assert '(deny network-outbound (remote ip "localhost:5001"))' in prof and "localhost:5002" in prof

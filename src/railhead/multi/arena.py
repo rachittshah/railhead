@@ -322,7 +322,8 @@ def _sb(path: Path | str) -> str:
 
 
 def sandbox_profile(agent_dir: Path, run_dir: Path, task_dir: Path, own_socket: Path, other_sockets: list[Path],
-                    allow_ports: list[int], home: Path | None = None, tmp_root: Path | None = None) -> str:
+                    allow_ports: list[int], home: Path | None = None, tmp_root: Path | None = None,
+                    deny_ports: list[int] | None = None) -> str:
     """A macOS sandbox profile (sandbox-exec) for one agent. Everything is allowed, except:
 
     - the run directory (the merged log, the other agents' transcripts and harness state, the OTLP data) and
@@ -332,7 +333,8 @@ def sandbox_profile(agent_dir: Path, run_dir: Path, task_dir: Path, own_socket: 
       own CODEX_HOME), ``~/.agents``, and the per-user Claude temporary root (``tmp_root``, other sessions'
       tool output);
     - the control socket and the other agents' sockets;
-    - TCP to localhost (the engine's game and admin ports) apart from the OTLP sink.
+    - TCP to localhost (the engine's game and admin ports) apart from the OTLP sink. With ``deny_ports``
+      (opencode, whose private server listens on a random localhost port), only those ports are refused.
 
     The denials are of file contents and directory listings (``file-read-data``) and writes, not of
     metadata: a harness must be able to resolve the path of its own directory, which needs ``lstat`` on
@@ -344,13 +346,21 @@ def sandbox_profile(agent_dir: Path, run_dir: Path, task_dir: Path, own_socket: 
              "(deny file-read-data file-write* " + " ".join(f"(subpath {_sb(d)})" for d in deny) + ")",
              f"(deny file-read-data file-write* (literal {_sb(home / '.claude.json')}))",
              f"(allow file-read* file-read-data file-write* (literal {_sb(home / '.codex' / 'auth.json')}))",
+             # directory nodes (their names, not the files in them): Bun's realpath opens each directory of a
+             # path (opencode): the operator's harness directories and every parent of the agent directory
+             "(allow file-read-data " + " ".join(f"(literal {_sb(d)})" for d in (
+                 home / ".claude", home / ".codex", home / ".agents",
+                 *Path(os.path.realpath(agent_dir)).parents)) + ")",
              f"(allow file-read* file-read-data file-write* (subpath {_sb(agent_dir)}))",
              f"(allow file-read* file-read-data file-write* (literal {_sb(own_socket)}))"]
     for s in other_sockets:
         lines.append(f"(deny network-outbound (remote unix-socket (path-literal {_sb(s)})))")
         lines.append(f"(deny file-read-data file-write* (literal {_sb(s)}))")
-    lines.append('(deny network-outbound (remote ip "localhost:*"))')
-    lines += [f'(allow network-outbound (remote ip "localhost:{p}"))' for p in allow_ports]
+    if deny_ports is None:
+        lines.append('(deny network-outbound (remote ip "localhost:*"))')
+        lines += [f'(allow network-outbound (remote ip "localhost:{p}"))' for p in allow_ports]
+    else:
+        lines += [f'(deny network-outbound (remote ip "localhost:{p}"))' for p in deny_ports]
     return "\n".join(lines) + "\n"
 
 
@@ -720,6 +730,19 @@ class Runner:
         out = {int(k): Path(v) for k, v in (doc.get("agents") or {}).items()}
         return out or {slot: agent_socket_path(self.coord_state, slot) for slot in self.cid}
 
+    def engine_ports(self) -> list[int]:
+        """The engine's admin and game ports now (from the coordinator's engine config)."""
+        cfg = self.coord_state / "world" / "openttd.cfg"
+        ports = []
+        if cfg.exists():
+            for line in cfg.read_text(errors="replace").splitlines():
+                k, _, v = line.partition("=")
+                if k.strip() in ("server_admin_port", "server_port") and v.strip().isdigit():
+                    ports.append(int(v.strip()))
+        if len(ports) < 2:
+            raise RuntimeError("the engine ports are unknown: no opencode agent without the localhost guard")
+        return ports
+
     def clock(self, st: dict) -> None:
         if st.get("ticks") != self.clock_last:
             self.clock_last = st.get("ticks")
@@ -749,7 +772,9 @@ class Runner:
                           base=scrubbed_base(extra=tuple(self.m.get("pass_env") or ())), claude_token=token)
         if self.m["isolation"] == "sandbox":
             others = [p for s, p in socks.items() if s != seat.slot] + [control_socket_path(self.coord_state)]
-            prof = sandbox_profile(adir, self.run_dir, self.task_dir, own, others, [int(self.m["otel_port"])])
+            deny = self.engine_ports() if seat.vendor == "opencode" else None
+            prof = sandbox_profile(adir, self.run_dir, self.task_dir, own, others, [int(self.m["otel_port"])],
+                                   deny_ports=deny)
             (adir / "sandbox.sb").write_text(prof)
             cmd = ["/usr/bin/sandbox-exec", "-f", str(adir / "sandbox.sb")] + cmd
         with open(adir / "agent.log", "ab") as fh:
