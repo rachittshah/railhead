@@ -415,3 +415,50 @@ def test_resume_after_the_run_budget_starts_the_stopped_agents_again(task, tmp_p
     m = json.loads((run / "run.json").read_text())
     assert [x["kind"] for x in m["seats"][0]["launches"]] == ["launch", "resume"]
     assert res["run"]["ended"] == "horizon"
+
+
+def test_auth_errors_are_recognised():
+    assert wa.is_auth_error({"status": 401})
+    assert wa.is_auth_error({"message": "OAuth token has expired. Please run /login"})
+    assert not wa.is_auth_error({"message": "overloaded", "status": 529})
+
+
+def test_a_capped_or_logged_out_session_keeps_playing_and_short_sessions_give_up(task, tmp_path, monkeypatch):
+    monkeypatch.chdir(REPO)
+    a = _script(tmp_path / "a.txt", ["rh wait days=5", "@turncap", "rh wait days=5", "@autherr", "rh wait days=60"])
+    b = _script(tmp_path / "b.txt", ["@exit", "@exit", "@exit", "rh wait days=60"])
+    run = tmp_path / "run"
+    res = wa.Runner.create(task, run, [f"stub:{a}", f"stub:{b}"], poll_s=0.2, grace_s=5, isolation="env",
+                           max_backoff_s=0.2, coord_cmd=FAKE, verify_fn=_fake_verify).run()
+    m = json.loads((run / "run.json").read_text())
+    s0, s1 = m["seats"]
+    assert [x["kind"] for x in s0["launches"]] == ["launch", "nudge", "resume"] and s0["status"] == "done"
+    assert s1["status"] == "failed" and "3 sessions in a row" in s1["note"]
+    assert res["run"]["runner_submits"] == 1 and res["run"]["ended"] == "horizon"
+    rows = {r["slot"]: r for r in res["companies"]}
+    assert rows[0]["runner_submitted"] is False and rows[0]["continues"] == 1 and rows[0]["resumes"] == 1
+    assert rows[1]["runner_submitted"] is True
+
+
+def test_the_dollar_cap_ends_the_run(task, tmp_path, monkeypatch):
+    monkeypatch.chdir(REPO)
+    a = _script(tmp_path / "a.txt", ["rh info"] * 5 + ["@sleep 30", "rh wait days=60"])
+    run = tmp_path / "run"
+    r = wa.Runner.create(task, run, [f"stub:{a}"], poll_s=0.2, isolation="env", usd_cap=0.003, coord_cmd=FAKE,
+                         verify_fn=_fake_verify)
+    r.m["cost_check_s"] = 0
+    res = r.run()
+    assert res["run"]["ended"] == "usd_cap" and res["cost"]["usd_reported"] > 0.003
+
+
+def test_opencode_cost_per_game_year_comes_from_its_own_step_events(tmp_path):
+    adir = tmp_path / "agents" / "s2-opencode"
+    adir.mkdir(parents=True)
+    ev = [{"type": "step_finish", "timestamp": 15000, "part": {"cost": 0, "tokens": {"input": 100, "output": 5,
+                                                                                      "cache": {"read": 7}}}},
+          {"type": "step_finish", "timestamp": 35000, "part": {"cost": 0.5, "tokens": {"input": 50, "output": 1}}}]
+    (adir / "agent.log").write_text("\n".join(json.dumps(e) for e in ev) + "\n")
+    clock = [{"t": 10, "ticks": 0, "date": "1950-06-01"}, {"t": 30, "ticks": 9000, "date": "1951-01-01"}]
+    c = wa.seat_cost(wa.Seat(2, "opencode", "opencode/big-pickle", "s2-opencode"), tmp_path, "t", clock)
+    assert c["requests"] == 2 and c["input_tokens"] == 150 and c["cache_read_tokens"] == 7
+    assert c["by_year"]["1950"]["input_tokens"] == 100 and c["by_year"]["1951"]["cost_usd"] == 0.5
