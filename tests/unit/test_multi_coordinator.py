@@ -34,6 +34,8 @@ class FakeWorld:
         self.admin = SimpleNamespace(welcome=SimpleNamespace(map_x=64, map_y=64))
         self.bridge = SimpleNamespace(drain_events=list)
         self.calls: list[tuple] = []
+        self.monitors: list[dict] = []
+        self.delivered: dict[tuple, int] = {}  # (company, cargo, industry) -> cumulative deliveries
 
     def state(self) -> dict:
         d = self.ticks // D
@@ -59,6 +61,20 @@ class FakeWorld:
             return {}
         if method == "rail_track":
             return {}
+        if method == "industries":
+            return [{"id": 1, "type": 0, "x": 5, "y": 5, "produces": [{"cargo": 1}], "accepts": []},
+                    {"id": 2, "type": 1, "x": 40, "y": 5, "produces": [], "accepts": [1]}]
+        if method == "cargos":
+            return [{"id": 0, "label": "PASS"}, {"id": 1, "label": "COAL"}]
+        if method == "monitor_add":
+            self.monitors.append({"id": len(self.monitors), "company": args["company"], "cargo": args["cargo"],
+                                  "target": args["target"], "total": 0,
+                                  "base": self.delivered.get((args["company"], args["cargo"], args["target"]), 0)})
+            return len(self.monitors) - 1
+        if method == "monitor_read":
+            for m in self.monitors:
+                m["total"] = self.delivered.get((m["company"], m["cargo"], m["target"]), 0) - m.get("base", 0)
+            return [{k: v for k, v in m.items() if k != "base"} for m in self.monitors]
         if method == "company_loan":
             if args["amount"] > 500_000:
                 raise BridgeError("ERR_BAD_ARG", "above the maximum loan")
@@ -86,6 +102,7 @@ class FakeCoordinator(coord_mod.Coordinator):
         if self.log_path.exists() and self.log_path.stat().st_size > 0:
             raise AssertionError("the fake has no replay")
         sw.attach_log(ActionLog(self.log_path))
+        self._start_market(sw)
         return sw, None
 
 
@@ -93,12 +110,12 @@ class FakeCoordinator(coord_mod.Coordinator):
 def make(tmp_path):
     made = []
 
-    def _make(horizon_days=60, budget=None, chunk_days=7, regions=None):
+    def _make(horizon_days=60, budget=None, chunk_days=7, regions=None, market=None):
         tdir = tmp_path / "task"
         tdir.mkdir(exist_ok=True)
         if regions is not None:
             regions.save(tdir / "regions.json")
-        write_task(tdir, "waybill-test", COMPANIES, horizon_days=horizon_days, agent_turn_s=3600)
+        write_task(tdir, "waybill-test", COMPANIES, horizon_days=horizon_days, agent_turn_s=3600, market=market)
         c = FakeCoordinator(tdir, tmp_path / "state", turn_budget_s=budget, chunk_days=chunk_days)
         threads = [threading.Thread(target=c.clock_loop, daemon=True),
                    threading.Thread(target=c.watchdog_loop, kwargs={"period": 0.02}, daemon=True)]
@@ -357,3 +374,102 @@ def test_franchise_refuses_an_out_of_region_build_and_does_not_log_it(make):
     c.handle(0, {"op": "act", "m": "company_loan", "a": {"amount": 1000}})  # not a build: no check
     acts = [r for r in check_log(c) if r["kind"] == "act"]
     assert [(r["company"], r["m"]) for r in acts] == [(3, "rail_track"), (5, "rail_track"), (3, "company_loan")]
+
+
+# ---------------------------------------------------------------------- the market on the fake engine
+def market_cfg(arm="enforced"):
+    from railhead.multi.market import MarketConfig
+
+    return MarketConfig(arm=arm, seed=4, start_balances={1: 5000}, quarter_days=30,
+                        tender={"per_quarter": 1, "bid_ticks": 2 * D, "window_ticks": 10 * D,
+                                "quantity_base": 10, "quantity_jitter_pct": 0})
+
+
+def ex(c, slot, m, **a):
+    return c.handle(slot, {"op": "ex", "m": m, "a": a})
+
+
+def test_market_commands_views_and_errors(make):
+    c = make(horizon_days=60, market=market_cfg())
+    info = c.handle(1, {"op": "info"})
+    assert info["market"]["arm"] == "enforced" and info["market"]["ledger_balance"] == 5000
+    r = ex(c, 1, "offer", to="Company A", seller="A", buyer="me", cargo=1, industry=2, quantity=10,
+           window_start="+0d", deadline="+20d", price=1000, penalty_per_unit=50)
+    cid = r["contract"]["contract_id"]
+    assert r["contract"]["terms"]["deadline"] == 1000 + 20 * D and r["contract"]["terms"]["buyer"] == "5"
+    with pytest.raises(OpError) as e:
+        ex(c, 0, "offer", to="B", seller="me", buyer="B", cargo=9, industry=2, quantity=1, window_start=0,
+           deadline="+5d", price=1, penalty_per_unit=0)
+    assert e.value.code == "ERR_BAD_ARG" and "cargo 9" in e.value.msg
+    with pytest.raises(OpError) as e:
+        ex(c, 0, "offer", to="B", seller="me", buyer="B", cargo=1, industry=2, quantity=1, window_start=0,
+           deadline="+90d", price=1, penalty_per_unit=0)
+    assert "after the end of the game" in e.value.msg
+    with pytest.raises(OpError) as e:
+        ex(c, 2, "accept", contract_id=cid)
+    assert e.value.code == "ERR_NOT_PARTY"
+    with pytest.raises(OpError) as e:
+        ex(c, 0, "frobnicate")
+    assert e.value.code == "ERR_UNKNOWN_OP"
+    ex(c, 0, "msg", to="B", text="deal")
+    ex(c, 0, "accept", contract_id=cid.lower())
+    # views: C sees neither the contract nor the message; B sees its inbox
+    assert ex(c, 2, "contracts") == [] and ex(c, 2, "inbox") == []
+    assert [m["text"] for m in ex(c, 1, "inbox")] == ["deal"]
+    view = ex(c, 1, "view")
+    assert set(view) >= {"market", "contracts", "inbox", "ledger"} and "records" not in view
+    assert view["ledger"]["balances"]["escrow:" + cid] == 1000
+    # history never gives system records or another company's records
+    hist = c.handle(2, {"op": "history", "n": 100})
+    assert all(h.get("company") == 7 for h in hist if h["kind"] != "step")
+    rows = c.handle(1, {"op": "query", "m": "monitor_read", "a": {}})
+    assert rows == []  # the monitor is company A's (the seller): B cannot read it
+
+
+def test_market_settles_at_the_deadline_with_a_forced_wake(make):
+    c = make(horizon_days=60, market=market_cfg())
+    world = c.sw.world
+    r = ex(c, 0, "offer", to="B", seller="me", buyer="B", cargo=1, industry=2, quantity=10, window_start="+0d",
+           deadline="+3d", price=1000, penalty_per_unit=50)
+    ex(c, 1, "accept", contract_id=r["contract"]["contract_id"])
+    world.delivered[(3, 1, 2)] = 4  # A delivers 4 of 10
+    out = {}
+    def play(s):
+        out[s] = c.handle(s, {"op": "wait", "days": 20})
+        if s != 2:
+            c.handle(s, {"op": "meta", "m": "submit", "a": {"confirm": "yes"}})
+
+    run_agents([lambda s=s: play(s) for s in (0, 1, 2)])
+    assert out[0]["reason"] == "deadline" and out[1]["reason"] == "deadline" and out[0]["days"] == 3
+    assert out[2]["reason"] == "elapsed"
+    recs = check_log(c)
+    settle = [r["x"] for r in recs if r["kind"] == "ex" and r["x"]["op"] == "settle"]
+    assert settle and settle[0]["delivered"] == 4 and settle[0]["outcome"] == "partial"
+    led = ex(c, 0, "ledger")["balances"]
+    assert led["3"] == 1000 * 4 // 10 - 50 * 6 and led["5"] == 5000 - 1000 + 600 + 300
+    c.market.ex.check_invariants()
+
+
+def test_offer_received_wakes_a_waiting_company_after_one_tick(make):
+    c = make(horizon_days=60, market=market_cfg())
+    out = {}
+    t1 = threading.Thread(target=lambda: out.__setitem__(1, c.handle(1, {"op": "wait", "days": 25,
+                                                                        "until": ["offer_received"]})), daemon=True)
+    t1.start()
+    time.sleep(0.2)
+    ex(c, 0, "offer", to="B", seller="me", buyer="B", cargo=1, industry=2, quantity=10, window_start="+0d",
+       deadline="+20d", price=10, penalty_per_unit=0)
+    threading.Thread(target=quiet(lambda: c.handle(0, {"op": "wait", "days": 25})), daemon=True).start()
+    threading.Thread(target=quiet(lambda: c.handle(2, {"op": "wait", "days": 25})), daemon=True).start()
+    t1.join(10)
+    assert out[1]["reason"] == "offer_received" and out[1]["ticks"] == 1000 + 1
+
+
+def test_market_wake_kinds_need_a_market(make):
+    c = make()
+    with pytest.raises(OpError) as e:
+        c.handle(0, {"op": "wait", "days": 3, "until": ["message_received"]})
+    assert e.value.code == "ERR_BAD_ARG"
+    with pytest.raises(OpError) as e:
+        ex(c, 0, "market")
+    assert e.value.code == "ERR_NO_MARKET"

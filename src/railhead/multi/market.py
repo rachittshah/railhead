@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
+from typing import Any
 
 from railhead.exchange import Exchange, ExchangeError, TenderConfig
 from railhead.exchange.contracts import LIVE_STATUSES
@@ -179,6 +180,20 @@ class Market:
             out.append(self.ex.open_tenders(tick, q, self.snapshot(industries(), tick)))
         return out
 
+    def opens_tenders(self, tick: int) -> bool:
+        return self.quarter_at(tick) is not None and self.tenders_fit(tick)
+
+    def wakes(self, tick: int, waiters: dict[int, tuple[list[str], int]]) -> dict[int, set[str]]:
+        """Market wake reasons of the waiters at ``tick`` (call it before :meth:`tick_records`)."""
+        return exchange_wakes(self.ex, waiters, tick, at_quarter=self.opens_tenders(tick))
+
+    def cap(self, now: int, waiters: dict[int, tuple[list[str], int]]) -> int | None:
+        """The tick the next step must not pass: one tick when an offer or message condition is already
+        true, else :meth:`next_forced`."""
+        if pending_now(self.ex, waiters):
+            return now + 1
+        return self.next_forced(now)
+
     # ------------------------------------------------------------------ scores
     def balance(self, company: int) -> int:
         assert self.ex.accounts is not None
@@ -274,3 +289,127 @@ __all__ = [
     "pending_now",
     "pick_reason",
 ]
+
+
+# ---------------------------------------------------------------------- agent commands
+SUPPLY_FIELDS = ("seller", "buyer", "cargo", "industry", "quantity", "window_start", "deadline", "price",
+                 "penalty_per_unit", "bond")
+TICK_FIELDS = frozenset({"window_start", "deadline", "expires_tick"})
+COMMAND_ARGS: dict[str, tuple[str, ...]] = {
+    "offer": ("kind", "to", "expires_tick", "terms", *SUPPLY_FIELDS),
+    "counter": ("contract_id", "expires_tick", "terms", *SUPPLY_FIELDS),
+    "accept": ("contract_id",),
+    "amend": ("contract_id", "terms", *SUPPLY_FIELDS),
+    "withdraw": ("contract_id",),
+    "tender_bid": ("tender_id", "price"),
+    "msg": ("to", "text"),
+    "pay": ("to", "amount", "memo"),
+}
+
+
+class CommandError(ValueError):
+    def __init__(self, msg: str, code: str = "ERR_BAD_ARG") -> None:
+        super().__init__(msg)
+        self.code = code
+
+
+def resolve_company(v: Any, me: str, companies: list[dict], allow_open: bool = False) -> str | None:
+    """A company given as its id (3 or "3"), its name ("Company B"), its letter ("B") or "me"."""
+    if v is None or (isinstance(v, str) and v.lower() in ("", "any", "null", "none")):
+        if allow_open:
+            return None
+        raise CommandError("a company is required here (an id, a name like 'Company B', or me)")
+    if isinstance(v, str) and v.lower() == "me":
+        return me
+    for c in companies:
+        cid, name = int(c["id"]), str(c["name"])
+        if (isinstance(v, int) and not isinstance(v, bool) and v == cid) or \
+                (isinstance(v, str) and v.strip().lower() in (str(cid), name.lower(), name.split()[-1].lower())):
+            return ex_id(cid)
+    known = ", ".join(f"{c['id']} ({c['name']})" for c in companies)
+    raise CommandError(f"unknown company {v!r}; companies: {known}")
+
+
+def resolve_tick(v: Any, now: int, what: str) -> int:
+    """A tick: an absolute int, or relative to now: "+30d" (days), "+500t" or "+500" (ticks)."""
+    if isinstance(v, int) and not isinstance(v, bool):
+        return v
+    if isinstance(v, str):
+        t = v.strip().lower()
+        try:
+            if t.startswith("+") and t.endswith("d"):
+                return now + int(t[1:-1]) * TICKS_PER_DAY
+            if t.startswith("+"):
+                return now + int(t[1:].rstrip("t"))
+            return int(t)
+        except ValueError:
+            pass
+    raise CommandError(f"{what} must be a tick (an integer) or relative to now, e.g. +30d (days) or +500t (ticks); "
+                       f"got {v!r}")
+
+
+def _int_arg(a: dict, k: str) -> int:
+    v = a[k]
+    if isinstance(v, str) and v.strip().lstrip("-").isdigit():
+        v = int(v)
+    if not isinstance(v, int) or isinstance(v, bool):
+        raise CommandError(f"{k} must be an integer, got {v!r}")
+    return v
+
+
+def parse_command(m: str, a: dict, *, me: str, now: int, companies: list[dict],
+                  base_terms: dict | None = None) -> dict:
+    """Keyword arguments for ``Exchange.<m>(tick, me, **kwargs)`` from loose agent input. Terms come as
+    ``terms={...}`` or as top-level fields (seller=me buyer=B cargo=1 ...). For counter and amend, the
+    fields that are not given keep their current value (``base_terms``)."""
+    if m not in COMMAND_ARGS:
+        raise CommandError(f"unknown market command {m!r}; commands: {', '.join(COMMANDS)}")
+    unknown = set(a) - set(COMMAND_ARGS[m])
+    if unknown:
+        raise CommandError(f"{m}: unknown argument(s) {sorted(unknown)} (arguments: {', '.join(COMMAND_ARGS[m])})")
+    out: dict[str, Any] = {}
+    if m in ("offer", "counter", "amend"):
+        terms = dict(base_terms or {})
+        given = dict(a.get("terms") or {})
+        if not isinstance(given, dict):
+            raise CommandError("terms must be an object")
+        given.update({k: a[k] for k in SUPPLY_FIELDS if k in a})
+        for k, v in given.items():
+            if k in ("seller", "buyer"):
+                terms[k] = resolve_company(v, me, companies, allow_open=m == "offer")
+            elif k in TICK_FIELDS:
+                terms[k] = resolve_tick(v, now, k)
+            elif k in SUPPLY_FIELDS:
+                terms[k] = _int_arg(given, k)
+            else:
+                terms[k] = v
+        if m == "offer" and not given:
+            raise CommandError("offer needs terms: seller, buyer, cargo, industry, quantity, window_start, deadline, "
+                               "price, penalty_per_unit [bond]")
+        out["terms"] = terms
+    if m == "offer":
+        out["kind"] = a.get("kind", "supply")
+        out["to"] = resolve_company(a.get("to"), me, companies, allow_open=True)
+    if m in ("offer", "counter") and a.get("expires_tick") is not None:
+        out["expires_tick"] = resolve_tick(a["expires_tick"], now, "expires_tick")
+    for k in ("contract_id", "tender_id"):
+        if k in COMMAND_ARGS[m]:
+            if not isinstance(a.get(k), str) or not a[k]:
+                raise CommandError(f"{m} needs {k} (for example {'C1' if k == 'contract_id' else 'T1'})")
+            out[k] = a[k].strip().upper()
+    if m == "tender_bid":
+        if "price" not in a:
+            raise CommandError("tender bid needs price (your total price for the whole quantity)")
+        out["price"] = _int_arg(a, "price")
+    if m in ("msg", "pay"):
+        out["to"] = resolve_company(a.get("to"), me, companies)
+    if m == "msg":
+        if not isinstance(a.get("text"), str):
+            raise CommandError("msg needs text=\"...\"")
+        out["text"] = a["text"]
+    if m == "pay":
+        if "amount" not in a:
+            raise CommandError("pay needs amount (pounds, a positive integer)")
+        out["amount"] = _int_arg(a, "amount")
+        out["memo"] = str(a.get("memo", ""))
+    return out

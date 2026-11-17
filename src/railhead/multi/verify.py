@@ -25,6 +25,7 @@ from pathlib import Path
 
 from railhead.actionlog import read_log
 from railhead.multi.log import TICKS_PER_DAY
+from railhead.multi.market import MarketConfig
 from railhead.multi.regions import REGIONS_FILE, RegionMap
 from railhead.multi.replay import horizon_tick, replay_multi
 from railhead.replay import ReplayRejected, default_whitelist
@@ -47,6 +48,7 @@ def verify_multi(task_dir: Path, start_sav: Path, log: Path, workdir: Path) -> d
     if not check_start(task_dir, start_sav) or not check_sealed_file(task_dir, REGIONS_FILE, "regions_json"):
         return base | {"tamper": 1}
     regions = RegionMap.for_task(task_dir)
+    market_cfg = MarketConfig.from_objective(spec.objective)
     workdir.mkdir(parents=True, exist_ok=True)
     if not Path(log).is_file():
         return base | {"rejected": 1}
@@ -56,7 +58,7 @@ def verify_multi(task_dir: Path, start_sav: Path, log: Path, workdir: Path) -> d
     def run(sub: str, keep_open: bool, max_ticks: int | None = None):
         return replay_multi(start_sav, snap, workdir / sub, allowed=default_whitelist() or set(),
                             keep_open=keep_open, max_ticks=max_ticks, horizon_days=spec.horizon_days,
-                            regions=regions)
+                            regions=regions, market_cfg=market_cfg)
 
     # The task, not the log, says which company is which slot: a header that relabels them is false.
     try:
@@ -76,19 +78,31 @@ def verify_multi(task_dir: Path, start_sav: Path, log: Path, workdir: Path) -> d
             return base | {"rejected": 1, "divergences": len(res.divergences)}
         end = horizon_tick(res.start_ticks, spec.horizon_days)
         replay_nw = dict(res.net_worth)
-        if end is not None and sw.ticks < end:
-            sw.advance(end - sw.ticks)
+        mk = res.market
+        while end is not None and sw.ticks < end:  # the market keeps settling until the horizon
+            stop = mk.next_forced(sw.ticks) if mk is not None else None
+            sw.advance(min(end, stop) - sw.ticks if stop is not None else end - sw.ticks)
+            if mk is not None:
+                if mk.book.active:
+                    mk.book.sample(sw.ticks, sw.monitor_rows())
+                mk.tick_records(sw.ticks, sw.industries)
+                mk.book.ensure(mk.ex, sw.ticks, sw.monitor_add)
         at_horizon = sw.net_worth()
+        ledger = {int(c["id"]): mk.balance(int(c["id"])) for c in res.companies} if mk is not None else {}
         if spec.runoff_days > 0:
             sw.advance(spec.runoff_days * TICKS_PER_DAY)
         final = sw.net_worth()
         comps = []
         for c in res.companies:
             cid = int(c["id"])
-            comps.append({"id": cid, "name": c["name"], "slot": int(c["slot"]),
-                          "net_worth_log_end": replay_nw.get(cid, 0), "net_worth_horizon": at_horizon[cid],
-                          "net_worth": final[cid]})
-        return base | {"companies": comps, "acts": res.acts, "failed_acts": res.failed_acts, "steps": res.steps,
+            row = {"id": cid, "name": c["name"], "slot": int(c["slot"]),
+                   "net_worth_log_end": replay_nw.get(cid, 0), "net_worth_horizon": at_horizon[cid],
+                   "net_worth": final[cid]}
+            if mk is not None:  # score = in-game net worth + ledger balance
+                row |= {"ledger_balance": ledger[cid], "score": final[cid] + ledger[cid]}
+            comps.append(row)
+        extra = {"market": mk.state()} if mk is not None else {}
+        return base | extra | {"companies": comps, "acts": res.acts, "failed_acts": res.failed_acts, "steps": res.steps,
                        "divergences": len(res.divergences), "valid": 0 if res.divergences else 1,
                        "end_ticks": sw.ticks}
     finally:

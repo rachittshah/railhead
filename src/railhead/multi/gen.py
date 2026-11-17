@@ -17,6 +17,7 @@ import tempfile
 import time
 from pathlib import Path
 
+from railhead.multi.market import MarketConfig
 from railhead.multi.regions import REGIONS_FILE, RegionMap, make_region_map
 from railhead.seal import seal_task
 from railhead.task import TaskSpec
@@ -85,12 +86,14 @@ def region_map_for(world: World, n: int, rotation: int) -> RegionMap:
 
 def write_task(tdir: Path, task_id: str, companies: list[dict], horizon_days: int, runoff_days: int = 0,
                scenario: dict | None = None, split: str = "train", agent_turn_s: float = 600.0,
-               regions: RegionMap | None = None) -> TaskSpec:
+               regions: RegionMap | None = None, market: MarketConfig | None = None,
+               extra_objective: dict | None = None, title: str = "Waybill: a shared world") -> TaskSpec:
     spec = TaskSpec(
         task_id=task_id, family=FAMILY, horizon_days=horizon_days, runoff_days=runoff_days,
         limits={"max_forks": 0, "max_fork_days": 0, "agent_turn_s": agent_turn_s},
-        objective={"companies": companies}, scenario=scenario or {}, split=split,
-        title="Waybill: a shared world",
+        objective={"companies": companies, **({"market": market.to_json()} if market else {}),
+                   **(extra_objective or {})},
+        scenario=scenario or {}, split=split, title=title,
         briefing=("You run one of several transport companies in one shared world. Each company is played by "
                   "a different agent. Game time passes only when every company waits (`rh wait`). "
                   "Your score is your net worth (cash minus loan) at the end."),

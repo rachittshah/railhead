@@ -33,12 +33,32 @@ from pathlib import Path
 from typing import Any
 
 from railhead.actionlog import ActionLog, read_log
-from railhead.actions import check_until, validate
+from railhead.actions import ActionArgError, validate
 from railhead.bridge import BridgeError
 from railhead.client import agent_socket_path, control_socket_path
 from railhead.daemon import META_METHODS, READ_METHODS, OpError, _drop_torn_tail, check_meta
 from railhead.multi.barrier import DEFAULT_CHUNK_DAYS, Barrier, Waiter
-from railhead.multi.log import AUTO_WAIT_DAYS, TICKS_PER_DAY, LogRejected, LogState, wait_args, wait_target
+from railhead.multi.log import (
+    AUTO_WAIT_DAYS,
+    EXCHANGE_UNTIL,
+    TICKS_PER_DAY,
+    LogRejected,
+    LogState,
+    check_until_v3,
+    wait_args,
+    wait_target,
+)
+from railhead.multi.market import (
+    COMMANDS,
+    QUERIES,
+    CommandError,
+    ExchangeError,
+    Market,
+    MarketConfig,
+    ex_id,
+    parse_command,
+    pick_reason,
+)
 from railhead.multi.regions import FranchiseError, RegionMap
 from railhead.multi.replay import horizon_tick, replay_multi
 from railhead.multi.world import SharedWorld, WorldProbe
@@ -60,6 +80,8 @@ class Coordinator:
         self.by_slot = {int(c["slot"]): int(c["id"]) for c in self.companies}
         self.slot_of = {cid: slot for slot, cid in self.by_slot.items()}
         self.regions = RegionMap.for_task(self.task_dir)
+        self.market_cfg = MarketConfig.from_objective(self.spec.objective)
+        self.market: Market | None = None
         budget = self.spec.limits.get("agent_turn_s", DEFAULT_TURN_BUDGET_S)
         self.turn_budget_s = turn_budget_s if turn_budget_s is not None else budget
         self.chunk_ticks = int(chunk_days) * TICKS_PER_DAY
@@ -99,18 +121,41 @@ class Coordinator:
         _drop_torn_tail(self.log_path)
         if self.log_path.exists() and self.log_path.stat().st_size > 0:
             res = replay_multi(start, self.log_path, wdir, allowed=self.whitelist, keep_open=True,
-                               horizon_days=self.spec.horizon_days, regions=self.regions)
+                               horizon_days=self.spec.horizon_days, regions=self.regions,
+                               market_cfg=self.market_cfg)
             assert res.world is not None
             self._start_ticks, self._start_date = res.start_ticks, res.start_date
             if res.divergences:
                 res.world.close()
                 raise RuntimeError(f"the log does not replay: {res.divergences[0]}")
             res.world.attach_log(ActionLog(self.log_path), header=False)
+            self.market = res.market
+            for x in res.pending_sys:  # system records that the driver made but the log did not get
+                res.world.ex_record(None, x)
             return res.world, res.state
         sw = SharedWorld(World.load(wdir, start), self.companies)
         self._start_ticks, self._start_date = sw.ticks, sw.date
         sw.attach_log(ActionLog(self.log_path))
+        self._start_market(sw)
         return sw, None
+
+    def _start_market(self, sw: SharedWorld) -> None:
+        """A new log: the market's init record and the records of the start tick (quarter 0)."""
+        if self.market_cfg is None:
+            return
+        ht = horizon_tick(sw.ticks, self.spec.horizon_days)
+        self.market = Market(self.market_cfg, self.companies, sw.ticks, ht, self.regions)
+        sw.ex_record(None, self.market.ex.records[0])
+        self._market_tick(sw)
+
+    def _market_tick(self, sw: SharedWorld) -> None:
+        """World lock held, after a step record (or at boot): the system records of this tick, then the
+        monitors that newly signed contracts need. The replay runs the same driver."""
+        m = self.market
+        assert m is not None
+        for x in m.tick_records(sw.ticks, sw.industries):
+            sw.ex_record(None, x)
+        m.book.ensure(m.ex, sw.ticks, sw.monitor_add)
 
     def _rebuild_barrier(self, sw: SharedWorld, state: LogState | None) -> None:
         old = self.barrier
@@ -121,20 +166,23 @@ class Coordinator:
             b.turn_start.update({c: t for c, t in old.turn_start.items() if c in b.live})
         if state is not None:
             for c, w in state.waiting.items():
-                b.add(self._waiter(sw, c, w["target"], w["until"], w["ticks"], w["auto"]))
+                b.add(self._waiter(sw, c, w["target"], w["until"], w["ticks"], w["auto"], w.get("ex_seq", 0)))
         with self.cv:
             self.barrier = b
             self.submitted = submitted
             self.cv.notify_all()
 
-    def _waiter(self, sw: SharedWorld, c: int, target: int, until: list[str], start: int, auto: bool) -> Waiter:
+    def _waiter(self, sw: SharedWorld, c: int, target: int, until: list[str], start: int, auto: bool,
+                ex_seq: int | None = None) -> Waiter:
         kinds = {u.partition(":")[0] for u in until}
         vehicles = frozenset(int(v["id"]) for v in sw.query(c, "vehicles")) if "vehicle_crashed" in kinds \
             else frozenset()
         stations = frozenset(int(s["id"]) for s in sw.query(c, "stations")) if "station_first_vehicle" in kinds \
             else frozenset()
+        if ex_seq is None:
+            ex_seq = len(self.market.ex.records) if self.market is not None else 0
         return Waiter(c, target=target, until=list(until), start=start, month=sw.month, vehicles=vehicles,
-                      stations=stations, auto=auto)
+                      stations=stations, auto=auto, ex_seq=ex_seq)
 
     def _rebuild(self, fault: Exception) -> OpError:
         """After a WorldFault (world lock held): drop the live world and replay the log again."""
@@ -199,7 +247,10 @@ class Coordinator:
             if m not in READ_METHODS:
                 raise OpError("ERR_NOT_A_QUERY", f"{m!r} is not a read-only query")
             with self.world_lock:
-                return self._logged(self.sw.query, c, m, self._obj(a))
+                rows = self._logged(self.sw.query, c, m, self._obj(a))
+            if m == "monitor_read":  # other companies' monitors would show their contracts
+                rows = [r for r in rows if int(r.get("company", -1)) == c]
+            return rows
         if op == "act":
             m = req.get("m")
             if m not in self.whitelist:
@@ -214,6 +265,8 @@ class Coordinator:
             return self._play(c, "meta", lambda: self._meta(c, m, a))
         if op == "wait":
             return self._wait(c, req)
+        if op == "ex":
+            return self._ex(c, req.get("m"), self._obj(a))
         if op == "history":
             n = int(req.get("n", 30))
             with self.world_lock:  # no record is half written while the lock is held
@@ -252,6 +305,72 @@ class Coordinator:
                 raise OpError(e.code, str(e)) from None
         return self._logged(self.sw.act, c, m, args)
 
+    # ------------------------------------------------------------------ the market
+    def _ex(self, c: int, m: Any, a: dict) -> Any:
+        """``op=ex``: a market query (any time) or a market command (on the company's turn, logged).
+        Agents get views and query results only, never raw exchange records."""
+        if self.market is None:
+            raise OpError("ERR_NO_MARKET", "this task has no market (no contracts, tenders, messages or ledger)")
+        me = ex_id(c)
+        if m in QUERIES:
+            with self.world_lock:
+                ex = self.market.ex
+                if m == "view":
+                    return ex.public_view(me)
+                if m == "market":
+                    return ex.market(me) | {"region": self.region_of(c), "arm": ex.arm}
+                return getattr(ex, m)(me)
+        if m not in COMMANDS:
+            raise OpError("ERR_UNKNOWN_OP", f"unknown market operation {m!r}; queries: {', '.join(QUERIES)}; "
+                          f"commands: {', '.join(COMMANDS)}")
+        return self._play(c, "act", lambda: self._ex_command(c, m, a))
+
+    def _ex_command(self, c: int, m: str, a: dict) -> dict:
+        """World lock held, the company's turn: run the command in the exchange, log it, add monitors."""
+        mk, sw, me = self.market, self.sw, ex_id(c)
+        assert mk is not None
+        ex = mk.ex
+        try:
+            base = None
+            if m in ("counter", "amend") and isinstance(a.get("contract_id"), str):
+                cur = ex.contract_map.get(a["contract_id"].strip().upper())
+                if cur is not None:
+                    base = {k: (me if v is None else v) for k, v in cur.terms.items()}
+            kw = parse_command(m, a, me=me, now=sw.ticks, companies=self.companies, base_terms=base)
+            if "terms" in kw:
+                self._check_terms(c, kw["terms"])
+            rec = getattr(ex, m)(sw.ticks, me, **kw)
+        except CommandError as e:
+            raise OpError(e.code, str(e)) from None
+        except ExchangeError as e:
+            raise OpError(f"ERR_{e.code.upper()}", e.message if hasattr(e, "message") else str(e)) from None
+        self._logged(sw.ex_record, c, rec)
+        self._logged(mk.book.ensure, ex, sw.ticks, sw.monitor_add)
+        reply: dict[str, Any] = {"recorded": m, "tick": sw.ticks}
+        cid = rec.get("contract_id") or rec.get("tender_id")
+        if cid in ex.contract_map:
+            reply["contract"] = ex._contract_view(ex.contract_map[cid], me)
+        if m == "pay":
+            reply["ledger_balance"] = mk.balance(c)
+        return reply
+
+    def _check_terms(self, c: int, terms: dict) -> None:
+        """The engine facts that the exchange cannot check: the cargo and the industry exist, and the
+        deadline is not after the horizon (nothing settles after it)."""
+        sw = self.sw
+        if "cargo" in terms and isinstance(terms["cargo"], int):
+            cargos = {int(x["id"]) for x in self._logged(sw.query, c, "cargos")}
+            if terms["cargo"] not in cargos:
+                raise CommandError(f"cargo {terms['cargo']} does not exist (rh cargos lists them)")
+        if "industry" in terms and isinstance(terms["industry"], int):
+            inds = {int(x["id"]) for x in self._logged(sw.industries)}
+            if terms["industry"] not in inds:
+                raise CommandError(f"industry {terms['industry']} does not exist (rh industries lists them)")
+        dl = terms.get("deadline")
+        if self.horizon_tick is not None and isinstance(dl, int) and dl > self.horizon_tick:
+            raise CommandError(f"deadline {dl} is after the end of the game (tick {self.horizon_tick}); "
+                               "contracts must settle by then")
+
     def _meta(self, c: int, m: str, a: dict) -> dict:
         self._logged(self.sw.note, c, m, a)
         if m == "submit":
@@ -273,6 +392,10 @@ class Coordinator:
             "map_x": self.sw.world.admin.welcome.map_x, "map_y": self.sw.world.admin.welcome.map_y,
             "briefing": self.spec.briefing,
             "region": self.region_of(c),
+            "market": None if self.market is None else {
+                "arm": self.market.cfg.arm, "you": ex_id(c), "ledger_balance": self.market.balance(c),
+                "quarter_days": self.market.cfg.quarter_days,
+                "companies": {ex_id(x["id"]): x["name"] for x in self.companies}},
         }
 
     def region_of(self, c: int) -> list[list[int]] | None:
@@ -288,7 +411,13 @@ class Coordinator:
             a["ticks"] = req["ticks"]
         else:
             a["days"] = req.get("days", 1)
-        until = check_until(req.get("until"))
+        try:
+            until = check_until_v3(req.get("until"))
+        except ActionArgError as e:
+            raise OpError("ERR_BAD_ARG", str(e)) from None
+        if until and self.market is None and set(until) & EXCHANGE_UNTIL:
+            raise OpError("ERR_BAD_ARG", "this task has no market: deadline, offer_received and message_received "
+                          "do not apply")
         if until:
             a["until"] = until
         try:
@@ -340,9 +469,15 @@ class Coordinator:
         with self.cv:
             if not self.barrier.ready(self.sw.ticks):
                 return
-            n = self.barrier.next_ticks(self.sw.ticks)
+            cap = self.market.cap(self.sw.ticks, self._ex_waiters()) if self.market is not None else None
+            n = self.barrier.next_ticks(self.sw.ticks, cap)
         sw = self.sw
         t0, obs = self._logged(sw.advance, n)
+        if self.market is not None:
+            if self.market.book.active:
+                self.market.book.sample(sw.ticks, self._logged(sw.monitor_rows))
+            with self.cv:
+                obs.market = {c: pick_reason(r) for c, r in self.market.wakes(sw.ticks, self._ex_waiters()).items()}
         out = {"ymd": sw.ymd, "date": sw.date, "ticks": sw.ticks, "paused": True}
         # One section (cv is reentrant): a waiter must never see itself awake without its result, and a
         # failed step record rebuilds the barrier from the log before any waiter sees the wake.
@@ -350,9 +485,15 @@ class Coordinator:
             starts = {c: w.start for c, w in self.barrier.waiting.items()}
             wakers = self.barrier.wake(sw.ticks, obs)
             self._logged(sw.log_step, t0, wakers)
+            if self.market is not None:
+                self._logged(self._market_tick, sw)
             for c, reason in wakers:
                 self.results[c] = out | {"reason": reason, "days": (sw.ticks - starts[c]) // TICKS_PER_DAY}
             self.cv.notify_all()
+
+    def _ex_waiters(self) -> dict[int, tuple[list[str], int]]:
+        with self.cv:
+            return {c: (list(w.until), w.ex_seq) for c, w in self.barrier.waiting.items()}
 
     def watchdog_loop(self, period: float = 0.25) -> None:
         while not self.stop.wait(period):

@@ -158,3 +158,34 @@ def _copy(st: LogState) -> LogState:
     import copy
 
     return copy.deepcopy(st)
+
+
+def test_parse_command_resolves_companies_ticks_and_partial_terms():
+    from railhead.multi.market import CommandError, parse_command
+
+    kw = parse_command("offer", {"to": "B", "seller": "me", "buyer": "Company B", "cargo": "1", "industry": 2,
+                                 "quantity": 10, "window_start": "+0d", "deadline": "+30d", "price": 100,
+                                 "penalty_per_unit": 1, "expires_tick": "+500t"},
+                       me="3", now=START, companies=COMPANIES)
+    assert kw["to"] == "5" and kw["terms"]["seller"] == "3" and kw["terms"]["buyer"] == "5"
+    assert kw["terms"]["deadline"] == START + 30 * D and kw["terms"]["cargo"] == 1
+    assert kw["expires_tick"] == START + 500 and kw["kind"] == "supply"
+    pub = parse_command("offer", {"seller": "me", "buyer": "any", "cargo": 1, "industry": 2, "quantity": 1,
+                                  "window_start": 0, "deadline": 9000, "price": 1, "penalty_per_unit": 0},
+                        me="3", now=START, companies=COMPANIES)
+    assert pub["to"] is None and pub["terms"]["buyer"] is None
+    base = {"seller": "3", "buyer": "5", "cargo": 1, "industry": 2, "quantity": 10, "window_start": START,
+            "deadline": START + 30 * D, "price": 100, "penalty_per_unit": 1, "bond": 0}
+    kw = parse_command("counter", {"contract_id": "c1", "price": 150}, me="5", now=START, companies=COMPANIES,
+                       base_terms=base)
+    assert kw["contract_id"] == "C1" and kw["terms"] == base | {"price": 150}
+    assert parse_command("pay", {"to": 7, "amount": "25"}, me="3", now=START, companies=COMPANIES) == \
+        {"to": "7", "amount": 25, "memo": ""}
+    assert parse_command("tender_bid", {"tender_id": "t2", "price": 9}, me="3", now=START,
+                         companies=COMPANIES) == {"tender_id": "T2", "price": 9}
+    for m, a, frag in [("offer", {}, "needs terms"), ("pay", {"to": "Z", "amount": 1}, "unknown company"),
+                       ("accept", {}, "needs contract_id"), ("msg", {"to": "B"}, "needs text"),
+                       ("offer", {"deadline": "soon"}, "relative to now"), ("pay", {"to": "B", "x": 1}, "unknown argument"),
+                       ("nope", {}, "unknown market command")]:
+        with pytest.raises(CommandError, match=frag):
+            parse_command(m, a, me="3", now=START, companies=COMPANIES)

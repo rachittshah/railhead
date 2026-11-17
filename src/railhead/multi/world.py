@@ -101,6 +101,40 @@ class SharedWorld:
         except Exception as e:
             raise WorldFault(f"wait_req: {type(e).__name__}: {e}") from e
 
+    # ------------------------------------------------------------------ the market
+    def ex_record(self, company: int | None, x: dict[str, Any]) -> dict[str, Any]:
+        """Log one exchange record. A company record also sends its digest to the GameScript (as a meta
+        does), so a company record that is added, moved or changed changes every later step checksum."""
+        try:
+            if company is not None:
+                self.world.call_args("note", {"d": meta_digest_v3(company, "ex", x)})
+            return self._write({"kind": "ex", "ticks": self.ticks, "company": company, "x": x})
+        except Exception as e:
+            raise WorldFault(f"ex {x.get('op')}: {type(e).__name__}: {e}") from e
+
+    def monitor_add(self, company: int, cargo: int, industry: int) -> int | None:
+        """An engine cargo monitor of the deliveries of ``company`` (not in the checksum). None if the
+        GameScript refuses it (for example, the industry closed)."""
+        try:
+            return int(self.world.call_args("monitor_add", {"kind": "industry_delivery", "cargo": int(cargo),
+                                                            "target": int(industry), "company": int(company)}))
+        except BridgeError:
+            return None
+        except Exception as e:
+            raise WorldFault(f"monitor_add: {type(e).__name__}: {e}") from e
+
+    def monitor_rows(self) -> list[dict]:
+        try:
+            return list(self.world.call("monitor_read"))
+        except Exception as e:
+            raise WorldFault(f"monitor_read: {type(e).__name__}: {e}") from e
+
+    def industries(self) -> list[dict]:
+        try:
+            return list(self.world.call("industries"))
+        except Exception as e:
+            raise WorldFault(f"industries: {type(e).__name__}: {e}") from e
+
     # ------------------------------------------------------------------ the clock
     def advance(self, n: int) -> tuple[int, Observation]:
         """Step exactly ``n`` ticks (no wake conditions in the GameScript) and observe the result.
