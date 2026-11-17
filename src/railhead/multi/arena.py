@@ -103,8 +103,9 @@ ARM_TEXT = {
                 "seller's bond go to escrow, and at the deadline the exchange pays the seller for the quantity "
                 "delivered and charges the penalty for the shortfall. The ledger is public.",
     "cheap_talk": "Contracts are not enforced by the exchange: signing a contract moves no money, the exchange "
-                  "moves no money at the deadline, and tender awards move no money. Only `rh pay` moves money "
-                  "between companies. You see only your own ledger balance and transfers.",
+                  "moves no money at the deadline (the settlement rule of the market help moves no money in this "
+                  "game), and tender awards move no money. Only `rh pay` moves money between companies. You see "
+                  "only your own ledger balance and transfers.",
 }
 
 RESUME = ("Your session was cut off: the model provider failed, a usage limit was reached, or the machine "
@@ -209,7 +210,8 @@ def environment(seat: Seat, task_id: str, agent_dir: Path, socket: Path, otel: s
     """railhead.arena_run's agent environment, bound to one coordinator socket. The agent gets no path of the
     coordinator state, the task directory or the other agents."""
     env = arena_run.agent_env(seat.player, task_id, agent_dir / "rh-state", agent_dir, otel, base=base)
-    for k in ("RAILHEAD_TASKS", "RAILHEAD_TASK", "RAILHEAD_SLOT"):
+    # CLAUDE_CODE_PLUGIN_DIRS loads the operator's own plugins even in --safe-mode
+    for k in ("RAILHEAD_TASKS", "RAILHEAD_TASK", "RAILHEAD_SLOT", "CLAUDE_CODE_PLUGIN_DIRS"):
         env.pop(k, None)
     env["RAILHEAD_SOCKET"] = str(socket)
     if seat.vendor == "codex":  # a private CODEX_HOME: no operator AGENTS.md, config, hooks or skills
@@ -615,6 +617,7 @@ class Runner:
         self.procs[seat.label] = proc
         seat.pid, seat.status, seat.due = proc.pid, "running", None
         seat.launches.append({"t": time.time(), "kind": kind, "pid": proc.pid, "session": session})
+        self.save()  # a restart must know this pid, or it would start a second session for the slot
         self.event("agent " + kind, agent=seat.label, slot=seat.slot, pid=proc.pid, session=session)
 
     def seat_alive(self, seat: Seat) -> bool:
@@ -672,7 +675,15 @@ class Runner:
 
     # ---------------------------------------------------------------- the run
     def run(self, resume: bool = False) -> dict:
+        self.start(resume)
+        return self.loop()
+
+    def start(self, resume: bool = False) -> None:
+        """The sink, the coordinator (adopted if it still replies), the retired slots and the agents (adopted
+        if they still run)."""
         setup(self.run_dir / "events.jsonl")
+        if resume:
+            self.m["ended"] = None
         self.start_sink()
         self.start_coordinator()
         st = self.control("status")
@@ -685,7 +696,7 @@ class Runner:
         for seat in self.seats:
             if seat.status == "new":
                 self.launch(seat, "launch")
-            elif resume and seat.status in ("running", "backoff"):
+            elif resume and seat.status in ("running", "backoff", "stopped"):
                 if self.seat_alive(seat):
                     self.event("agent adopted", agent=seat.label, pid=seat.pid)
                 elif self.cid[seat.slot] not in set(st.get("submitted") or []):
@@ -693,7 +704,6 @@ class Runner:
             elif resume and seat.status in ("retired", "failed"):
                 self.retire(seat.slot, "retired before the restart")
         self.save()
-        return self.loop()
 
     def loop(self) -> dict:
         over_at: float | None = None

@@ -502,14 +502,15 @@ When the run budget ends, the runner stops all agents and continues at step 8. `
 | Other sockets and the control socket | Not in the environment | Connection refused |
 | Run directory (merged log, transcripts of the other agents, OTLP data) and task directory (market seed) | Not in the environment | Contents and listings refused. Metadata (`stat`) stays permitted, because a harness resolves the path of its own directory. |
 | TCP to localhost (the game port and the admin port of the engine) | Permitted | Refused, except the OTLP sink |
-| Operator instructions | Claude: `--safe-mode --setting-sources "" --disable-slash-commands --strict-mcp-config` (no CLAUDE.md, skills, plugins, or MCP servers). Codex: `--ignore-user-config --ignore-rules` and a private `CODEX_HOME` with a link to `auth.json`. opencode: an empty configuration directory. | The same, and `~/.claude/CLAUDE.md`, `~/.claude/rules`, `~/.agents`, and `~/.codex/AGENTS.md` are refused |
+| Operator instructions | Claude: `--safe-mode --setting-sources "" --disable-slash-commands --strict-mcp-config`, and no `CLAUDE_CODE_PLUGIN_DIRS` (no CLAUDE.md, skills, operator plugins, or MCP servers; the built-in plugins of Claude Code stay). Codex: `--ignore-user-config --ignore-rules` and a private `CODEX_HOME` with a link to `auth.json`. opencode: an empty configuration directory. | The same, and `~/.claude/CLAUDE.md`, `~/.claude/rules`, `~/.agents`, and `~/.codex/AGENTS.md` are refused |
 
 `run.json` and `result.json` record the isolation mode.
 
 What stays open:
 
 - All agents run as the same user. Without the sandbox, an agent can read the run directory and connect to any socket if it finds the paths.
-- In the sandbox, an agent can still read the files of the operator's home directory that the profile does not name, for example the Claude session files of the other agents in `~/.claude/projects`, and the environment of other processes (`ps -E`). The environment of an agent has no secrets: the socket path is not a credential, because the sandbox refuses the other sockets.
+- In the sandbox, an agent can still read the files of the operator's home directory that the profile does not name, for example the Claude session files of the other agents in `~/.claude/projects`, and the environment of other processes (`ps -E`).
+- An agent inherits the environment of the runner (the runner adds only the socket path, the state directory, and the telemetry settings). Do not start the runner from a shell that has secrets the agents must not see. The socket path is not a credential, because the sandbox refuses the other sockets.
 - An agent can read the Railhead source code (the `rh` command needs it).
 
 ### 12.5 Budgets
@@ -537,6 +538,7 @@ When an agent sent no OTLP events, the runner uses its transcript (`source: tran
 2. If the coordinator still replies, the runner uses it. Else it starts a new coordinator, which replays `coord/run/actions.jsonl` and makes the barrier again (section 4.6).
 3. An agent process that still runs this agent's harness continues. For each other agent that did not submit, the runner continues the session with the resume note (or starts a new session with the brief and the resume note if it has no session id). A scripted or stub agent continues after its last completed line.
 
+An agent that the run budget stopped also continues with the resume note. Give `resume` a larger `--run-s`.
 If the coordinator stops during a run, the supervision loop starts it again from the log (not more than 3 times).
 A company that waited when the coordinator stopped still waits after the restart. Its next `rh wait` joins that wait.
 

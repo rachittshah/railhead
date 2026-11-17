@@ -93,10 +93,12 @@ def test_the_environment_binds_one_socket_and_a_private_codex_home(tmp_path):
     real = tmp_path / "real-codex"
     real.mkdir()
     (real / "auth.json").write_text("{}")
-    base = {"PATH": "/usr/bin", "CODEX_HOME": str(real), "RAILHEAD_TASKS": "/elsewhere", "RAILHEAD_SLOT": "3"}
+    base = {"PATH": "/usr/bin", "CODEX_HOME": str(real), "RAILHEAD_TASKS": "/elsewhere", "RAILHEAD_SLOT": "3",
+            "CLAUDE_CODE_PLUGIN_DIRS": "/operator/plugins"}
     env = wa.environment(wa.Seat(1, "codex", "default", "s1-codex"), "t", tmp_path / "a", Path("/s.sock"),
                          "http://x", base=base)
     assert env["RAILHEAD_SOCKET"] == "/s.sock" and "RAILHEAD_SLOT" not in env and "RAILHEAD_TASKS" not in env
+    assert "CLAUDE_CODE_PLUGIN_DIRS" not in env  # it loads operator plugins even in --safe-mode
     assert env["RAILHEAD_STATE"] == str(tmp_path / "a" / "rh-state")
     assert "player=s1-codex" in env["OTEL_RESOURCE_ATTRIBUTES"]
     link = Path(env["CODEX_HOME"]) / "auth.json"
@@ -166,6 +168,9 @@ def test_the_sandbox_lets_an_agent_reach_only_its_own_socket_and_directory(tmp_p
     finally:
         for s in servers:
             s.close()
+        import shutil
+
+        shutil.rmtree(short, ignore_errors=True)
 
 
 # ---------------------------------------------------------------------------------------------- metering
@@ -313,3 +318,54 @@ def test_the_run_budget_stops_the_agents_and_still_writes_a_result(task, tmp_pat
     with pytest.raises(OSError):
         os.kill(pid, 0)
     assert (run / "result.json").exists() and (run / "live.json").exists()
+
+
+FAKE = [sys.executable, "-m", "tests.unit.waybill_fake_coord"]
+
+
+def test_a_slow_turn_gets_the_coordinators_automatic_wait(task, tmp_path, monkeypatch):
+    monkeypatch.chdir(REPO)
+    a = _script(tmp_path / "a.txt", ["@sleep 3", "rh wait days=60"])
+    run = tmp_path / "run"
+    res = wa.Runner.create(task, run, [f"stub:{a}"], turn_s=1, nudges=0, poll_s=0.2, grace_s=5, isolation="env",
+                           coord_cmd=FAKE, verify_fn=_fake_verify).run()
+    from railhead.actionlog import read_log
+
+    recs = [x.raw for x in read_log(run / "coord/run/actions.jsonl")]
+    autos = [x for x in recs if x["kind"] == "wait_req" and x.get("auto")]
+    assert autos and autos[0]["company"] == 3 and autos[0]["a"] == {"days": 7}
+    assert res["verify"]["clean"]
+
+
+def test_a_restarted_runner_adopts_the_live_coordinator_and_agents(task, tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(REPO)
+    a = _script(tmp_path / "a.txt", ["rh wait days=10", "@sleep 2", "rh wait days=60"])
+    run = tmp_path / "run"
+    first = wa.Runner.create(task, run, [f"stub:{a}"], poll_s=0.2, grace_s=5, isolation="env", coord_cmd=FAKE,
+                             verify_fn=_fake_verify)
+    first.start()  # then the runner "crashes": its coordinator and agent go on without it
+    first.sink.shutdown()
+    first.sink.server_close()
+    res = wa.Runner.load(run, coord_cmd=FAKE, verify_fn=_fake_verify).run(resume=True)
+    out = capsys.readouterr().out
+    assert "coordinator already running (adopted)" in out and '"agent adopted"' in out
+    m = json.loads((run / "run.json").read_text())
+    assert [x["kind"] for x in m["seats"][0]["launches"]] == ["launch"]
+    assert res["run"]["ended"] == "horizon" and res["verify"]["clean"]
+
+
+def test_resume_after_the_run_budget_starts_the_stopped_agents_again(task, tmp_path, monkeypatch):
+    monkeypatch.chdir(REPO)
+    a = _script(tmp_path / "a.txt", ["@sleep 4", "rh wait days=60"])
+    run = tmp_path / "run"
+    wa.Runner.create(task, run, [f"stub:{a}"], run_s=1.5, poll_s=0.2, grace_s=5, isolation="env", coord_cmd=FAKE,
+                     verify_fn=_fake_verify).run()
+    assert json.loads((run / "run.json").read_text())["seats"][0]["status"] == "stopped"
+    shutil_rm = __import__("shutil").rmtree
+    shutil_rm(run / "coord", ignore_errors=True)  # the fake coordinator cannot replay a log: start a fresh one
+    r = wa.Runner.load(run, coord_cmd=FAKE, verify_fn=_fake_verify)
+    r.m["run_s"] = None
+    res = r.run(resume=True)
+    m = json.loads((run / "run.json").read_text())
+    assert [x["kind"] for x in m["seats"][0]["launches"]] == ["launch", "resume"]
+    assert res["run"]["ended"] == "horizon"
