@@ -205,6 +205,12 @@ In all cases: **replace the opencode filler seat**. It won 4 of the 5 tender awa
 
 Proposal, for the lead to decide: **report them separately and do not count them toward the 10.** A tender award is a contract with the exchange, not with another agent, after a sealed bid with no negotiation. It measures the price discipline of one agent, not promises between agents. The gate then has two lines: bilateral contracts signed (target 10 or more) and tender contracts (reported, with their outcomes). Breaches of tender contracts can still count for "1 or more breach", because a tender is a promise to deliver.
 
+### 6.2 Run-off of the short track
+
+The short track has **no run-off** (`TRACKS["short"]`: `runoff_days=0`; the pilot `task.json`: `runoff_days: 0`). The score is cash minus loan on the last day. Thus a vehicle or a station that is bought late is a pure cost, and selling the fleet before the end raises the score. Slot 2 wrote: "Now liquidating all vehicles before submission, since only cash counts toward the final score." In the pilot, net worth at the horizon equals the final net worth for every company.
+
+Proposal: a run-off of **365 days** on the short track, as on the decade track and in single-agent Railhead. The world then runs one year without the agents, so a route earns back its cost, and liquidation at the end is not an advantage. The metric stays cash minus loan after the run-off.
+
 ## 7. Reproduction
 
 ```
