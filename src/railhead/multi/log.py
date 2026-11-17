@@ -6,6 +6,7 @@ JSONL, one record per line, written by the coordinator only:
   {"kind":"meta","seq":n,"ticks":T,"company":C,"m":"submit","a":{...}}
   {"kind":"wait_req","seq":n,"ticks":T,"company":C,"a":{"days":30,"until":[...]},"target":T2[,"auto":true]}
   {"kind":"step","seq":n,"ticks":T0,"end_ticks":T1,"checksum":H,"wakers":[{"company":C,"reason":R},...]}
+  {"kind":"ex","seq":n,"ticks":T,"company":C|null,"x":{exchange record}}     (market; company null = system)
 
 Only ``step`` records move the clock. ``wait_req`` records and ``wakers`` have no effect on the world:
 the replay checks them for structure only (:class:`LogState`). They let a reader rebuild who waited for
@@ -28,6 +29,11 @@ LOG_V3 = 3
 TICKS_PER_DAY = 74
 AUTO_WAIT_DAYS = 7  # the wait that the coordinator records for an agent that runs out of turn time
 WAKE_REASONS_FIXED = {"elapsed", "horizon"}
+# Market wake conditions (railhead.multi.market). The GameScript never sees them: the coordinator steps
+# in exact ticks and evaluates them in Python.
+EXCHANGE_UNTIL = frozenset({"deadline", "offer_received", "message_received"})
+# Wakes that the market forces on a waiter whatever its `until` (a contract deadline; a quarter's tenders).
+FORCED_REASONS = ("deadline", "tender")
 
 
 class LogRejected(ReplayRejected):
@@ -61,10 +67,23 @@ def wait_args(a: object) -> tuple[int, list[str] | None]:
     if n < 1:
         raise LogRejected("wait length must be 1 or more")
     try:
-        until = check_until(a.get("until"))
+        until = check_until_v3(a.get("until"))
     except ActionArgError as e:
         raise LogRejected(str(e)) from None
     return (n * TICKS_PER_DAY if "days" in a else n), until
+
+
+def check_until_v3(until: object) -> list[str] | None:
+    """The wake conditions of a v3 wait: the single-agent kinds plus the market kinds (EXCHANGE_UNTIL)."""
+    if until is None:
+        return None
+    if not isinstance(until, list):
+        return check_until(until)
+    market = [u for u in until if isinstance(u, str) and u in EXCHANGE_UNTIL]
+    rest = check_until([u for u in until if u not in market]) or []
+    if not rest and not market:
+        return []
+    return [u for u in until if u in market or u in rest]
 
 
 def wait_target(now: int, a: dict, horizon_tick: int | None) -> int:
@@ -175,11 +194,27 @@ class LogState:
                 raise LogRejected(f"wait_req seq={seq}: auto must be true or false")
             self.waiting[c] = {"target": target, "until": until or [], "ticks": self.now,
                                "auto": bool(r.get("auto"))}
+        elif kind == "ex":
+            self._ex(r, seq)
         elif kind == "step":
             self._step(r, seq)
         else:
             raise LogRejected(f"unknown record kind {kind!r}")
         self.expect_seq = seq + 1
+
+    def _ex(self, r: dict, seq: int) -> None:
+        x = r.get("x")
+        if not isinstance(x, dict) or not isinstance(x.get("op"), str):
+            raise LogRejected(f"ex seq={seq}: no exchange record")
+        c = r.get("company")
+        if c is None:
+            if x.get("company") is not None:
+                raise LogRejected(f"ex seq={seq}: a system record names a company")
+            return
+        c = self._company(r, seq)
+        self._before_horizon(seq)
+        if x.get("company") != str(c):
+            raise LogRejected(f"ex seq={seq}: the exchange record is not for company {c}")
 
     def _step(self, r: dict, seq: int) -> None:
         end = _int(r.get("end_ticks"), f"end_ticks of seq={seq}")
@@ -217,8 +252,8 @@ class LogState:
                 ok = reason == "horizon"
             elif wt["target"] <= end:
                 ok = reason == "elapsed"
-            else:
-                ok = reason in {u.partition(":")[0] for u in wt["until"]}
+            else:  # market reasons are checked against the exchange by the replay
+                ok = reason in {u.partition(":")[0] for u in wt["until"]} or reason in FORCED_REASONS
             if not ok:
                 raise LogRejected(f"step seq={seq}: company {c} cannot wake with reason {reason!r}")
             seen[c] = reason

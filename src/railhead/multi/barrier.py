@@ -31,6 +31,7 @@ class Waiter:
     vehicles: frozenset[int] = frozenset()  # the company's vehicles when the wait started (vehicle_crashed)
     stations: frozenset[int] = frozenset()  # the company's stations when the wait started (station_first_vehicle)
     auto: bool = False
+    ex_seq: int = 0  # the exchange record count when the wait started (offer_received, message_received)
 
 
 @dataclass
@@ -41,6 +42,7 @@ class Observation:
     month: int | None = None
     cash: dict[int, int] = field(default_factory=dict)
     events: list[dict] = field(default_factory=list)
+    market: dict[int, str] = field(default_factory=dict)  # company -> market wake reason at this tick
 
 
 def fired(w: Waiter, obs: Observation) -> str | None:
@@ -98,8 +100,11 @@ class Barrier:
         """True when the world must step: every live company waits, and the horizon is not reached."""
         return bool(self.live) and self.live <= set(self.waiting) and not self.at_horizon(now)
 
-    def next_ticks(self, now: int) -> int:
+    def next_ticks(self, now: int, cap: int | None = None) -> int:
+        """Ticks to the next stop. ``cap``: a tick the world must stop at (a market deadline or quarter)."""
         end = min(w.target for w in self.waiting.values())
+        if cap is not None and cap > now:
+            end = min(end, cap)
         if any(w.until for w in self.waiting.values()):
             end = min(end, now + self.chunk_ticks)
         if self.horizon_tick is not None:
@@ -113,7 +118,7 @@ class Barrier:
         horizon = self.at_horizon(now)
         for c in sorted(self.waiting):
             w = self.waiting[c]
-            reason = "horizon" if horizon else "elapsed" if w.target <= now else fired(w, obs)
+            reason = "horizon" if horizon else "elapsed" if w.target <= now else fired(w, obs) or obs.market.get(c)
             if reason is not None:
                 out.append((c, reason))
         t = self.clock()
