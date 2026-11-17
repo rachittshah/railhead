@@ -245,7 +245,7 @@ The command writes `<out_dir>/scores.json`.
 | `tests/unit/test_multi_regions.py` | The footprint of every action in the whitelist, the region check, the regions in force at a tick, the split, and the rotation |
 | `tests/unit/test_multi_market.py` | The monitor book, the tick records, the forced stops, the market wake reasons, the `ex` rules, and the command parsing |
 | `tests/unit/test_multi_tracks.py` | The track sizes, the paired arms, and the rotation of region types across seeds |
-| `tests/integration/test_waybill_market.py` | Regions and the market on the engine, both arms: a refused and a forged out-of-region build; a kept and a broken contract with real deliveries; the replay gives the same exchange state and scores; a forged delivery count is rejected; cheap talk moves no money; a tender opens, is bid, awarded and settled |
+| `tests/integration/test_waybill_market.py` | Regions and the market on the engine, both arms: a refused and a forged out-of-region build; a kept and a broken contract with real deliveries; the replay gives the same exchange state and scores; a forged delivery count is rejected; cheap talk moves no contract money and records the obligations; a tender opens, is bid, awarded and settled |
 | `tests/integration/test_waybill_tracks.py` | The short track from one seed: paired arms and two rotations share one `start.sav`; a changed `regions.json` is tamper |
 | `tests/unit/test_waybill_arena.py` | The arena runner: the brief, the harness commands, the environment, the sandbox, the cost per game year, the contract statistics, `result.json`, and a full run with stub agents on the fake engine (a provider error, a nudge, a slot without a player, the run budget) |
 | `tests/integration/test_waybill_arena.py` | The arena runner on the engine: three stub agents play the short track (60 days) in both arms. The enforced run is killed and resumed. Both runs verify, and the replay is equal to the live world. |
@@ -263,7 +263,7 @@ The command writes `<out_dir>/scores.json`.
 - A dock, a lock, and a tunnel get their extent from read-only `tile` queries at the same tick in the live world and in the replay. The tunnel end is the first tile uphill with the same base height, as `GSTunnel.GetOtherTunnelEnd` finds it.
 - Vehicles, orders, and loans have no region check. Vehicles can use the roads and stations of other companies where the engine permits it. The action whitelist has no industry funding and no land purchase.
 - A market wake (`offer_received`, `message_received`) occurs at the next step. When a waiter's condition is already true, that step is one tick long.
-- In `cheap_talk`, tender awards and their settlement move no money (the exchange rules). Only `pay` and the start balances move money.
+- In `cheap_talk`, the exchange collects no obligation; only `pay`, the start balances and tender payouts move money (arm parity, WAYBILL-EXCHANGE.md "Arms").
 - An amendment that changes the cargo or the industry gets a new monitor from its signing tick. Deliveries before that tick do not count.
 - Loan contracts are not tradable yet (`kind_not_enabled`). A licence has a one-off fee, no periodic fee, and cannot be revoked.
 
@@ -363,6 +363,7 @@ The world stops at each exchange deadline (offer expiry, window start, bid close
 | Reason | When |
 |---|---|
 | `deadline` (forced) | A contract of the company reaches its deadline at this tick |
+| `obligation_due` (forced) | An obligation of the company (a payment it owes) falls due at this tick, in both arms |
 | `tender` (forced) | The tenders of a quarter open at this tick (all waiting companies) |
 | `deadline` (`until=deadline`) | Any exchange deadline at this tick names the company (offer expiry, window start, bid close) |
 | `offer_received` (`until=offer_received`) | Since the wait started: an offer to the company, or a counter or amendment from the other party of its contract |
@@ -399,7 +400,7 @@ The agent socket has the operation `ex` with `m` (the operation) and `a` (the ar
 | `rh withdraw contract_id=C` | `withdraw` | Yes | Withdraw an open offer |
 | `rh tender bid tender_id=T price=N` | `tender_bid` | Yes | A sealed bid |
 | `rh msg to=B text="..."` | `msg` | Yes | A private message |
-| `rh pay to=B amount=N [memo="..."]` | `pay` | Yes | A ledger transfer |
+| `rh pay to=B amount=N [memo="..."] [contract=C]` | `pay` | Yes | A ledger transfer. With `contract`, it counts toward what you owe B under C (`to=exchange` for a tender penalty). |
 
 A company is an id (`3`), a name (`Company B`), a letter (`B`), or `me`.
 A tick field (`window_start`, `deadline`, `expires_tick`) is an absolute tick, or relative to now: `+30d` (days) or `+500t` (ticks).
@@ -418,7 +419,7 @@ The coordinator refuses a rectangle that is not inside the grantor's region.
 From `window_start` until `deadline`, the grantee can build in the rectangle, clipped to the grantor's region at the tick of the build.
 `rh market` gives the rectangles of your live licences in `licensed`.
 At the deadline the licence ends (outcome `ended`). What the grantee built stays and keeps working; new builds in the rectangle are refused.
-The fee and the arms: refer to WAYBILL-EXCHANGE.md, "Licences". In `cheap_talk` the build right is the same and the fee moves no money.
+The fee is paid in quarterly instalments (obligations). The fee and the arms: refer to WAYBILL-EXCHANGE.md, "Licences" and "Obligations". In `cheap_talk` the build right is the same and the instalments are paid voluntarily (`rh pay ... contract=C`).
 
 ## 11. Task tracks
 
