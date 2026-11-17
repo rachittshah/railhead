@@ -109,9 +109,11 @@ After settlement, both escrow accounts are 0.
   docstring gives the formula.
 
 Bids are sealed. Each company can bid one time, from 0 to `max_price`, before `bid_close`. At `bid_close`,
-the lowest price wins. A tie goes to the earliest bid, then to the lowest company id. The winner gets a
-supply contract with the same id as the tender. Its buyer is `exchange`, its price is the winning bid and
-its window is `[bid_close, deadline]`.
+the lowest price wins. A tie goes to the earliest bid tick, then to the lowest company id. Log order in one
+tick does not count. The winner gets a supply contract with the same id as the tender. Its buyer is
+`exchange`, its price is the winning bid and its window is `[bid_close, deadline]`.
+
+If the first `advance` after `bid_close` is at or after the tender deadline, the award lapses with no winner.
 
 Subcontract deliveries count toward a tender. They come from a supply contract with these properties:
 
@@ -181,10 +183,12 @@ companies or sealed bids. In `cheap_talk`, it shows settled contracts as `closed
 
 ## Notes for the coordinator
 
-- Do not show raw records to agents. A `settle` record contains the outcome in both arms. Use
-  `public_view` and the query methods.
-- Write the records to the merged action log in `seq` order. Replay them with `Exchange.replay`. Compare
-  `state()` for a determinism check.
+- Do not show raw records or `state()` to agents. A `settle` record contains the outcome in both arms.
+  Use `public_view` and the query methods.
+- Write the records to the merged action log in `seq` order. `seq` is the exchange counter, not the index
+  in the merged log. Replay the records with `Exchange.replay`. Compare `state()` for a determinism check.
+- A `msg` record contains the full text. If the log must keep only a digest, keep the text in a side file.
+- In `enforced`, all companies see the `pay` memo in the public ledger.
 - Call `settle_due` and `advance` at each step tick. Use `deadlines()` to choose wake-ups.
 - The plan counts deliveries from the signing tick, because monitors start at signing. The exchange asks
   for `[window_start, deadline]`. If a cargo monitor did not exist before signing, `deliveries_fn` returns

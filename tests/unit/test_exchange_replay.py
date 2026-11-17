@@ -101,11 +101,10 @@ def random_session(seed, arm, steps=400):
 
 
 @pytest.mark.parametrize("arm", ["enforced", "cheap_talk"])
-@pytest.mark.parametrize("seed", [1, 2, 3])
+@pytest.mark.parametrize("seed", range(1, 31))
 def test_random_sessions_conserve_money_and_replay_identically(seed, arm):
     ex, rejected = random_session(seed, arm)
-    statuses = {c.status for c in ex.contract_map.values()}
-    assert rejected > 0 and "settled" in statuses           # the session exercised both paths
+    assert rejected > 0 and len(ex.records) > 50
     if arm == "cheap_talk":
         assert all(h.reason == "pay" for h in ex.accounts.history)
     records = json_round_trip(ex.records)
@@ -121,12 +120,15 @@ def test_random_session_is_deterministic():
     assert a.records == b.records
 
 
-def test_outcome_mix_in_random_sessions():
-    outcomes = set()
-    for seed in range(1, 4):
+def test_random_sessions_exercise_every_money_path():
+    outcomes, amended, awarded = set(), 0, 0
+    for seed in range(1, 6):
         ex, _ = random_session(seed, "enforced")
         outcomes |= {c.outcome for c in ex.contract_map.values() if c.outcome}
+        amended += sum(len(c.terms_history) > 1 for c in ex.contract_map.values())
+        awarded += sum(t["status"] in ("awarded", "settled") for t in ex.tenders.values())
     assert outcomes == {"kept", "partial", "broken"}
+    assert amended > 0 and awarded > 0
 
 
 def test_replay_of_a_prefix_matches_the_live_state_at_that_point():

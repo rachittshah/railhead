@@ -153,6 +153,13 @@ class Exchange:
                 raise ExchangeError("insufficient_funds", f"{acct} cannot fund {amt} (balance "
                                                           f"{self.accounts.balance(acct)}, limit {self.accounts.credit_limit})")
 
+    @staticmethod
+    def _award_result(t: dict[str, Any], tick: int) -> tuple[str | None, int | None]:
+        """(winner, price) for a tender at ``tick``. An award at or after the tender deadline lapses (no
+        winner), so a late ``advance`` never blocks the exchange."""
+        best = auction(t["bids"]) if tick < t["deadline"] else None
+        return (best["company"], best["price"]) if best else (None, None)
+
     def _move(self, src: str, dst: str, amount: int, reason: str, ref: str, tick: int) -> None:
         assert self.accounts is not None
         if amount > 0:
@@ -374,16 +381,13 @@ class Exchange:
         t = self._tender(r["tender_id"])
         if t["status"] != "open" or tick < t["bid_close"]:
             raise ExchangeError("bad_state", f"{t['tender_id']} ({t['status']}) cannot be awarded at tick {tick}")
-        best = auction(t["bids"])
-        winner, price = (best["company"], best["price"]) if best else (None, None)
+        winner, price = self._award_result(t, tick)
         if (r["winner"], r["price"]) != (winner, price):
             raise ExchangeError("record_mismatch", f"{t['tender_id']}: award {r['winner']}/{r['price']} != "
                                                    f"{winner}/{price}")
         if winner is None:
             t["status"] = "unawarded"
             return
-        if t["deadline"] <= tick:
-            raise ExchangeError("deadline_passed", f"{t['tender_id']} deadline has passed")
         terms = {"seller": winner, "buyer": EXCHANGE, "cargo": t["cargo"], "industry": t["industry"],
                  "quantity": t["quantity"], "window_start": t["window_start"], "deadline": t["deadline"],
                  "price": price, "penalty_per_unit": t["penalty_per_unit"], "bond": 0}
@@ -465,10 +469,9 @@ class Exchange:
                 out.append(self._record("expire", tick, None, contract_id=c.id))
         for t in sorted(self.tenders.values(), key=lambda t: _num(t["tender_id"])):
             if t["status"] == "open" and t["bid_close"] <= tick:
-                best = auction(t["bids"])
-                out.append(self._record("tender_award", tick, None, tender_id=t["tender_id"],
-                                        winner=best["company"] if best else None,
-                                        price=best["price"] if best else None))
+                winner, price = self._award_result(t, tick)
+                out.append(self._record("tender_award", tick, None, tender_id=t["tender_id"], winner=winner,
+                                        price=price))
         for c in sorted(self.contract_map.values(), key=_id_key):
             if c.status == "signed" and c.terms["window_start"] <= tick:
                 out.append(self._record("activate", tick, None, contract_id=c.id))

@@ -47,12 +47,27 @@ def test_sealed_bids_hidden_from_others_until_award():
     assert ex.contracts("b")[0]["tender_id"] == "T1"
 
 
-def test_tie_goes_to_earliest_bid():
+def test_tie_goes_to_earliest_tick_then_company_id():
     ex = opened()
     ex.tender_bid(1, "c", "T1", 500)
-    ex.tender_bid(1, "a", "T1", 500)
+    ex.tender_bid(2, "a", "T1", 500)
     ex.advance(10)
     assert ex.tenders["T1"]["winner"] == "c"
+    ex = opened()
+    ex.tender_bid(1, "c", "T1", 500)            # same tick: log order does not matter, company id does
+    ex.tender_bid(1, "a", "T1", 500)
+    ex.advance(10)
+    assert ex.tenders["T1"]["winner"] == "a"
+
+
+def test_award_after_the_tender_deadline_lapses_and_does_not_block():
+    ex = opened()
+    ex.tender_bid(1, "a", "T1", 500)
+    recs = ex.settle_due(5000, lambda *a: 0)   # first call is long after bid_close and the deadline
+    assert [(r["op"], r["winner"]) for r in recs] == [("tender_award", None)]
+    assert ex.tenders["T1"]["status"] == "unawarded" and "T1" not in ex.contract_map
+    assert ex.settle_due(6000, lambda *a: 0) == []
+    assert Exchange.replay(ex.records).state() == ex.state()
 
 
 def test_bid_rules():

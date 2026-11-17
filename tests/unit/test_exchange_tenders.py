@@ -96,9 +96,9 @@ def test_bad_config():
         TenderConfig(window_ticks=0)
 
 
-def test_auction_lowest_price_then_earliest_then_company():
-    bids = [{"company": "b", "price": 90, "seq": 3}, {"company": "a", "price": 90, "seq": 5},
-            {"company": "c", "price": 95, "seq": 1}]
+def test_auction_lowest_price_then_earliest_tick_then_company():
+    bids = [{"company": "b", "price": 90, "tick": 3}, {"company": "a", "price": 90, "tick": 5},
+            {"company": "c", "price": 95, "tick": 1}]
     assert auction(bids)["company"] == "b"
-    assert auction([{"company": "z", "price": 5, "seq": 1}, {"company": "y", "price": 5, "seq": 1}])["company"] == "y"
+    assert auction([{"company": "z", "price": 5, "tick": 1}, {"company": "y", "price": 5, "tick": 1}])["company"] == "y"
     assert auction([]) is None

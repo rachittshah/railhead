@@ -120,7 +120,8 @@ def generate_tenders(industries: list[dict[str, Any]], *, seed: int, quarter: in
 
 
 def auction(bids: list[dict[str, Any]]) -> dict[str, Any] | None:
-    """Lowest price wins; ties go to the earliest bid (lowest ``seq``), then the lowest company id."""
+    """Lowest price wins; ties go to the earliest bid tick, then the lowest company id. Log order inside one
+    tick does not count, so agents that act in the same lockstep tick are equal."""
     if not bids:
         return None
-    return min(bids, key=lambda b: (b["price"], b["seq"], b["company"]))
+    return min(bids, key=lambda b: (b["price"], b["tick"], b["company"]))
