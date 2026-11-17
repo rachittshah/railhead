@@ -17,6 +17,7 @@ import tempfile
 import time
 from pathlib import Path
 
+from railhead.multi.regions import REGIONS_FILE, RegionMap, make_region_map
 from railhead.seal import seal_task
 from railhead.task import TaskSpec
 from railhead.world import AGENT_AI, World
@@ -74,8 +75,16 @@ def build_start(world: World, dest: Path, n: int, start_cash: int | None = None,
     return companies
 
 
+def region_map_for(world: World, n: int, seed: int) -> RegionMap:
+    """One franchise region per company, balanced by the industries of the world, rotated by the seed."""
+    welcome = world.admin.welcome
+    tiles = [(int(i["x"]), int(i["y"])) for i in world.call("industries")]
+    return make_region_map(int(welcome.map_x), int(welcome.map_y), n, tiles, seed)
+
+
 def write_task(tdir: Path, task_id: str, companies: list[dict], horizon_days: int, runoff_days: int = 0,
-               scenario: dict | None = None, split: str = "train", agent_turn_s: float = 600.0) -> TaskSpec:
+               scenario: dict | None = None, split: str = "train", agent_turn_s: float = 600.0,
+               regions: RegionMap | None = None) -> TaskSpec:
     spec = TaskSpec(
         task_id=task_id, family=FAMILY, horizon_days=horizon_days, runoff_days=runoff_days,
         limits={"max_forks": 0, "max_fork_days": 0, "agent_turn_s": agent_turn_s},
@@ -86,6 +95,8 @@ def write_task(tdir: Path, task_id: str, companies: list[dict], horizon_days: in
                   "Your score is your net worth (cash minus loan) at the end."),
     )
     spec.save(Path(tdir))
+    if regions is not None:
+        regions.save(Path(tdir) / REGIONS_FILE)
     if (Path(tdir) / "start.sav").exists():
         seal_task(Path(tdir))  # the verifier then refuses a changed start.sav (tamper=1)
     return spec
@@ -105,7 +116,8 @@ def gen_waybill(seed: int, out: Path, n: int = 3, split: str = "train", horizon_
     try:
         with World.create(work / "gen", server_config(sc), found_company=False) as w:
             companies = build_start(w, tdir / "start.sav", n, start_cash=start_cash)
-        return write_task(tdir, tid, companies, horizon_days, runoff_days, scenario=sc, split=split)
+            rm = region_map_for(w, n, seed)
+        return write_task(tdir, tid, companies, horizon_days, runoff_days, scenario=sc, split=split, regions=rm)
     except Exception:
         shutil.rmtree(tdir, ignore_errors=True)
         raise

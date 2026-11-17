@@ -57,6 +57,8 @@ class FakeWorld:
         if method == "note":
             self.digest = (self.digest * 31 + args["d"]) & 0xFFFFFFFF
             return {}
+        if method == "rail_track":
+            return {}
         if method == "company_loan":
             if args["amount"] > 500_000:
                 raise BridgeError("ERR_BAD_ARG", "above the maximum loan")
@@ -91,9 +93,11 @@ class FakeCoordinator(coord_mod.Coordinator):
 def make(tmp_path):
     made = []
 
-    def _make(horizon_days=60, budget=None, chunk_days=7):
+    def _make(horizon_days=60, budget=None, chunk_days=7, regions=None):
         tdir = tmp_path / "task"
         tdir.mkdir(exist_ok=True)
+        if regions is not None:
+            regions.save(tdir / "regions.json")
         write_task(tdir, "waybill-test", COMPANIES, horizon_days=horizon_days, agent_turn_s=3600)
         c = FakeCoordinator(tdir, tmp_path / "state", turn_budget_s=budget, chunk_days=chunk_days)
         threads = [threading.Thread(target=c.clock_loop, daemon=True),
@@ -337,3 +341,19 @@ def test_long_agent_socket_paths_are_shortened(tmp_path):
     assert len(str(p)) <= 104 and p != client_mod.agent_socket_path(deep, 2)
     assert client_mod.control_socket_path(deep) not in (p, client_mod.agent_socket_path(deep, 2))
     assert Path(client_mod.agent_socket_path(tmp_path, 0)).name in ("agent-0.sock",) or len(str(tmp_path)) > 80
+
+
+def test_franchise_refuses_an_out_of_region_build_and_does_not_log_it(make):
+    from railhead.multi.regions import RegionMap
+
+    rm = RegionMap(64, 64, {0: [[0, 0, 20, 63]], 1: [[21, 0, 40, 63]], 2: [[41, 0, 63, 63]]})
+    c = make(regions=rm)
+    ok = c.handle(0, {"op": "act", "m": "rail_track", "a": {"tile": "5,5", "track": "ne_sw"}})
+    assert ok == {}
+    with pytest.raises(OpError) as e:
+        c.handle(0, {"op": "act", "m": "rail_track", "a": {"tile": "30,5", "track": "ne_sw"}})
+    assert e.value.code == "ERR_FRANCHISE" and "30,5" in e.value.msg
+    c.handle(1, {"op": "act", "m": "rail_track", "a": {"tile": "30,5", "track": "ne_sw"}})
+    c.handle(0, {"op": "act", "m": "company_loan", "a": {"amount": 1000}})  # not a build: no check
+    acts = [r for r in check_log(c) if r["kind"] == "act"]
+    assert [(r["company"], r["m"]) for r in acts] == [(3, "rail_track"), (5, "rail_track"), (3, "company_loan")]

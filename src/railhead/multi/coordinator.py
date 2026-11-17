@@ -39,8 +39,9 @@ from railhead.client import agent_socket_path, control_socket_path
 from railhead.daemon import META_METHODS, READ_METHODS, OpError, _drop_torn_tail, check_meta
 from railhead.multi.barrier import DEFAULT_CHUNK_DAYS, Barrier, Waiter
 from railhead.multi.log import AUTO_WAIT_DAYS, TICKS_PER_DAY, LogRejected, LogState, wait_args, wait_target
+from railhead.multi.regions import FranchiseError, RegionMap
 from railhead.multi.replay import horizon_tick, replay_multi
-from railhead.multi.world import SharedWorld
+from railhead.multi.world import SharedWorld, WorldProbe
 from railhead.replay import default_whitelist
 from railhead.task import TaskSpec
 from railhead.world import World, WorldFault
@@ -57,6 +58,8 @@ class Coordinator:
         self.spec = TaskSpec.load(self.task_dir)
         self.companies: list[dict] = list(self.spec.objective["companies"])
         self.by_slot = {int(c["slot"]): int(c["id"]) for c in self.companies}
+        self.slot_of = {cid: slot for slot, cid in self.by_slot.items()}
+        self.regions = RegionMap.for_task(self.task_dir)
         budget = self.spec.limits.get("agent_turn_s", DEFAULT_TURN_BUDGET_S)
         self.turn_budget_s = turn_budget_s if turn_budget_s is not None else budget
         self.chunk_ticks = int(chunk_days) * TICKS_PER_DAY
@@ -96,7 +99,7 @@ class Coordinator:
         _drop_torn_tail(self.log_path)
         if self.log_path.exists() and self.log_path.stat().st_size > 0:
             res = replay_multi(start, self.log_path, wdir, allowed=self.whitelist, keep_open=True,
-                               horizon_days=self.spec.horizon_days)
+                               horizon_days=self.spec.horizon_days, regions=self.regions)
             assert res.world is not None
             self._start_ticks, self._start_date = res.start_ticks, res.start_date
             if res.divergences:
@@ -202,7 +205,7 @@ class Coordinator:
             if m not in self.whitelist:
                 raise OpError("ERR_NOT_A_PLAYER_ACTION", f"{m!r} is not a player action")
             args = validate(m, self._obj(a), map_size_x=self.sw.world.admin.welcome.map_x)
-            return self._play(c, "act", lambda: self._logged(self.sw.act, c, m, args))
+            return self._play(c, "act", lambda: self._act(c, m, args))
         if op == "meta":
             m = req.get("m")
             if m not in META_METHODS:
@@ -237,6 +240,17 @@ class Coordinator:
                     continue
                 self._can_play(c, what)
                 return fn()
+
+    def _act(self, c: int, m: str, args: dict) -> Any:
+        """World lock held. The franchise check runs at the current tick, before the engine sees the
+        action; a refused build is not logged."""
+        if self.regions is not None:
+            try:
+                self._logged(self.regions.check_action, self.slot_of[c], self.sw.ticks, m, args,
+                             WorldProbe(self.sw, c))
+            except FranchiseError as e:
+                raise OpError(e.code, str(e)) from None
+        return self._logged(self.sw.act, c, m, args)
 
     def _meta(self, c: int, m: str, a: dict) -> dict:
         self._logged(self.sw.note, c, m, a)

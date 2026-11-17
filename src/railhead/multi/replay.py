@@ -3,7 +3,8 @@
 The replay checks every record with :class:`railhead.multi.log.LogState` before it applies it, then:
 
 * ``act``: binds the record's company and re-issues the action with its recorded arguments. A
-  different outcome (``ok``) is a divergence.
+  different outcome (``ok``) is a divergence. With a region map, a build outside the company's regions
+  in force at that tick rejects the log (the coordinator never writes one).
 * ``meta``: sends the v3 digest (company, decision, arguments) to the GameScript, as the live world did.
 * ``wait_req``: no effect on the world (checked for structure only).
 * ``step``: runs exactly ``end_ticks - ticks`` ticks and compares the checksum. A difference is a
@@ -20,8 +21,9 @@ from pathlib import Path
 
 from railhead.actionlog import read_log
 from railhead.bridge import BridgeError
-from railhead.multi.log import TICKS_PER_DAY, LogState, meta_digest_v3
-from railhead.multi.world import SharedWorld
+from railhead.multi.log import TICKS_PER_DAY, LogRejected, LogState, meta_digest_v3
+from railhead.multi.regions import FranchiseError, RegionMap
+from railhead.multi.world import SharedWorld, WorldProbe
 from railhead.replay import ReplayRejected, _meta_names, default_whitelist, meta_args_problem
 from railhead.world import World
 
@@ -51,7 +53,7 @@ def horizon_tick(start_ticks: int, horizon_days: int | None) -> int | None:
 
 def replay_multi(start_save: Path, log_path: Path, workdir: Path, allowed: set[str] | None = None,
                  keep_open: bool = False, max_ticks: int | None = None,
-                 horizon_days: int | None = None) -> MultiReplayResult:
+                 horizon_days: int | None = None, regions: RegionMap | None = None) -> MultiReplayResult:
     allowed = default_whitelist() if allowed is None else allowed
     records = [r.raw for r in read_log(log_path)]  # read once: the checks and the replay see the same bytes
     if not records:
@@ -84,6 +86,12 @@ def replay_multi(start_save: Path, log_path: Path, workdir: Path, allowed: set[s
                 m = r["m"]
                 if allowed is None or m not in allowed:
                     raise ReplayRejected(f"command {m!r} is not a player action")
+                if regions is not None:
+                    slot = int(state.companies[r["company"]]["slot"])
+                    try:
+                        regions.check_action(slot, r["ticks"], m, r.get("a") or {}, WorldProbe(sw, r["company"]))
+                    except FranchiseError as e:
+                        raise LogRejected(f"act seq={seq}: {e}") from None
                 res.acts += 1
                 try:
                     sw.bind(r["company"])

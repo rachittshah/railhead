@@ -1,7 +1,7 @@
 """Verifier for a Waybill game: the net worth of each company from the sealed start and the v3 log only
 (docs/WAYBILL.md, section 5).
 
-  1. integrity: start.sav must match the sealed hash (else tamper=1)
+  1. integrity: start.sav and regions.json must match the sealed hashes (else tamper=1)
   2. the companies of the log header must be the companies of the task (id, slot, name), else rejected=1
   3. replay a private copy of the log (``replay_multi``) with the player-action whitelist and the task
      horizon (an illegal log => rejected=1). A divergence is attributed by a second replay, as in
@@ -25,9 +25,10 @@ from pathlib import Path
 
 from railhead.actionlog import read_log
 from railhead.multi.log import TICKS_PER_DAY
+from railhead.multi.regions import REGIONS_FILE, RegionMap
 from railhead.multi.replay import horizon_tick, replay_multi
 from railhead.replay import ReplayRejected, default_whitelist
-from railhead.seal import check_start
+from railhead.seal import check_sealed_file, check_start
 from railhead.task import TaskSpec
 from railhead.verify import _log_at_fault
 
@@ -43,8 +44,9 @@ def verify_multi(task_dir: Path, start_sav: Path, log: Path, workdir: Path) -> d
     task_dir, workdir = Path(task_dir), Path(workdir)
     spec = TaskSpec.load(task_dir)
     base: dict = {"valid": 1, "tamper": 0, "rejected": 0, "companies": []}
-    if not check_start(task_dir, start_sav):
+    if not check_start(task_dir, start_sav) or not check_sealed_file(task_dir, REGIONS_FILE, "regions_json"):
         return base | {"tamper": 1}
+    regions = RegionMap.for_task(task_dir)
     workdir.mkdir(parents=True, exist_ok=True)
     if not Path(log).is_file():
         return base | {"rejected": 1}
@@ -53,7 +55,8 @@ def verify_multi(task_dir: Path, start_sav: Path, log: Path, workdir: Path) -> d
 
     def run(sub: str, keep_open: bool, max_ticks: int | None = None):
         return replay_multi(start_sav, snap, workdir / sub, allowed=default_whitelist() or set(),
-                            keep_open=keep_open, max_ticks=max_ticks, horizon_days=spec.horizon_days)
+                            keep_open=keep_open, max_ticks=max_ticks, horizon_days=spec.horizon_days,
+                            regions=regions)
 
     # The task, not the log, says which company is which slot: a header that relabels them is false.
     try:

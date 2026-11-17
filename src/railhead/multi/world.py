@@ -141,3 +141,23 @@ class SharedWorld:
                 self.log.close()
         finally:
             self.world.close()
+
+
+class WorldProbe:
+    """The franchise probe (railhead.multi.regions.Probe) over a shared world: read-only queries for the
+    company that acts. The coordinator and the replay send the same queries at the same tick."""
+
+    def __init__(self, sw: SharedWorld, company: int) -> None:
+        self.sw, self.company = sw, company
+        self._towns: dict[int, tuple[int, int]] | None = None
+
+    def tile(self, index: int) -> dict:
+        try:
+            return self.sw.query(self.company, "tile", {"tile": int(index), "radius": 0})
+        except BridgeError:
+            return {}
+
+    def town(self, town_id: int) -> tuple[int, int] | None:
+        if self._towns is None:
+            self._towns = {int(t["id"]): (int(t["x"]), int(t["y"])) for t in self.sw.query(self.company, "towns")}
+        return self._towns.get(int(town_id))
