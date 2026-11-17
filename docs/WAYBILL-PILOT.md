@@ -215,3 +215,45 @@ railhead waybill-run run <tasks>/waybill-short-s0011-r0-enforced <run> claude:de
 ```
 
 The run directories (transcripts, merged logs, `result.json`) are not in the repository.
+
+## 8. Changes for pilot v2 (not run)
+
+These changes follow recommendation (i), then (ii). Pilot v2 has not run.
+
+### 8.1 Licences
+
+A licence (WAYBILL-EXCHANGE.md, "Licences"; WAYBILL.md 10.1) gives a company the right to build inside a rectangle of another company's region, between two ticks, for a fee. The franchise check accepts a build in a live licence rectangle, live and in the replay. The build right is the same in both arms; only the fee depends on the arm.
+
+The wood need of section 5.1, under the new rules, with two companies (slot 0 holds the forest region, slot 1 the sawmill region):
+
+1. Slot 1: `rh offer kind=licence to=A grantor=A grantee=me rect=<forest area to the line> window_start=+0d deadline=+365d fee=F` (or slot 0 offers it).
+2. Slot 0: `rh accept contract_id=C1` (or a counter with another fee). In `enforced`, F goes from slot 1 to slot 0.
+3. Slot 1: a truck stop next to the forest (in the licence rectangle), a road from it across the line, a truck stop at the sawmill (its own region), a depot, trucks, and orders. Each build in slot 0's region passes the franchise check because of the licence.
+4. The trucks carry wood from the forest to the sawmill; slot 1 is paid by the game for each delivery. Optional: a supply contract from slot 1 to a third party, or a tender subcontract.
+5. At the deadline the licence ends: the route keeps running, and slot 1 cannot build more in slot 0's region without a new licence.
+
+The engine test `tests/integration/test_waybill_licence.py` runs the same sequence with scripted agents: the coal mine in A's region and the power station in B's. B is refused at the mine without a licence, builds the route under A's licence, sells A the coal under a supply contract (kept), and is refused again after the licence ends. The replay is equal to the live world, and a forged licence is rejected.
+
+### 8.2 Tenders and seed selection
+
+- A tender opens only where the destination's region has no producer of the cargo within 128 tiles (Manhattan), and the nearest producer in another region is within 128 tiles (`reach_tiles`). Every tender then needs a station in another company's region.
+- `region_needs.cross_only` (within 128 tiles, industries inside a company region) of the short track, seeds 1 to 20:
+
+| Cross-region needs | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 10 |
+|---|---|---|---|---|---|---|---|---|---|
+| Seeds | 1 | 1 | 2 | 3 | 4 | 4 | 2 | 2 | 1 |
+
+  Median 4. The short track now rejects a seed with fewer than **5** (9 of 20 seeds stay: 2, 5, 6, 7, 10, 12, 14, 15, 18). The pilot v1 seed (11, with 3) would be rejected. The cross-only tender pool of a seed has the same size as its `cross_only`, thus an accepted seed has at least 5 tender candidates for 3 tenders each quarter.
+- Every counted need is between two company regions, so a licence from the producer's or the destination's region owner can always meet it.
+
+### 8.3 Run-off
+
+The short track had **no run-off** (0 days): the score was cash minus loan on the last day, so late investment was a pure cost and selling the fleet at the end paid (slot 2 wrote: "Now liquidating all vehicles before submission, since only cash counts toward the final score"). The short track now has a run-off of **365 days**, the same as the decade track and single-agent Railhead: the world runs one year without the agents, so a route earns back its cost before the score. The metric stays cash minus loan after the run-off.
+
+### 8.4 Gate rule for tender awards (provisional)
+
+Provisional decision of the lead (the user can change it): tender awards are reported on a separate line and do not count toward "10 or more contracts signed". Their breaches can count toward "1 or more breach". `result.json` now gives `contracts.signed` (bilateral: supply and licence contracts), `contracts.tender_*`, and `gate` (`bilateral_signed`, `breaches`, `renegotiations`).
+
+### 8.5 Roster for v2
+
+The Claude seat is pinned to `claude:claude-opus-5-5`; the runner's `run.json` seat spec is checked at launch. The opencode filler seat is replaced.

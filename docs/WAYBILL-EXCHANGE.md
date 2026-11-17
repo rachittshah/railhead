@@ -45,12 +45,30 @@ Company ids are non-empty strings. They must not contain `:` and must not be `ex
 | Kind | Fields | Status |
 |---|---|---|
 | `supply` | `seller`, `buyer`, `cargo`, `industry`, `quantity` (Q, at least 1), `window_start`, `deadline`, `price`, `penalty_per_unit`, `bond` (optional, default 0) | Tradable |
-| `licence` | `grantor`, `grantee`, `tiles` (unique ints), `term`, `annual_fee` | Schema only |
+| `licence` | `grantor`, `grantee`, `rect` (`[x0, y0, x1, y1]`, both corners included), `window_start`, `deadline`, `fee` | Tradable |
 | `loan` | `lender`, `borrower`, `principal`, `interest_bp`, `due_tick`, `collateral_share_bp` (0 to 10000) | Schema only |
 
 All numbers are non-negative integers. A boolean is not an integer. The two parties must be different.
-For `supply`, `deadline` must be after `window_start`. An offer of `licence` or `loan` gives
-`kind_not_enabled`.
+For `supply` and `licence`, `deadline` must be after `window_start`. For `licence`, `x0 <= x1` and
+`y0 <= y1`. An offer of `loan` gives `kind_not_enabled`.
+
+### Licences
+
+A licence gives the grantee the right to build inside `rect` of the grantor's franchise region, from
+`window_start` until `deadline` (the right ends at the deadline tick).
+
+| Item | Rule |
+|---|---|
+| Fee | `enforced`: at signing, the grantee pays `fee` to the grantor (no escrow). An amendment moves the fee difference. `cheap_talk`: no money moves. |
+| Build right | The same in both arms. Thus the arms differ in money only, not in what is physically possible. |
+| End | At `deadline`, the exchange writes a `settle` record with `delivered` 0, `parts` `[]` and the outcome `ended`. No money moves. |
+| Built infrastructure | It stays after the end, with the grantee as owner. New builds in the rectangle need a live licence. |
+| Revocation | Not possible. An amendment (both parties sign the same terms) can shorten the term or change the rectangle. |
+| Region | The exchange does not know the regions. The coordinator refuses a licence offer whose rectangle is not inside the grantor's region. At each build, the coordinator and the replay clip the rectangle to the grantor's region at that tick. |
+
+The schema changed from `tiles`, `term`, `annual_fee` (never tradable) to `rect`, `window_start`, `deadline`,
+`fee`: a tile list cannot describe a route, absolute ticks reuse the forced stops and wakes of supply
+contracts, and a one-off fee needs no periodic settlement.
 
 ## Lifecycle
 
@@ -103,6 +121,9 @@ After settlement, both escrow accounts are 0.
 `{id, type, produces: [cargo], accepts: [cargo], tile: [x, y], region}`.
 
 - A candidate is an industry I and a cargo C. I accepts C, and an industry in a different region produces C.
+- With `reach_tiles` > 0 (the task tracks use 128), also: no industry in I's own region produces C within
+  `reach_tiles` (Manhattan), and the nearest producer in another region is within it. Every such tender
+  needs a station in another company's region: a licence or a subcontract.
 - `distance` is the Manhattan distance from I to the nearest such producer.
 - The exchange picks up to `per_quarter` candidates with draws over `(seed, quarter)`.
 - `TenderConfig` sets quantity, maximum price, penalty, bid period and delivery window. The class
