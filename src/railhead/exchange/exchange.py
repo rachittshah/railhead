@@ -38,7 +38,7 @@ MAX_MEMO_CHARS = 200
 
 BASE_FIELDS = frozenset({"op", "seq", "tick", "company"})
 RECORD_FIELDS: dict[str, frozenset[str]] = {
-    "init": frozenset({"arm", "companies", "seed", "credit_limit", "tender_config"}),
+    "init": frozenset({"arm", "companies", "seed", "credit_limit", "tender_config", "start_balances"}),
     "offer": frozenset({"contract_id", "kind", "terms", "to", "expires_tick"}),
     "counter": frozenset({"contract_id", "terms", "expires_tick"}),
     "accept": frozenset({"contract_id"}),
@@ -64,11 +64,15 @@ DeliveriesFn = Callable[[str, int, int, int, int], int]
 
 class Exchange:
     def __init__(self, companies: Iterable[str], *, arm: str = "enforced", seed: int = 0,
-                 credit_limit: int | None = None, tender_config: TenderConfig | None = None):
+                 credit_limit: int | None = None, tender_config: TenderConfig | None = None,
+                 start_balances: dict[str, int] | None = None, tick: int = 0):
+        """``start_balances``: money each company gets from the ``exchange`` account at init (unequal
+        starts). ``tick``: the tick of the init record (the coordinator uses the start tick)."""
         self._reset()
         cfg = tender_config or TenderConfig()
-        self.apply({"op": "init", "seq": 0, "tick": 0, "company": None, "arm": arm, "companies": list(companies),
-                    "seed": seed, "credit_limit": credit_limit, "tender_config": asdict(cfg)})
+        self.apply({"op": "init", "seq": 0, "tick": tick, "company": None, "arm": arm, "companies": list(companies),
+                    "seed": seed, "credit_limit": credit_limit, "tender_config": asdict(cfg),
+                    "start_balances": dict(sorted((start_balances or {}).items()))})
 
     @classmethod
     def replay(cls, records: Iterable[dict[str, Any]]) -> Exchange:
@@ -196,6 +200,12 @@ class Exchange:
         except TypeError as e:
             raise ExchangeError("bad_config", f"tender_config: {e}") from None
         ledger = Ledger(r["companies"], credit_limit=r["credit_limit"])
+        sb = r["start_balances"]
+        if not isinstance(sb, dict) or any(k not in ledger.companies or not is_int(v) or v < 0 for k, v in sb.items()):
+            raise ExchangeError("bad_config", "start_balances must map companies to non-negative ints")
+        for k in sorted(sb):
+            if sb[k]:
+                ledger.transfer(EXCHANGE, k, sb[k], reason="start_balance", ref="init", tick=r["tick"])
         self.arm, self.seed, self.tender_config, self.accounts = r["arm"], r["seed"], cfg, ledger
         self.companies = ledger.companies
 
@@ -620,7 +630,8 @@ class Exchange:
                 assert c is not None and c.status in LIVE_STATUSES, f"{acct} holds {bal} for a closed contract"
                 assert bal == (c.escrow_bond if sub == "bond" else c.escrow_price), f"{acct} != contract escrow"
         if self.arm == "cheap_talk":
-            assert all(h.reason == "pay" for h in self.accounts.history), "cheap talk moved non-pay money"
+            assert all(h.reason in ("pay", "start_balance") for h in self.accounts.history), \
+                "cheap talk moved non-pay money"
 
     def state(self) -> dict[str, Any]:
         """Canonical, JSON-safe snapshot. Two exchanges with equal records have equal states."""

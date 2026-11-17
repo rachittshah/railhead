@@ -88,3 +88,14 @@ def test_state_round_trip_is_canonical():
     assert s["balances"] == {"a": -7, "b": 4, "escrow:C1": 3, "exchange": 0}
     assert list(s["balances"]) == sorted(s["balances"])
     assert [h["seq"] for h in s["history"]] == [0, 1]
+
+
+def test_start_balances_are_funded_by_the_exchange_and_replay():
+    from railhead.exchange import Exchange
+
+    for arm in ("enforced", "cheap_talk"):
+        ex = Exchange(["a", "b"], arm=arm, start_balances={"a": 5000, "b": 0}, tick=370)
+        assert ex.accounts.balance("a") == 5000 and ex.accounts.balance("exchange") == -5000
+        ex.pay(400, "a", "b", 100)
+        ex.check_invariants()
+        assert Exchange.replay(ex.records).state() == ex.state()
