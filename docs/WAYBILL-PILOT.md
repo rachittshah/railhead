@@ -209,7 +209,7 @@ Proposal, for the lead to decide: **report them separately and do not count them
 
 The short track has **no run-off** (`TRACKS["short"]`: `runoff_days=0`; the pilot `task.json`: `runoff_days: 0`). The score is cash minus loan on the last day. Thus a vehicle or a station that is bought late is a pure cost, and selling the fleet before the end raises the score. Slot 2 wrote: "Now liquidating all vehicles before submission, since only cash counts toward the final score." In the pilot, net worth at the horizon equals the final net worth for every company.
 
-Proposal: a run-off of **365 days** on the short track, as on the decade track and in single-agent Railhead. The world then runs one year without the agents, so a route earns back its cost, and liquidation at the end is not an advantage. The metric stays cash minus loan after the run-off.
+Proposal (approved and applied; refer to 8.3): a run-off of **365 days** on the short track, as on the decade track and in single-agent Railhead. The world then runs one year without the agents, so a route earns back its cost, and liquidation at the end is not an advantage. The metric stays cash minus loan after the run-off.
 
 ## 7. Reproduction
 
