@@ -228,3 +228,15 @@ def test_parse_command_builds_licence_terms():
                            "deadline": START + 90 * D, "fee": 500}
     with pytest.raises(CommandError, match="x0,y0,x1,y1"):
         parse_command("offer", {"kind": "licence", "rect": "1,2,3"}, me="3", now=START, companies=COMPANIES)
+
+
+def test_parse_pay_with_a_contract_tag_and_to_exchange():
+    from railhead.multi.market import CommandError, parse_command
+
+    kw = parse_command("pay", {"to": "A", "amount": "5", "contract": "c3"}, me="5", now=START, companies=COMPANIES)
+    assert kw == {"to": "3", "amount": 5, "memo": "", "contract_id": "C3"}
+    kw = parse_command("pay", {"to": "exchange", "amount": 9, "contract_id": "T1"}, me="5", now=START,
+                       companies=COMPANIES)
+    assert kw["to"] == "exchange" and kw["contract_id"] == "T1"
+    with pytest.raises(CommandError):  # the exchange takes tagged payments only
+        parse_command("pay", {"to": "exchange", "amount": 9}, me="5", now=START, companies=COMPANIES)

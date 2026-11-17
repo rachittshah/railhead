@@ -323,7 +323,9 @@ class Coordinator:
                     return ex.public_view(me) | {"tick": self.sw.ticks}
                 if m == "market":
                     return ex.market(me) | {"tick": self.sw.ticks, "region": self.region_of(c), "arm": ex.arm,
-                                            "licensed": self.market.licence_rects(c, self.sw.ticks)}
+                                            "licensed": self.market.licence_rects(c, self.sw.ticks),
+                                            "obligations": [o for o in ex.obligations_of(me)
+                                                            if o["status"] == "open"]}
                 return getattr(ex, m)(me)
         if m not in COMMANDS:
             raise OpError("ERR_UNKNOWN_OP", f"unknown market operation {m!r}; queries: {', '.join(QUERIES)}; "

@@ -522,7 +522,9 @@ def test_a_licence_lets_its_holder_build_in_the_grantors_region_until_its_deadli
     with pytest.raises(OpError):  # C holds no licence
         c.handle(2, build)
     led = ex(c, 1, "ledger")["balances"]
-    assert led["5"] == (4000 if arm == "enforced" else 5000)  # B paid A the fee (enforced only)
+    assert led["5"] == 5000  # the fee is paid later, in quarterly instalments (both arms)
+    obs = ex(c, 1, "contracts")[0]["your_obligations"]
+    assert [(o["payer"], o["payee"], o["amount"]) for o in obs] == [("5", "3", 1000)]  # 20 days: one, at the end
     end = c.sw.ticks + 25 * D
 
     def wait_past(s):  # the licence deadline is a forced wake for A and B: wait again until day 25
@@ -538,3 +540,36 @@ def test_a_licence_lets_its_holder_build_in_the_grantors_region_until_its_deadli
     assert [x["x"]["outcome"] for x in recs if x["kind"] == "ex" and x["x"]["op"] == "settle"] == ["ended"]
     built = [(r["company"], r["a"]["tile"]) for r in recs if r["kind"] == "act" and r["m"] == "rail_track"]
     assert built == [(5, 5 * 64 + 10)]
+
+
+def test_cheap_talk_obligation_wakes_the_payer_and_is_settled_from_tagged_payments(make):
+    from railhead.multi.regions import RegionMap
+
+    rm = RegionMap(64, 64, {0: [[0, 0, 20, 63]], 1: [[21, 0, 40, 63]], 2: [[41, 0, 63, 63]]})
+    c = make(regions=rm, market=market_cfg("cheap_talk"), horizon_days=120)
+    cid = ex(c, 0, "offer", kind="licence", to="B", grantor="me", grantee="B", rect="5,0,15,10",
+             window_start="+0d", deadline="+100d", fee=800)["contract"]["contract_id"]
+    ex(c, 1, "accept", contract_id=cid)
+    obs = ex(c, 1, "market")["obligations"]
+    assert [(o["amount"], o["due"] - c.sw.ticks) for o in obs] == [(400, 90 * D), (400, 100 * D)]
+    out = {}
+    start = c.sw.ticks
+    end = start + 91 * D
+
+    def until_end(s):  # tender quarters and the due tick wake companies early: wait again until day 91
+        t = c.sw.ticks
+        while t < end:
+            r = c.handle(s, {"op": "wait", "ticks": end - t})
+            t = r["ticks"]
+            if s == 1 and r["reason"] == "obligation_due" and "wake" not in out:
+                out["wake"] = r
+                ex(c, 1, "pay", to="A", amount=400, contract=cid)
+
+    run_agents([lambda s=s: until_end(s) for s in (0, 1, 2)])
+    with pytest.raises(OpError) as e:  # C owes nothing under this licence
+        ex(c, 2, "pay", to="A", amount=1, contract=cid)
+    out["tag"] = e.value.code
+    assert out["wake"]["reason"] == "obligation_due" and out["wake"]["ticks"] == start + 90 * D
+    assert out["tag"] == "ERR_BAD_TAG"
+    o = next(x for x in ex(c, 1, "contracts")[0]["your_obligations"] if x["amount"] == 400)
+    assert o["paid"] == 400 and o["status"] == "open"  # settled after the grace period

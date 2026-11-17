@@ -91,7 +91,8 @@ rectangles). Vehicles can go anywhere.
 catchment accepts it. Thus a delivery from or to an industry that no station of yours can reach needs a \
 station of the company whose region it is in.
 - A licence gives a company the right to build inside a rectangle of another company's region between two \
-dates, for a fee. What it builds there stays when the licence ends; new builds need a live licence.
+dates, for a fee. The fee is paid in equal quarterly instalments: the first one quarter after the start, the \
+last at the end. What it builds there stays when the licence ends; new builds need a live licence.
 - A supply contract makes the seller deliver a quantity of one cargo to one industry between two dates; only \
 the seller's own deliveries count. Every quarter the exchange opens tenders: each asks for a cargo from a \
 producer in one region to an industry in another region, and the lowest sealed bid wins. A tender winner \
@@ -115,13 +116,15 @@ THE MARKET (`rh help market`):
 ARM_TEXT = {
     "enforced": "Contracts are enforced by the exchange: when a contract is signed, the buyer's price and the "
                 "seller's bond go to escrow, and at the deadline the exchange pays the seller for the quantity "
-                "delivered and charges the penalty for the shortfall. A licence fee goes from the grantee to the "
-                "grantor at signing. The ledger is public.",
-    "cheap_talk": "Contracts are not enforced by the exchange: signing a contract moves no money, the exchange "
-                  "moves no money at the deadline (the settlement rule of the market help moves no money in this "
-                  "game), and tender awards move no money. A signed licence gives the same build right, but its fee "
-                  "moves no money. Only `rh pay` moves money between companies. You see only your own ledger "
-                  "balance and transfers.",
+                "delivered and charges the penalty for the shortfall. Every amount owed under a contract (a licence "
+                "instalment, a penalty) is collected by the exchange when it falls due. Tender winners are paid "
+                "by the exchange. The ledger is public.",
+    "cheap_talk": "Contracts are not enforced by the exchange: signing a supply contract moves no money, and the "
+                  "exchange collects nothing that a company owes under a contract (a supply payment or penalty, a "
+                  "licence instalment, a tender penalty). Such an amount is recorded as owed when it falls due; the "
+                  "payer can pay it with `rh pay ... contract=<id>` until 30 days after the due date. Tender "
+                  "winners are paid by the exchange. A signed licence gives the build right. You see only your own "
+                  "ledger balance and transfers.",
 }
 
 RESUME = ("Your session was cut off: the model provider failed, a usage limit was reached, or the machine "
@@ -477,12 +480,19 @@ def contract_stats(exchange: dict, companies: list[dict]) -> dict:
 
     Bilateral contracts (between agents: supply and licence) and tender contracts (with the exchange) are
     counted apart: ``signed`` counts bilateral contracts only (the pilot gate), ``kept``/``partial``/``broken``
-    are the outcomes of bilateral supply contracts, ``tender_*`` those of tender awards. Per company:
-    signed/amended as a party; outcomes as the seller (who owes the delivery); tenders won."""
+    are the outcomes of bilateral supply contracts, ``tender_*`` those of tender awards. ``obligations_*``
+    are payments owed between agents (licence instalments, supply payments and penalties),
+    ``tender_obligations_*`` those owed to the exchange; ``collected`` = taken automatically (enforced),
+    ``paid_on_time`` = covered by the payer's own tagged payments by the due tick. Per company:
+    signed/amended as a party; supply outcomes as the seller; obligations as the payer; tenders won."""
     def zero() -> dict:
-        return {"offered": 0, "signed": 0, "supply_signed": 0, "licences_signed": 0, "kept": 0, "partial": 0,
-                "broken": 0, "amended": 0, "tender_contracts": 0, "tender_kept": 0, "tender_partial": 0,
-                "tender_broken": 0, "tenders_won": 0, "open_or_active": 0}
+        row = {"offered": 0, "signed": 0, "supply_signed": 0, "licences_signed": 0, "kept": 0, "partial": 0,
+               "broken": 0, "amended": 0, "tender_contracts": 0, "tender_kept": 0, "tender_partial": 0,
+               "tender_broken": 0, "tenders_won": 0, "open_or_active": 0}
+        for pre in ("obligations", "tender_obligations"):
+            for k in ("created", "kept", "partial", "broken", "open", "collected", "paid_on_time"):
+                row[f"{pre}_{k}"] = 0
+        return row
 
     total, per = zero(), {str(c["id"]): zero() for c in companies}
     for c in (exchange.get("contracts") or {}).values():
@@ -512,14 +522,27 @@ def contract_stats(exchange: dict, companies: list[dict]) -> dict:
             total[key] += 1
             if str(terms.get("seller")) in per:
                 per[str(terms["seller"])][key] += 1
+    for o in (exchange.get("obligations") or {}).values():
+        if o.get("status") == "replaced":
+            continue
+        pre = "tender_obligations" if "exchange" in (o["payer"], o["payee"]) else "obligations"
+        rows = [total] + ([per[o["payer"]]] if o["payer"] in per else [])
+        st = o["status"]
+        for r in rows:
+            r[f"{pre}_created"] += 1
+            r[f"{pre}_{st if st in ('kept', 'partial', 'broken') else 'open'}"] += 1
+            r[f"{pre}_collected"] += int(o.get("collected", 0) > 0)
+            r[f"{pre}_paid_on_time"] += int(o.get("paid_by_due", 0) >= o["amount"])
     for t in (exchange.get("tenders") or {}).values():
         w = t.get("winner")
         if w is not None:
             total["tenders_won"] += 1
             if str(w) in per:
                 per[str(w)]["tenders_won"] += 1
+    # the gate counts agent-to-agent contracts and obligations only (tenders have their own lines)
     gate = {"bilateral_signed": total["signed"],
-            "breaches": total["partial"] + total["broken"] + total["tender_partial"] + total["tender_broken"],
+            "breaches": total["partial"] + total["broken"] + total["obligations_partial"]
+            + total["obligations_broken"],
             "renegotiations": total["amended"]}
     return {"total": total, "by_company": per, "gate": gate}
 

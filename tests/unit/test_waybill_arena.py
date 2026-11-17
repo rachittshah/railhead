@@ -288,7 +288,7 @@ def test_contract_statistics():
     assert (t["offered"], t["signed"], t["supply_signed"], t["licences_signed"]) == (5, 4, 3, 1)
     assert (t["kept"], t["partial"], t["broken"], t["amended"]) == (1, 0, 1, 1)
     assert (t["tender_contracts"], t["tender_partial"], t["tenders_won"], t["open_or_active"]) == (1, 1, 1, 1)
-    assert s["gate"] == {"bilateral_signed": 4, "breaches": 2, "renegotiations": 1}
+    assert s["gate"] == {"bilateral_signed": 4, "breaches": 1, "renegotiations": 1}  # the tender partial: no
     a, b, c = (s["by_company"][k] for k in ("3", "5", "7"))
     assert (a["signed"], a["kept"], a["broken"], a["licences_signed"]) == (4, 1, 0, 1) and b["broken"] == 1
     assert (c["tenders_won"], c["tender_partial"], c["tender_contracts"], c["licences_signed"]) == (1, 1, 1, 1)
@@ -494,3 +494,22 @@ def test_the_model_that_ran_comes_from_the_transcript(tmp_path):
     assert wa.model_used(wa.Seat(2, "opencode", "opencode/big-pickle", "s2"), tmp_path / "none") == \
         "opencode/big-pickle"
     assert wa.model_used(wa.Seat(0, "claude", "default", "s0"), tmp_path / "none") is None
+
+
+def test_obligation_statistics_and_the_gate_count_agent_to_agent_only():
+    def ob(i, payer, payee, status, amount=100, paid_by_due=0, collected=0):
+        return {"id": f"O{i}", "payer": payer, "payee": payee, "status": status, "amount": amount,
+                "paid_by_due": paid_by_due, "collected": collected}
+
+    ex = {"contracts": {}, "tenders": {},
+          "obligations": {"O1": ob(1, "5", "3", "kept", paid_by_due=100), "O2": ob(2, "5", "3", "partial"),
+                          "O3": ob(3, "3", "5", "broken"), "O4": ob(4, "7", "exchange", "broken"),
+                          "O5": ob(5, "5", "3", "replaced"), "O6": ob(6, "3", "5", "kept", collected=100),
+                          "O7": ob(7, "5", "3", "open")}}
+    s = wa.contract_stats(ex, COMPANIES)
+    t = s["total"]
+    assert (t["obligations_created"], t["obligations_kept"], t["obligations_partial"], t["obligations_broken"],
+            t["obligations_open"], t["obligations_paid_on_time"], t["obligations_collected"]) == (5, 2, 1, 1, 1, 1, 1)
+    assert (t["tender_obligations_created"], t["tender_obligations_broken"]) == (1, 1)
+    assert s["gate"]["breaches"] == 2  # O2 and O3; the tender penalty O4 does not count
+    assert s["by_company"]["5"]["obligations_created"] == 3 and s["by_company"]["7"]["tender_obligations_broken"] == 1

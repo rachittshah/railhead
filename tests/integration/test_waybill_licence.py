@@ -34,9 +34,9 @@ from tests.integration.test_waybill_market import SockWorld
 pytestmark = [pytest.mark.integration, pytest.mark.timeout(1800)]
 
 W = 128
-HORIZON = 150
+HORIZON = 170
 FEE, Q, PRICE, PPU = 30_000, 20, 8_000, 100
-LIC_DAYS, SUPPLY_DAYS = 60, 100
+LIC_DAYS, SUPPLY_DAYS = 120, 100  # the fee: 15k due at day 90, 15k at day 120 (quarterly, in arrears)
 
 
 def split(mine: dict, ps: dict) -> tuple[RegionMap, dict]:
@@ -92,8 +92,14 @@ class Agent(MarketAgent):
                                        industry=p["ps"]["id"], quantity=Q, window_start="+0d",
                                        deadline=f"+{SUPPLY_DAYS}d", price=PRICE,
                                        penalty_per_unit=PPU)["contract"]["contract_id"]
-        while self.wait(days=10) is not None and self.c.request("info")["days_left"] > HORIZON - LIC_DAYS - 5:
-            pass
+        while True:  # cheap talk: pay the first instalment when it falls due, not the second
+            out = self.wait(days=7)  # 90 and 120 are not multiples of 7: the due ticks fall inside waits
+            if out is None or self.c.request("info")["days_left"] <= HORIZON - LIC_DAYS - 5:
+                break
+            if out["reason"] == "obligation_due" and p["arm"] == "cheap_talk" and "paid" not in self.notes:
+                lic_id = next(c["contract_id"] for c in self.ex("contracts") if c["kind"] == "licence")
+                self.notes["paid"] = self.ex("pay", to="A", amount=FEE // 2, contract=lic_id)
+            self.notes.setdefault("wakes", []).append(out["reason"])
         fx, fy = p["mine"]["x"], p["mine"]["y"]  # after the licence: nothing new in A's region
         try:
             self.c.request("act", m="road_line", a={"from_tile": (fy + 3) * W + fx - 3,
@@ -105,9 +111,10 @@ class Agent(MarketAgent):
         self.idle()
 
 
-@pytest.fixture(scope="module")
-def game(tmp_path_factory):
-    tmp = tmp_path_factory.mktemp("wb-licence")
+@pytest.fixture(scope="module", params=["enforced", "cheap_talk"])
+def game(tmp_path_factory, request):
+    arm = request.param
+    tmp = tmp_path_factory.mktemp(f"wb-licence-{arm}")
     tdir = tmp / "task"
     tdir.mkdir()
     with World.create(tmp / "gen", make_config(seed=3), found_company=False) as w:
@@ -117,8 +124,8 @@ def game(tmp_path_factory):
     mine = next(i for i in inds if any(p["cargo"] == coal for p in i["produces"]))
     ps = next(i for i in inds if coal in i["accepts"])
     regions, extra = split(mine, ps)
-    plan = {"coal": coal, "mine": mine, "ps": ps, **extra}
-    market = MarketConfig(arm="enforced", seed=5, start_balances={1: 50_000}, quarter_days=90,
+    plan = {"coal": coal, "mine": mine, "ps": ps, "arm": arm, **extra}
+    market = MarketConfig(arm=arm, seed=5, start_balances={1: 50_000}, quarter_days=90,
                           tender={"per_quarter": 0})
     write_task(tdir, "waybill-licence", companies, horizon_days=HORIZON, runoff_days=0, agent_turn_s=900,
                regions=regions, market=market)
@@ -149,7 +156,7 @@ def game(tmp_path_factory):
     finally:
         coord.close()
     return {"task": tdir, "log": state / "run" / "actions.jsonl", "companies": companies, "live": live,
-            "notes": [a.notes for a in agents], "plan": plan, "regions": regions}
+            "notes": [a.notes for a in agents], "plan": plan, "regions": regions, "arm": arm}
 
 
 def _ids(g):
@@ -162,6 +169,7 @@ def test_without_a_licence_b_cannot_build_at_the_mine_and_after_it_nothing_new(g
     assert nb["before"] == "ERR_FRANCHISE"
     assert nb["after"] == "ERR_FRANCHISE"
     assert nb["vehicles"] >= 1 and nb["stations_after"] == nb["stations_before"] >= 2  # the route stays
+    assert "obligation_due" in nb["wakes"]  # B is woken when an instalment falls due (both arms)
 
 
 def test_b_built_in_as_region_under_the_licence_and_delivered(game):
@@ -178,7 +186,20 @@ def test_b_built_in_as_region_under_the_licence_and_delivered(game):
     assert all(r["ticks"] < lic["terms"]["deadline"] for r in in_a)
     assert sup["outcome"] == "kept" and sup["settlement"]["delivered"] >= Q, sup["settlement"]
     led = game["live"]["ledger"]
-    assert led[a] == FEE - PRICE and led[b] == 50_000 - FEE + PRICE  # fee to A, price to B
+    obs = sorted((o for o in ex["obligations"].values() if o["contract_id"] == game["notes"][0]["lic"]),
+                 key=lambda o: o["due"])
+    assert [(o["payer"], o["payee"], o["amount"]) for o in obs] == [(str(b), str(a), FEE // 2)] * 2
+    assert obs[0]["due"] == lic["terms"]["window_start"] + 90 * 74 and obs[1]["due"] == lic["terms"]["deadline"]
+    if game["arm"] == "enforced":  # instalments collected at their due ticks; the price paid from escrow
+        assert [o["status"] for o in obs] == ["kept", "kept"] and all(o["collected"] for o in obs)
+        assert led[a] == FEE - PRICE and led[b] == 50_000 - FEE + PRICE
+        assert "obligation_due" in game["notes"][1]["wakes"]
+    else:  # B paid the first instalment on time and not the second; A never paid B the price
+        assert [(o["status"], o["paid"], o["paid_by_due"]) for o in obs] == [("kept", FEE // 2, FEE // 2),
+                                                                            ("broken", 0, 0)]
+        pay = next(o for o in ex["obligations"].values() if o["kind"] == "supply_payment")
+        assert (pay["payer"], pay["amount"], pay["status"]) == (str(a), PRICE, "broken")
+        assert led[a] == FEE // 2 and led[b] == 50_000 - FEE // 2
 
 
 def _tiles(r):

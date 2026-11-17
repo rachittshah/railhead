@@ -29,11 +29,13 @@ from .contracts import (
 )
 from .errors import ExchangeError
 from .ledger import EXCHANGE, Ledger, bond_account, escrow_account, is_int
-from .settlement import ARMS, compute_supply_settlement, settle_supply
+from .settlement import ARMS, compute_supply_settlement, outcome_for
 from .tenders import TICKS_PER_DAY, TenderConfig, auction, generate_tenders
 
 DEFAULT_OFFER_TICKS = 30 * TICKS_PER_DAY
 LICENCE_END = "ended"  # the outcome of a licence at its deadline (it has no performance to measure)
+INSTALMENT_TICKS = 90 * TICKS_PER_DAY  # a licence fee is paid in quarterly instalments, in arrears
+GRACE_TICKS = 30 * TICKS_PER_DAY  # cheap talk: payments tagged to an obligation count until due + grace
 MAX_MESSAGE_CHARS = 4000
 MAX_MEMO_CHARS = 200
 
@@ -52,9 +54,11 @@ RECORD_FIELDS: dict[str, frozenset[str]] = {
     "tender_bid": frozenset({"tender_id", "price"}),
     "tender_award": frozenset({"tender_id", "winner", "price"}),
     "msg": frozenset({"to", "text"}),
-    "pay": frozenset({"to", "amount", "memo"}),
+    "pay": frozenset({"to", "amount", "memo", "contract_id"}),
+    "obligation_settle": frozenset({"obligation_id", "collected", "paid", "outcome"}),
 }
-SYSTEM_OPS = frozenset({"init", "expire", "activate", "settle", "tender_open", "tender_award"})
+OPTIONAL_FIELDS = {"pay": frozenset({"contract_id"})}  # records written before the field existed stay valid
+SYSTEM_OPS = frozenset({"init", "expire", "activate", "settle", "tender_open", "tender_award", "obligation_settle"})
 TENDER_FIELDS = frozenset({"tender_id", "quarter", "industry", "cargo", "distance", "source_industry", "region",
                            "quantity", "max_price", "penalty_per_unit", "open_tick", "bid_close", "window_start",
                            "deadline"})
@@ -96,6 +100,8 @@ class Exchange:
         self.messages: list[dict[str, Any]] = []
         self.next_contract = 1
         self.next_tender = 1
+        self.obligations: dict[str, dict[str, Any]] = {}
+        self.next_obligation = 1
 
     # ================================================================================== record application
     def apply(self, record: dict[str, Any]) -> dict[str, Any]:
@@ -104,6 +110,8 @@ class Exchange:
             raise ExchangeError("bad_record", f"unknown op in {record!r}")
         op = record["op"]
         want = BASE_FIELDS | RECORD_FIELDS[op]
+        if set(record) != want and set(record) | OPTIONAL_FIELDS.get(op, frozenset()) == want:
+            record = {**record, **{k: None for k in want - set(record)}}
         if set(record) != want:
             raise ExchangeError("bad_record", f"{op}: fields {sorted(record)} != {sorted(want)}")
         if record["seq"] != len(self.records):
@@ -274,14 +282,14 @@ class Exchange:
                 terms[f] = company
         self._check_supply_window(terms, tick)
         licence = c.kind == "licence"
-        if self.arm == "enforced":
-            self._need_funds([(terms["grantee"], terms["fee"])] if licence else
-                             [(terms["buyer"], terms["price"]), (terms["seller"], terms["bond"])])
+        if self.arm == "enforced" and not licence:  # a licence fee is paid later, in instalments
+            self._need_funds([(terms["buyer"], terms["price"]), (terms["seller"], terms["bond"])])
         c.move("signed", tick, "accept", company)
         c.terms, c.signed_tick, c.responder = terms, tick, None
         c.terms_history = [{"from_tick": tick, "terms": copy.deepcopy(terms)}]
-        if self.arm == "enforced" and licence:  # the fee goes to the grantor at signing: no escrow
-            self._move(terms["grantee"], terms["grantor"], terms["fee"], "licence_fee", c.id, tick)
+        if licence:  # both arms: the fee falls due in quarterly instalments after the right starts
+            for due, amount in instalments(terms["fee"], terms["window_start"], terms["deadline"]):
+                self._oblige(c.id, "licence_instalment", terms["grantee"], terms["grantor"], amount, due, tick)
         elif self.arm == "enforced":
             self._move(terms["buyer"], escrow_account(c.id), terms["price"], "escrow", c.id, tick)
             self._move(terms["seller"], bond_account(c.id), terms["bond"], "bond", c.id, tick)
@@ -331,12 +339,17 @@ class Exchange:
             c.pending_amendment = {"by": company, "tick": tick, "terms": new}
             c.events.append({"tick": tick, "event": "amend_propose", "company": company})
             return
-        if c.kind == "licence":  # a changed fee moves the difference between the parties (enforced)
-            df = new["fee"] - c.terms["fee"]
-            if self.arm == "enforced":
-                self._need_funds([(new["grantee"], max(df, 0)), (new["grantor"], max(-df, 0))])
-                self._move(new["grantee"], new["grantor"], df, "licence_fee", c.id, tick)
-                self._move(new["grantor"], new["grantee"], -df, "licence_refund", c.id, tick)
+        if c.kind == "licence":  # the instalments not yet due are replaced by a schedule for the new terms
+            fixed = 0
+            for o in self._contract_obligations(c.id):
+                if o["status"] == "open" and o["due"] > tick:
+                    o["status"] = "replaced"
+                elif o["status"] != "replaced":
+                    fixed += o["amount"]
+            rest = max(0, new["fee"] - fixed)
+            dues = [d for d in due_ticks(new["window_start"], new["deadline"]) if d > tick]
+            for due, amount in split(rest, dues):
+                self._oblige(c.id, "licence_instalment", new["grantee"], new["grantor"], amount, due, tick)
             c.terms, c.pending_amendment = new, None
             c.terms_history.append({"from_tick": tick, "terms": copy.deepcopy(new)})
             c.events.append({"tick": tick, "event": "amend_sign", "company": company})
@@ -374,13 +387,74 @@ class Exchange:
         expect = compute_supply_settlement(c.terms, r["delivered"])["outcome"]
         if r["outcome"] != expect:
             raise ExchangeError("record_mismatch", f"{c.id}: outcome {r['outcome']!r} != computed {expect!r}")
-        assert self.accounts is not None
-        res = settle_supply(self.accounts, c.id, c.terms, r["delivered"], arm=self.arm, tick=tick)
+        res = self._settle_supply(c, r["delivered"], tick)
         c.move("settled", tick, "settle")
         c.outcome, c.settlement, c.escrow_price, c.escrow_bond = res["outcome"], res, 0, 0
         c.settlement["parts"] = copy.deepcopy(r["parts"])
         if c.tender_id is not None:
             self.tenders[c.tender_id]["status"] = "settled"
+
+    def _settle_supply(self, c: Contract, delivered: int, tick: int) -> dict[str, Any]:
+        """Escrowed money moves now (enforced bilateral contracts; tender awards in both arms: the exchange
+        pays the winner for the delivered share). What a party still owes becomes an obligation due now:
+        the penalty (after the bond), and in cheap talk the buyer's payment. Enforced collects obligations
+        at their due tick; cheap talk leaves them to tagged payments (``pay`` with ``contract_id``)."""
+        t = c.terms
+        res: dict[str, Any] = dict(compute_supply_settlement(t, delivered))
+        res.update(contract_id=c.id, arm=self.arm, published=self.arm == "enforced", obligations=[])
+        escrowed = c.escrow_price > 0 or c.escrow_bond > 0 or (self.arm == "enforced" and c.tender_id is None)
+        if escrowed:
+            esc, bnd = escrow_account(c.id), bond_account(c.id)
+            self._move(esc, t["seller"], res["seller_payment"], "settle_payment", c.id, tick)
+            self._move(esc, t["buyer"], res["buyer_refund"], "settle_refund", c.id, tick)
+            self._move(bnd, t["buyer"], res["penalty_from_bond"], "penalty_bond", c.id, tick)
+            self._move(bnd, t["seller"], res["bond_returned"], "bond_return", c.id, tick)
+            owed_penalty = res["penalty_from_balance"]
+        else:  # cheap talk, bilateral: nothing was escrowed; both payments are owed
+            owed_penalty = res["penalty"]
+            if res["seller_payment"]:
+                res["obligations"].append(self._oblige(c.id, "supply_payment", t["buyer"], t["seller"],
+                                                       res["seller_payment"], tick, tick))
+        if owed_penalty:
+            kind = "tender_penalty" if c.tender_id is not None else "supply_penalty"
+            res["obligations"].append(self._oblige(c.id, kind, t["seller"], t["buyer"], owed_penalty, tick, tick))
+        return res
+
+    # ---------------------------------------------------------------------------------------------- obligations
+    def _oblige(self, cid: str, kind: str, payer: str, payee: str, amount: int, due: int, tick: int) -> str:
+        oid = f"O{self.next_obligation}"
+        self.next_obligation += 1
+        settle = due if self.arm == "enforced" else due + GRACE_TICKS
+        self.obligations[oid] = {"id": oid, "contract_id": cid, "kind": kind, "payer": payer, "payee": payee,
+                                 "amount": amount, "due": due, "settle_tick": settle, "created_tick": tick,
+                                 "paid": 0, "paid_by_due": 0, "payments": [], "collected": 0, "status": "open",
+                                 "settled_tick": None}
+        return oid
+
+    def _contract_obligations(self, cid: str) -> list[dict[str, Any]]:
+        return sorted((o for o in self.obligations.values() if o["contract_id"] == cid), key=_obl_key)
+
+    def _obligation_result(self, o: dict[str, Any]) -> tuple[int, str]:
+        """(collected, outcome) at the settle tick: enforced collects what is unpaid; cheap talk counts the
+        tagged payments."""
+        rest = max(0, o["amount"] - o["paid"])
+        if self.arm == "enforced":
+            return rest, "kept"
+        return 0, outcome_for(o["paid"], o["amount"])
+
+    def _op_obligation_settle(self, r: dict[str, Any]) -> None:
+        o = self.obligations.get(r["obligation_id"]) if isinstance(r["obligation_id"], str) else None
+        if o is None or o["status"] != "open" or r["tick"] < o["settle_tick"]:
+            raise ExchangeError("bad_state", f"obligation {r['obligation_id']!r} cannot settle at tick {r['tick']}")
+        collected, outcome = self._obligation_result(o)
+        if (r["collected"], r["paid"], r["outcome"]) != (collected, o["paid"], outcome):
+            raise ExchangeError("record_mismatch", f"{o['id']}: {r['collected']}/{r['paid']}/{r['outcome']} != "
+                                                   f"computed {collected}/{o['paid']}/{outcome}")
+        assert self.accounts is not None
+        if collected:  # forced: the balance may go negative (the recorded debt), as for supply penalties
+            self.accounts.transfer(o["payer"], o["payee"], collected, reason="collect", ref=o["id"], tick=r["tick"],
+                                   force=True)
+        o.update(collected=collected, status=outcome, settled_tick=r["tick"])
 
     def _op_tender_open(self, r: dict[str, Any]) -> None:
         if not is_int(r["quarter"]) or not isinstance(r["tenders"], list):
@@ -432,9 +506,8 @@ class Exchange:
         c.move("signed", tick, "sign")
         c.signed_tick, c.responder = tick, None
         c.terms_history = [{"from_tick": tick, "terms": copy.deepcopy(terms)}]
-        if self.arm == "enforced":
-            self._move(EXCHANGE, escrow_account(cid), price, "tender_escrow", cid, tick)
-            c.escrow_price = price
+        self._move(EXCHANGE, escrow_account(cid), price, "tender_escrow", cid, tick)  # both arms: the exchange pays
+        c.escrow_price = price
         if tick >= terms["window_start"]:
             c.move("active", tick, "activate")
         self.contract_map[cid] = c
@@ -450,11 +523,45 @@ class Exchange:
                               "text": r["text"]})
 
     def _op_pay(self, r: dict[str, Any]) -> None:
-        self._company(r["to"])
+        """A voluntary payment. With ``contract_id`` it counts toward the payer's open obligations of that
+        contract to ``to`` (oldest due first; an overpayment counts toward the last one). A tag that names
+        no such obligation is refused. ``to`` may be ``exchange`` only with a tag (a tender penalty)."""
         if not isinstance(r["memo"], str) or len(r["memo"]) > MAX_MEMO_CHARS:
             raise ExchangeError("bad_memo", f"memo must be a string of at most {MAX_MEMO_CHARS} characters")
+        cid, company, to, tick = r["contract_id"], r["company"], r["to"], r["tick"]
+        open_obl: list[dict[str, Any]] = []
+        if cid is not None:
+            if not isinstance(cid, str):
+                raise ExchangeError("bad_tag", f"contract_id must be a string: {cid!r}")
+            open_obl = [o for o in self._contract_obligations(cid) if o["status"] == "open" and o["payer"] == company
+                        and o["payee"] == to and tick < o["settle_tick"]]
+            if not open_obl:
+                raise ExchangeError("bad_tag", f"{company} owes {to} nothing open under {cid}")
+        if to != EXCHANGE:
+            self._company(to)
+        elif cid is None:
+            raise ExchangeError("unknown_company", "a payment to the exchange needs contract_id (a tender penalty)")
         assert self.accounts is not None
-        self.accounts.pay(r["company"], r["to"], r["amount"], tick=r["tick"], ref=r["memo"])
+        if not is_int(r["amount"]) or r["amount"] <= 0:
+            raise ExchangeError("bad_amount", f"amount must be a positive int: {r['amount']!r}")
+        if to == EXCHANGE:
+            if not self.accounts.can_debit(company, r["amount"]):
+                raise ExchangeError("insufficient_funds", f"{company} cannot pay {r['amount']}")
+            self.accounts.transfer(company, EXCHANGE, r["amount"], reason="pay", ref=cid or r["memo"], tick=tick)
+        else:
+            self.accounts.pay(company, to, r["amount"], tick=tick, ref=cid or r["memo"])
+        left = r["amount"]
+        for i, o in enumerate(open_obl):
+            part = left if i == len(open_obl) - 1 else min(left, o["amount"] - o["paid"])
+            if part <= 0:
+                continue
+            o["paid"] += part
+            if tick <= o["due"]:
+                o["paid_by_due"] += part
+            o["payments"].append([tick, part])
+            left -= part
+            if left == 0:
+                break
 
     # ================================================================================== commands (rh verbs)
     def offer(self, tick: int, company: str, kind: str, terms: dict[str, Any], *, to: str | None = None,
@@ -485,8 +592,9 @@ class Exchange:
     def msg(self, tick: int, company: str, to: str, text: str) -> dict[str, Any]:
         return self._record("msg", tick, company, to=to, text=text)
 
-    def pay(self, tick: int, company: str, to: str, amount: int, memo: str = "") -> dict[str, Any]:
-        return self._record("pay", tick, company, to=to, amount=amount, memo=memo)
+    def pay(self, tick: int, company: str, to: str, amount: int, memo: str = "",
+            contract_id: str | None = None) -> dict[str, Any]:
+        return self._record("pay", tick, company, to=to, amount=amount, memo=memo, contract_id=contract_id)
 
     # ================================================================================== coordinator drivers
     def open_tenders(self, tick: int, quarter: int, industries: list[dict[str, Any]]) -> dict[str, Any]:
@@ -549,6 +657,11 @@ class Exchange:
             outcome = compute_supply_settlement(c.terms, delivered)["outcome"]
             out.append(self._record("settle", tick, None, contract_id=c.id, delivered=delivered, parts=parts,
                                     outcome=outcome))
+        for o in sorted(self.obligations.values(), key=lambda o: (o["settle_tick"], _obl_key(o))):
+            if o["status"] == "open" and o["settle_tick"] <= tick:
+                collected, outcome = self._obligation_result(o)
+                out.append(self._record("obligation_settle", tick, None, obligation_id=o["id"], collected=collected,
+                                        paid=o["paid"], outcome=outcome))
         return out
 
     def deadlines(self) -> list[dict[str, Any]]:
@@ -568,6 +681,13 @@ class Exchange:
             if t["status"] == "open":
                 out.append({"tick": t["bid_close"], "kind": "bid_close", "id": t["tender_id"],
                             "companies": list(self.companies)})
+        for o in self.obligations.values():
+            if o["status"] == "open":
+                payer = [o["payer"]] if o["payer"] != EXCHANGE else []
+                out.append({"tick": o["due"], "kind": "obligation_due", "id": o["id"], "companies": payer})
+                if o["settle_tick"] != o["due"]:
+                    out.append({"tick": o["settle_tick"], "kind": "obligation_settle", "id": o["id"],
+                                "companies": []})
         return sorted(out, key=lambda d: (d["tick"], d["kind"], _num(d["id"]), d["id"]))
 
     # ================================================================================== queries (rh verbs)
@@ -598,10 +718,18 @@ class Exchange:
         return out
 
     def contracts(self, company: str) -> list[dict[str, Any]]:
-        """``rh contracts``: every contract and offer the company is party to, or may answer."""
+        """``rh contracts``: every contract and offer the company is party to, or may answer (with the
+        obligations of the company under each)."""
         self._company(company)
         return [self._contract_view(c, company) for c in sorted(self.contract_map.values(), key=_id_key)
                 if c.is_party(company)]
+
+    def obligations_of(self, company: str) -> list[dict[str, Any]]:
+        """The obligations that ``company`` owes or is owed: id, contract, kind, payer, payee, amount, due,
+        settle tick, paid, status."""
+        keys = ("id", "contract_id", "kind", "payer", "payee", "amount", "due", "settle_tick", "paid", "status")
+        return [{k: o[k] for k in keys} for o in sorted(self.obligations.values(), key=_obl_key)
+                if company in (o["payer"], o["payee"]) and o["status"] != "replaced"]
 
     def inbox(self, company: str) -> list[dict[str, Any]]:
         self._company(company)
@@ -639,6 +767,7 @@ class Exchange:
             "sent": [dict(m) for m in self.messages if m["from"] == company],
             "ledger": self.ledger(company),
             "tender_awards": awards,
+            "obligations": self.obligations_of(company),
         }
         if self.arm == "enforced":
             view["settlements"] = settlements
@@ -651,6 +780,7 @@ class Exchange:
             "tender_id": c.tender_id, "your_turn": c.status in OPEN_STATUSES and c.can_respond(company),
             "pending_amendment": copy.deepcopy(c.pending_amendment),
             "terms_history": copy.deepcopy(c.terms_history),
+            "your_obligations": [o for o in self.obligations_of(company) if o["contract_id"] == c.id],
         }
         if c.status == "settled":
             if self.arm == "enforced":
@@ -670,9 +800,12 @@ class Exchange:
                 c = self.contract_map.get(cid)
                 assert c is not None and c.status in LIVE_STATUSES, f"{acct} holds {bal} for a closed contract"
                 assert bal == (c.escrow_bond if sub == "bond" else c.escrow_price), f"{acct} != contract escrow"
-        if self.arm == "cheap_talk":
-            assert all(h.reason in ("pay", "start_balance") for h in self.accounts.history), \
-                "cheap talk moved non-pay money"
+        if self.arm == "cheap_talk":  # only voluntary payments, start balances and tender money move
+            allowed = ("pay", "start_balance", "tender_escrow", "settle_payment", "settle_refund")
+            assert all(h.reason in allowed and (h.reason in ("pay", "start_balance") or h.ref in self.tenders)
+                       for h in self.accounts.history), "cheap talk moved bilateral contract money"
+        for o in self.obligations.values():
+            assert o["paid"] == sum(a for _, a in o["payments"]) and o["paid_by_due"] <= o["paid"], o["id"]
 
     def state(self) -> dict[str, Any]:
         """Canonical, JSON-safe snapshot. Two exchanges with equal records have equal states."""
@@ -684,7 +817,35 @@ class Exchange:
             "tenders": {k: copy.deepcopy(self.tenders[k]) for k in sorted(self.tenders, key=_num_key)},
             "messages": copy.deepcopy(self.messages),
             "ledger": self.accounts.state(),
+            "next_obligation": self.next_obligation,
+            "obligations": {k: copy.deepcopy(self.obligations[k])
+                            for k in sorted(self.obligations, key=lambda k: int(k[1:]))},
         }
+
+
+def instalments(fee: int, window_start: int, deadline: int) -> list[tuple[int, int]]:
+    """The (due tick, amount) of a licence fee: one instalment each quarter after ``window_start`` (in
+    arrears) and the last at ``deadline``; equal amounts, the remainder on the last. A fee of 0: none."""
+    return split(fee, due_ticks(window_start, deadline))
+
+
+def due_ticks(window_start: int, deadline: int) -> list[int]:
+    """The instalment ticks of a licence: every quarter after ``window_start`` before ``deadline``, then
+    ``deadline``."""
+    return list(range(window_start + INSTALMENT_TICKS, deadline, INSTALMENT_TICKS)) + [deadline]
+
+
+def split(total: int, dues: list[int]) -> list[tuple[int, int]]:
+    """``total`` over ``dues`` in equal integer parts, the remainder on the last; no zero parts."""
+    if total <= 0 or not dues:
+        return []
+    each = total // len(dues)
+    parts = [(d, each) for d in dues[:-1]] + [(dues[-1], total - each * (len(dues) - 1))]
+    return [(d, a) for d, a in parts if a > 0]
+
+
+def _obl_key(o: dict[str, Any]) -> tuple[int, int]:
+    return (o["due"], int(o["id"][1:]))
 
 
 def _num(s: str) -> int:

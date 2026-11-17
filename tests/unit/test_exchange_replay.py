@@ -105,8 +105,7 @@ def random_session(seed, arm, steps=400):
 def test_random_sessions_conserve_money_and_replay_identically(seed, arm):
     ex, rejected = random_session(seed, arm)
     assert rejected > 0 and len(ex.records) > 50
-    if arm == "cheap_talk":
-        assert all(h.reason == "pay" for h in ex.accounts.history)
+    ex.check_invariants()  # cheap talk: only payments, start balances and tender money move
     records = json_round_trip(ex.records)
     again = Exchange.replay(records)
     assert again.state() == ex.state()

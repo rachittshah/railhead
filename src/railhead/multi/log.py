@@ -33,7 +33,7 @@ WAKE_REASONS_FIXED = {"elapsed", "horizon"}
 # in exact ticks and evaluates them in Python.
 EXCHANGE_UNTIL = frozenset({"deadline", "offer_received", "message_received"})
 # Wakes that the market forces on a waiter whatever its `until` (a contract deadline; a quarter's tenders).
-FORCED_REASONS = ("deadline", "tender")
+FORCED_REASONS = ("deadline", "tender", "obligation_due")
 
 
 class LogRejected(ReplayRejected):

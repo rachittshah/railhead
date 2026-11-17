@@ -25,7 +25,7 @@ from railhead.exchange.ledger import EXCHANGE
 from railhead.multi.log import EXCHANGE_UNTIL, FORCED_REASONS, TICKS_PER_DAY
 from railhead.multi.regions import RegionMap, clip, region_of
 
-WAKE_ORDER = ("deadline", "tender", "offer_received", "message_received")
+WAKE_ORDER = ("deadline", "obligation_due", "tender", "offer_received", "message_received")
 COMMANDS = ("offer", "counter", "accept", "amend", "withdraw", "tender_bid", "msg", "pay")
 QUERIES = ("market", "contracts", "inbox", "ledger", "view")
 
@@ -280,7 +280,8 @@ def exchange_wakes(ex: Exchange, waiters: dict[int, tuple[list[str], int]], tick
     ``company -> (until, exchange record count when the wait started)``.
 
     * forced: ``deadline`` when a contract of the company reaches its deadline at ``tick``; ``tender``
-      for everyone when a quarter's tenders open at ``tick``;
+      for everyone when a quarter's tenders open at ``tick``; ``obligation_due`` for the payer of an
+      obligation that falls due at ``tick``;
     * ``until=deadline``: any exchange deadline at ``tick`` that names the company (offer expiry, window
       start, bid close);
     * ``until=offer_received``: an offer, counter or amendment for the company since the wait started;
@@ -293,6 +294,8 @@ def exchange_wakes(ex: Exchange, waiters: dict[int, tuple[list[str], int]], tick
         rs: set[str] = set()
         if any(d["kind"] == "deadline" and me in d["companies"] for d in dl):
             rs.add("deadline")
+        if any(d["kind"] == "obligation_due" and me in d["companies"] for d in dl):
+            rs.add("obligation_due")  # forced, both arms: a payment of the company falls due
         if "deadline" in kinds and any(me in d["companies"] for d in dl):
             rs.add("deadline")
         if at_quarter:
@@ -364,7 +367,7 @@ COMMAND_ARGS: dict[str, tuple[str, ...]] = {
     "withdraw": ("contract_id",),
     "tender_bid": ("tender_id", "price"),
     "msg": ("to", "text"),
-    "pay": ("to", "amount", "memo"),
+    "pay": ("to", "amount", "memo", "contract_id", "contract"),
 }
 
 
@@ -469,7 +472,7 @@ def parse_command(m: str, a: dict, *, me: str, now: int, companies: list[dict],
     if m in ("offer", "counter") and a.get("expires_tick") is not None:
         out["expires_tick"] = resolve_tick(a["expires_tick"], now, "expires_tick")
     for k in ("contract_id", "tender_id"):
-        if k in COMMAND_ARGS[m]:
+        if k in COMMAND_ARGS[m] and m != "pay":  # pay: an optional tag
             if not isinstance(a.get(k), str) or not a[k]:
                 raise CommandError(f"{m} needs {k} (for example {'C1' if k == 'contract_id' else 'T1'})")
             out[k] = a[k].strip().upper()
@@ -477,8 +480,17 @@ def parse_command(m: str, a: dict, *, me: str, now: int, companies: list[dict],
         if "price" not in a:
             raise CommandError("tender bid needs price (your total price for the whole quantity)")
         out["price"] = _int_arg(a, "price")
-    if m in ("msg", "pay"):
+    if m == "msg":
         out["to"] = resolve_company(a.get("to"), me, companies)
+    if m == "pay":
+        tag = a.get("contract_id", a.get("contract"))
+        if tag is not None:
+            if not isinstance(tag, str) or not tag.strip():
+                raise CommandError("contract must be a contract id (for example C3 or T2)")
+            out["contract_id"] = tag.strip().upper()
+        to = a.get("to")
+        out["to"] = "exchange" if isinstance(to, str) and to.strip().lower() == "exchange" and tag is not None \
+            else resolve_company(to, me, companies)
     if m == "msg":
         if not isinstance(a.get("text"), str):
             raise CommandError("msg needs text=\"...\"")
