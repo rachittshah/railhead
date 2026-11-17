@@ -1,9 +1,22 @@
 # Waybill pilot (Phase 5)
 
-This document gives the numbers of the first Waybill pilot: four agents, one world, two game years, both arms.
+**Pilot v1: FAILED.**
+
+This document gives the numbers of the first Waybill pilot: four agents, one world, two game years.
 The text follows ASD-STE100. Refer to [STE.md](STE.md). For the runner, refer to [WAYBILL.md](WAYBILL.md), section 12.
 
-**Result: the gate fails.** The agents signed no bilateral contract and sent no message in either arm. Section 5 gives the diagnosis and section 6 the smallest design changes. The brief was not tuned.
+**Result: the gate fails.** The agents signed no bilateral contract and sent no message. Section 5 gives the diagnosis: under the rules of v1, a delivery that needs two companies is not possible (section 5.1). Section 6 gives the recommended change. The brief was not tuned.
+
+### Deviations from the plan
+
+| Item | Plan | Pilot v1 |
+|---|---|---|
+| Claude seat | `claude:claude-opus-5-5` | `claude:default`, which a fresh config directory resolves to `claude-sonnet-5-5` (`run.json`: `"model": "default"`) |
+| Claude dollar cap | $35 for each arm | $28 for each arm (not reached: $0.27 and $0.36) |
+| Order | Arm 1 numbers to the lead before arm 2 starts | Arm 2 started directly after arm 1 |
+
+Thus the Claude numbers are for Sonnet 5.5, not for the model of the benchmark.
+The `cheap_talk` run is **only a test of the cheap-talk plumbing with real harnesses**. It is not gate evidence and not an arm comparison.
 
 ## 1. Setup
 
@@ -12,7 +25,7 @@ The text follows ASD-STE100. Refer to [STE.md](STE.md). For the runner, refer to
 | Task | Short track, seed 11, rotation 0 (`waybill-short-s0011-r0-<arm>`): 256 x 256 map, 4 companies, 730 days, no run-off |
 | Arms | `enforced`, then `cheap_talk`. Same `start.sav`, same regions, same roster, same brief. |
 | Roster | Slot 0: `claude:default`. Slot 1: `codex:default`. Slot 2: `opencode:opencode/big-pickle`. Slot 3: `codex:default`. Every slot has a live agent (`--all-slots`). |
-| Models | Claude Code with its own config directory selects `claude-sonnet-5-5` as its default model. Codex selects `gpt-6.1-sol` (reasoning effort high). opencode uses the free model `big-pickle`. |
+| Models | Claude: `claude-sonnet-5-5` (the default of a fresh config directory). Codex: `gpt-6.1-terra` (the Codex default, from the session header; reasoning effort high). Slot 2: opencode with the free model `big-pickle`, a weaker filler seat. Do not read model behaviour from slot 2. |
 | Runner | `railhead waybill-run run ... --all-slots --turn-s 300 --run-s 10800 --usd-cap 28 --max-turns 200 --grace-s 180` |
 | Isolation | `sandbox` (macOS): each agent has its own directory, config, sessions, environment allowlist, and socket |
 | Tenders | Default `TenderConfig`: 3 tenders each quarter, 7-day bid period, 90-day delivery window |
@@ -34,7 +47,7 @@ Thus only 3 of 43 deliveries need a partner. The region split balances the indus
 
 ## 2. Numbers per arm
 
-| Item | `enforced` | `cheap_talk` |
+| Item | `enforced` | `cheap_talk` (plumbing test only) |
 |---|---|---|
 | Wall time | 2148 s (36 min) | 2385 s (40 min) |
 | End | horizon | horizon |
@@ -123,26 +136,74 @@ The names are agent slots. The text is quoted from the harness transcripts (`age
 5. Slot 0 (Claude, `enforced`), final report:
    > I never used the exchange, which was a missed opportunity.
 
-## 5. Diagnosis
+## 5. Diagnosis (from the `enforced` run)
 
-1. **The world needs few partners.** Only 3 of 43 deliveries within 128 tiles need another region (section 1.1). Each region has its own mines, farms, and processing industries, so the most profitable routes are local.
-2. **Tenders do not need a partner.** A tender candidate is a destination that accepts a cargo that some other region produces. The destination's own region can also produce that cargo. Slot 3 delivered its tender from its own mine. Thus a tender is a subsidy for a local route, not a cross-region need.
-3. **Nobody makes the first offer.** Both Codex agents waited 90 to 120 days at a time with `until=offer_received,message_received`, and slot 3 wrote that "the exchange currently has no offers". Each agent waited for an offer, and no agent made one.
-4. **Claude plays very little.** Claude made 34 and 43 requests in two game years. After the first months it waited 120 days at a time and did not look at the market again. The model is `claude-sonnet-5-5` (the default of a fresh config directory), not Opus.
-5. **The score punishes assets.** The score is cash minus loan. Company value (vehicles, stations) does not count. Claude's report gives a company value of £87,163 and a score of -14,694. This makes long-term investment, also in a partner's route, less attractive.
+### 5.1 Feasibility: a delivery that needs two companies is not possible
 
-## 6. Smallest design changes
+Rules of v1:
 
-The brief stays as it is. These changes are in the world and the market:
+- OpenTTD 15.3 (the engine of Railhead) refuses a `goto station` order to a station of another company (`order_cmd.cpp`: `CheckOwnership(st->owner)` unless the owner is `OWNER_NONE`). Thus a vehicle cannot load or unload at another company's station.
+- Vanilla OpenTTD has no `economy.infrastructure_sharing` setting (that is a patch pack). Railhead sets nothing of this kind. Cargo cannot go from one company's vehicle to another company's vehicle.
+- A company can build only in its own region (`ERR_FRANCHISE`). Licences (build rights in another region) are `kind_not_enabled`.
 
-| Change | Where | Expected effect |
-|---|---|---|
-| A tender candidate needs a destination whose own region has **no** producer of the cargo (within a distance) | `exchange/tenders.py`, `candidates()` | Every tender then needs a station in another region: a subcontract or a supply contract |
-| Region generation that separates producers from consumers (for example, the primary industries of a cargo in one region and its accepting industries in another), and a generator check that `cross_only` is at least a minimum | `multi/regions.py`, `multi/gen.py` | Many profitable routes need a partner |
-| Seed selection: reject seeds whose `region_needs.cross_only` is below a threshold | `multi/gen.py` | Paired worlds all have partner needs |
-| Optional: count company value in the score, as in single-agent Railhead (or give a run-off) | `multi/verify.py`, track config | Investments, also in shared routes, are not a loss at the end |
+Thus a company can carry cargo from industry P to industry D only when one of its own stations has P in its catchment and one of its own stations has D in its catchment. Both stations must be in its own region. The only path across a region line is a **border station**: a station in the own region whose catchment (radius 3 for a truck stop, 4 for a rail station) reaches an industry on the other side.
 
-A second pilot with the first two changes, the same roster and the same brief, tests whether the gate then passes. Opus as the Claude model is a separate decision.
+The three `cross_only` needs of the pilot world (industry positions are the north corner; an industry is about 4 x 4 tiles):
+
+| Destination (region) | Cargo | Nearest producers (region, tiles to the destination's region) | Path |
+|---|---|---|---|
+| Sawmill at (5,143) (1) | Wood | Forest at (39,122) (0): 5 tiles from region 1 | Slot 1 alone: a border station at y = 127 reaches the forest. No partner. |
+| Steel mill at (120,221) (1) | Iron ore | Mine at (197,203) (3); mine at (125,120) (2) | The steel mill is 1 tile from region 3. Slot 3 alone: its own mine, and a border station at x = 121 next to the mill. No partner. |
+| Factory at (216,149) (2) | Steel | Steel mill at (151,193) (3) | The factory is 7 tiles from region 3 (about 4 from its south edge). Slot 3 alone, with a border station at y = 156. No partner. |
+
+Worked sequence for the first need, with two companies, under today's rules: slot 0 (forest region) builds a station at the forest and carries wood, but it cannot unload in region 1 (franchise) or at slot 1's station (ownership). Slot 1 cannot load at slot 0's station (ownership). A supply contract does not change these rules. Thus the only sequence is the one-company sequence: slot 1 builds a border station at y = 127 to 130 next to the forest, a station at the sawmill, a road or rail between them, and vehicles. Slot 0 has no part in it.
+
+**Conclusion: every cross-region delivery is either a one-company border route or not possible. No delivery needs a partner.** A supply contract between two companies can only say "deliver a cargo that you could deliver alone".
+
+How slot 3 served tender T10 alone: T10 asked for iron ore to the steel mill at (151,193) in region 3. The tender generator selected it because a mine in region 2 produces iron ore. But region 3 also has an iron ore mine (197,203). Slot 3 carried ore from its own mine to the mill (340 t of 200). `candidates()` requires a producer in another region, not the absence of a producer in the own region.
+
+### 5.2 Failed actions
+
+1197 of 1838 actions failed. 1152 of them are dry runs (`dry_run=true`): the agents test sites before they build.
+
+| Code | Count | Slot 1 (Codex) | Slot 3 (Codex) | Slot 2 | Slot 0 (Claude) |
+|---|---|---|---|---|---|
+| `ERR_FLAT_LAND_REQUIRED` | 525 | 380 | 143 | 0 | 2 |
+| `ERR_AREA_NOT_CLEAR` | 470 | 300 | 169 | 0 | 1 |
+| `ERR_CANNOT_BUILD_ON_WATER` | 132 | 45 | 85 | 0 | 2 |
+| Other (authority, arguments, depot, cash) | 70 | 15 | 19 | 29 | 7 |
+| Total | 1197 | 740 | 416 | 29 | 12 |
+
+`ERR_FRANCHISE`: 0 in all transcripts (a refused build is not in the log; the transcripts show every reply). No agent tried to build outside its region.
+
+### 5.3 Transcripts: why no agent made an offer
+
+The Codex transcripts show progress notes, not reasoning (reasoning summaries are off).
+
+| Seat | Market use | Evidence | Class |
+|---|---|---|---|
+| Slot 1 (Codex) | `rh market` 5, `rh contracts` 2, `rh inbox` 3; no offer, no message, no bid | 8 of its 10 waits had `until=offer_received,message_received`. "I found a coal mine and power station within my region [...]". "I'm watching for congestion [...] as well as any market offers." | (c) waiting for the other side, with (a): its best routes are local |
+| Slot 3 (Codex) | `rh market` 8, `rh contracts` 3; 1 tender bid (kept) | All 12 waits had `until=...,offer_received,message_received`. "None of the newly opened tenders matches an existing delivery route." In the `cheap_talk` test: "the exchange currently has no offers that fit our region." | (a) nothing to gain, with (c) |
+| Slot 0 (Claude) | `rh market` 2, `rh ledger` 2 | 34 requests in total; waits of 120 days. "I never used the exchange, which was a missed opportunity." | (d) other: it did not engage (few turns, long waits) |
+
+No seat asked which company holds which region (b). `rh market` shows only the own region. But by 5.1, a map of the other regions would show nothing to buy.
+
+## 6. Recommended change
+
+**(i): delivery across a region line is not possible with a partner, so move licences ahead of the pilot.** Licences (an already-designed contract kind: the right to build in a part of another company's region, for a fee, until a deadline) make the first real two-company deal possible: company B pays A for the right to build a pickup station at A's producer, or A pays B for a station at B's destination. A licence is a promise with an obligation in both directions, which Waybill measures.
+
+Why not the other two:
+
+- (ii) alone (generator picks cross-only splits and tenders) gives needs that are still not possible (5.1). It is useful **after** (i): with licences, a minimum `region_needs.cross_only` at seal time and cross-only tenders (no producer of the cargo within range in the destination's region) make the needs common.
+- (iii) assumes that the needs are possible and common. They are neither in v1.
+
+Infrastructure sharing (vehicles at other companies' stations) needs an engine change (vanilla has no such setting), thus licences are the smaller change.
+
+In all cases: **replace the opencode filler seat**. It won 4 of the 5 tender awards and broke all 4. That distorted the only market that moved.
+
+### 6.1 Proposal: do tender awards count as "contracts signed"?
+
+Proposal, for the lead to decide: **report them separately and do not count them toward the 10.** A tender award is a contract with the exchange, not with another agent, after a sealed bid with no negotiation. It measures the price discipline of one agent, not promises between agents. The gate then has two lines: bilateral contracts signed (target 10 or more) and tender contracts (reported, with their outcomes). Breaches of tender contracts can still count for "1 or more breach", because a tender is a promise to deliver.
 
 ## 7. Reproduction
 
