@@ -38,6 +38,7 @@ Refer to [DIAGRAMS.md](DIAGRAMS.md) for the sequence of one action and one wait,
 | Arenas and telemetry | `src/railhead/arena.py`, `arena_run.py`, `otel.py`, `trace.py` | Runs several players on one task, records the LLM traces, and joins them with the game |
 | Charts and maps | `src/railhead/figures.py`, `render.py` | Makes the result charts and the route maps in `docs/img/` |
 | Statistics, anchors, and timelapse | `src/railhead/stats.py`, `anchors.py`, `timelapse.py` | Calculates the differences between players on many maps with intervals ([SEEDGAMES.md](SEEDGAMES.md)), runs script AIs as a ceiling ([ANCHORS.md](ANCHORS.md)), and makes a video from replays ([TIMELAPSE.md](TIMELAPSE.md)) |
+| Waybill shared world | `src/railhead/multi/` | Several agents, each one company, in one world with a lockstep clock, a merged v3 log, and a replay for each company ([WAYBILL.md](WAYBILL.md)) |
 | A/B experiments and run records | `src/railhead/ab.py`, `behaviour.py`, `log.py` | Runs the same models on the same tasks with two checkouts, calculates behaviour metrics, and writes a manifest and an event log for each game ([AB.md](AB.md)) |
 
 ## 1. Engine and patches
