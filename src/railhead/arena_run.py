@@ -268,21 +268,23 @@ def next_step(alive: bool, submitted: bool, provider_error: bool, resumes: int, 
     return "resume" if resumes < max_resumes else "failed"
 
 
-def resume_command(p: Player, session: str | None, workdir: Path, otel: str = "http://127.0.0.1:4318") -> list[str]:
-    """Continue the same session. With no session id, start a fresh agent that gets the rules and the resume note."""
+def resume_command(p: Player, session: str | None, workdir: Path, otel: str = "http://127.0.0.1:4318",
+                   prompt: str = PROMPT, resume_prompt: str = RESUME_PROMPT) -> list[str]:
+    """Continue the same session. With no session id, start a fresh agent that gets the rules and the resume note.
+    ``prompt`` and ``resume_prompt`` let another runner (railhead.multi.arena) reuse this with its own texts."""
     if p.vendor == "script":
         return agent_command(p, "", workdir, otel)
     if not session:
-        return agent_command(p, PROMPT + "\n\n" + RESUME_PROMPT, workdir, otel)
+        return agent_command(p, prompt + "\n\n" + resume_prompt, workdir, otel)
     if p.vendor == "claude":
-        return ["claude", "-p", "--resume", session, RESUME_PROMPT, "--model", p.model,
+        return ["claude", "-p", "--resume", session, resume_prompt, "--model", p.model,
                 "--dangerously-skip-permissions", "--output-format", "stream-json", "--verbose"]
     if p.vendor == "codex":  # the flags of agent_command that `codex exec resume` accepts (it has no -C)
-        fresh = agent_command(p, RESUME_PROMPT, workdir, otel)
+        fresh = agent_command(p, resume_prompt, workdir, otel)
         i = fresh.index("-C")
-        return ["codex", "exec", "resume"] + fresh[2:i] + fresh[i + 2:-1] + [session, RESUME_PROMPT]
+        return ["codex", "exec", "resume"] + fresh[2:i] + fresh[i + 2:-1] + [session, resume_prompt]
     return ["opencode", "run", "--standalone", "--session", session, "--model", p.model, "--auto", "--format", "json",
-            RESUME_PROMPT]
+            resume_prompt]
 
 
 def _submitted(pdir: Path) -> bool:
