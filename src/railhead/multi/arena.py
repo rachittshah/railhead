@@ -205,24 +205,94 @@ def command(seat: Seat, prompt: str, workdir: Path, otel: str, session: str | No
     return cmd
 
 
+# The variables an agent inherits from the runner. Everything else (the operator's tokens, the parent
+# Claude Code session, messaging sockets, API keys) stays out. ``--pass-env`` adds names.
+ENV_ALLOW = ("HOME", "USER", "LOGNAME", "SHELL", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "TZ")
+SYSTEM_PATH = ("/usr/local/bin", "/opt/homebrew/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin")
+
+
+def scrubbed_base(source: dict | None = None, extra: tuple[str, ...] = ()) -> dict:
+    """The allowlisted variables of ``source`` and a PATH of the system directories plus the directories of the
+    harness programs (claude, codex, opencode) as ``source`` finds them."""
+    import shutil
+
+    src = dict(os.environ if source is None else source)
+    base = {k: src[k] for k in (*ENV_ALLOW, *extra) if k in src}
+    dirs: list[str] = []
+    for prog in ("claude", "codex", "opencode"):
+        found = shutil.which(prog, path=src.get("PATH", ""))
+        if found:
+            dirs.append(str(Path(found).parent))
+    base["PATH"] = ":".join(dict.fromkeys([*dirs, *SYSTEM_PATH]))
+    return base
+
+
 def environment(seat: Seat, task_id: str, agent_dir: Path, socket: Path, otel: str,
-                base: dict | None = None) -> dict:
-    """railhead.arena_run's agent environment, bound to one coordinator socket. The agent gets no path of the
-    coordinator state, the task directory or the other agents."""
+                base: dict | None = None, claude_token: str | None = None) -> dict:
+    """railhead.arena_run's agent environment on a scrubbed base, bound to one coordinator socket. The agent
+    gets no path of the coordinator state, the task directory or the other agents, and keeps all its
+    harness state (config, sessions, temporary files) in its own directory."""
+    base = scrubbed_base() if base is None else dict(base)
     env = arena_run.agent_env(seat.player, task_id, agent_dir / "rh-state", agent_dir, otel, base=base)
     # CLAUDE_CODE_PLUGIN_DIRS loads the operator's own plugins even in --safe-mode
     for k in ("RAILHEAD_TASKS", "RAILHEAD_TASK", "RAILHEAD_SLOT", "CLAUDE_CODE_PLUGIN_DIRS"):
         env.pop(k, None)
     env["RAILHEAD_SOCKET"] = str(socket)
+    tmp = agent_dir / "tmp"
+    tmp.mkdir(parents=True, exist_ok=True)
+    env["TMPDIR"] = str(tmp)
+    # harness shells are zsh login shells: an empty ZDOTDIR keeps the operator's ~/.zshrc (and the keys it
+    # exports) out of the agent's shell
+    zdot = agent_dir / "zdotdir"
+    zdot.mkdir(parents=True, exist_ok=True)
+    env["ZDOTDIR"] = str(zdot)
+    if seat.vendor in ("claude", "stub"):  # a private config dir: sessions, history and settings stay here
+        env["CLAUDE_CONFIG_DIR"] = str(agent_dir / "claude-config")
+        env["CLAUDE_CODE_TMPDIR"] = env["CLAUDE_TMPDIR"] = str(tmp)
+        if claude_token:
+            env["CLAUDE_CODE_OAUTH_TOKEN"] = claude_token
     if seat.vendor == "codex":  # a private CODEX_HOME: no operator AGENTS.md, config, hooks or skills
         home = agent_dir / "codex-home"
         home.mkdir(parents=True, exist_ok=True)
-        src = Path((base or os.environ).get("CODEX_HOME") or Path.home() / ".codex") / "auth.json"
+        src = Path(base.get("CODEX_HOME") or Path(base.get("HOME") or Path.home()) / ".codex") / "auth.json"
         link = home / "auth.json"
-        if src.exists() and not link.exists():
+        if src.exists() and not link.is_symlink() and not link.exists():
             link.symlink_to(src)  # a link, not a copy: the run directory never holds the credentials
         env["CODEX_HOME"] = str(home)
+    if seat.vendor == "opencode":  # sessions and caches under the agent directory too
+        for k, sub in (("XDG_DATA_HOME", "data"), ("XDG_STATE_HOME", "state"), ("XDG_CACHE_HOME", "cache")):
+            env[k] = str(agent_dir / sub)
     return env
+
+
+def claude_oauth_token(refresh_below_s: float = 600.0) -> str | None:
+    """The operator's Claude login as a bearer token for an agent with its own CLAUDE_CONFIG_DIR.
+
+    ``CLAUDE_CODE_OAUTH_TOKEN`` in the runner's environment wins (for example a ``claude setup-token`` token).
+    Else, on macOS, the access token of the operator's login from the keychain. Only the access token goes to
+    the agents, never the refresh token: an agent cannot rotate the operator's login. When the access token
+    expires within ``refresh_below_s``, one short ``claude -p`` call with the operator's own configuration lets
+    Claude Code refresh it first. A session whose token expires ends with an auth error and is resumed with a
+    new token (Runner.decide)."""
+    if os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
+        return os.environ["CLAUDE_CODE_OAUTH_TOKEN"]
+    if sys.platform != "darwin":
+        return None
+
+    def read() -> dict:
+        r = subprocess.run(["security", "find-generic-password", "-s", "Claude Code-credentials", "-w"],
+                           capture_output=True, text=True, timeout=30, check=False)
+        try:
+            return json.loads(r.stdout).get("claudeAiOauth") or {}
+        except json.JSONDecodeError:
+            return {}
+
+    o = read()
+    if o and float(o.get("expiresAt", 0)) / 1000 - time.time() < refresh_below_s:
+        subprocess.run(["claude", "-p", "Reply OK.", "--safe-mode", "--max-turns", "1"], capture_output=True,
+                       timeout=180, check=False, stdin=subprocess.DEVNULL)
+        o = read()
+    return o.get("accessToken") or None
 
 
 def _sb(path: Path | str) -> str:
@@ -230,21 +300,30 @@ def _sb(path: Path | str) -> str:
 
 
 def sandbox_profile(agent_dir: Path, run_dir: Path, task_dir: Path, own_socket: Path, other_sockets: list[Path],
-                    allow_ports: list[int], home: Path | None = None) -> str:
-    """A macOS sandbox profile (sandbox-exec) for one agent. Everything is allowed, except: reading or
-    writing the run directory (the merged log, the other agents' transcripts, the OTLP data) and the task
-    directory (the market seed), apart from the agent's own directory; connecting to the control socket
-    and the other agents' sockets; TCP to localhost (the engine's game and admin ports) apart from the
-    OTLP sink; and reading the operator's personal agent instructions. The denials are of file contents
-    and directory listings (``file-read-data``), not of metadata: a harness must be able to resolve the
-    path of its own directory, which needs ``lstat`` on every parent."""
+                    allow_ports: list[int], home: Path | None = None, tmp_root: Path | None = None) -> str:
+    """A macOS sandbox profile (sandbox-exec) for one agent. Everything is allowed, except:
+
+    - the run directory (the merged log, the other agents' transcripts and harness state, the OTLP data) and
+      the task directory (the market seed), apart from the agent's own directory;
+    - the operator's harness state: ``~/.claude`` and ``~/.claude.json`` (sessions, history, instructions;
+      each agent has its own CLAUDE_CONFIG_DIR), ``~/.codex`` apart from ``auth.json`` (each agent has its
+      own CODEX_HOME), ``~/.agents``, and the per-user Claude temporary root (``tmp_root``, other sessions'
+      tool output);
+    - the control socket and the other agents' sockets;
+    - TCP to localhost (the engine's game and admin ports) apart from the OTLP sink.
+
+    The denials are of file contents and directory listings (``file-read-data``) and writes, not of
+    metadata: a harness must be able to resolve the path of its own directory, which needs ``lstat`` on
+    every parent. The allow rules name ``file-read-data`` because the more specific denial otherwise wins."""
     home = Path(home or Path.home())
+    tmp_root = Path(tmp_root) if tmp_root else Path(f"/private/tmp/claude-{os.getuid()}")
+    deny = [run_dir, task_dir, home / ".claude", home / ".codex", home / ".agents", tmp_root]
     lines = ["(version 1)", "(allow default)",
-             f"(deny file-read-data file-write* (subpath {_sb(run_dir)}) (subpath {_sb(task_dir)}))",
+             "(deny file-read-data file-write* " + " ".join(f"(subpath {_sb(d)})" for d in deny) + ")",
+             f"(deny file-read-data file-write* (literal {_sb(home / '.claude.json')}))",
+             f"(allow file-read* file-read-data file-write* (literal {_sb(home / '.codex' / 'auth.json')}))",
              f"(allow file-read* file-read-data file-write* (subpath {_sb(agent_dir)}))",
-             f"(allow file-read* file-read-data file-write* (literal {_sb(own_socket)}))",
-             (f"(deny file-read-data (literal {_sb(home / '.claude/CLAUDE.md')}) (subpath {_sb(home / '.claude/rules')})"
-             f" (subpath {_sb(home / '.agents')}) (literal {_sb(home / '.codex/AGENTS.md')}))")]
+             f"(allow file-read* file-read-data file-write* (literal {_sb(own_socket)}))"]
     for s in other_sockets:
         lines.append(f"(deny network-outbound (remote unix-socket (path-literal {_sb(s)})))")
         lines.append(f"(deny file-read-data file-write* (literal {_sb(s)}))")
@@ -501,7 +580,8 @@ class Runner:
             "grace_s": opts.get("grace_s", 120.0), "poll_s": opts.get("poll_s", 1.0), "isolation": isolation,
             "absent_slots": [s for s in slots if s not in {x.slot for x in seats}],
             "seats": [asdict(s) for s in seats], "started": time.time(), "elapsed_s": 0.0, "ended": None,
-            "otel_port": None,
+            "otel_port": None, "claude_auth": opts.get("claude_auth", "token"),
+            "pass_env": [x for x in (opts.get("pass_env") or "").split(",") if x],
         }
         run_dir.mkdir(parents=True, exist_ok=True)
         _write_json(run_dir / "run.json", manifest)
@@ -601,7 +681,9 @@ class Runner:
         else:
             cmd = command(seat, text, work, self.otel, session=session, resume_prompt=prompt_extra,
                           max_turns=self.m.get("max_turns"))
-        env = environment(seat, self.m["task_id"], adir, own, self.otel)
+        token = claude_oauth_token() if seat.vendor == "claude" and self.m.get("claude_auth") == "token" else None
+        env = environment(seat, self.m["task_id"], adir, own, self.otel,
+                          base=scrubbed_base(extra=tuple(self.m.get("pass_env") or ())), claude_token=token)
         if self.m["isolation"] == "sandbox":
             others = [p for s, p in socks.items() if s != seat.slot] + [control_socket_path(self.coord_state)]
             prof = sandbox_profile(adir, self.run_dir, self.task_dir, own, others, [int(self.m["otel_port"])])
@@ -892,7 +974,8 @@ def _opts(argv: list[str]) -> tuple[list[str], dict]:
     conv = {"--turn-s": ("turn_s", float), "--run-s": ("run_s", float), "--max-turns": ("max_turns", int),
             "--nudges": ("nudges", int), "--max-resumes": ("max_resumes", int),
             "--max-backoff-s": ("max_backoff_s", float), "--grace-s": ("grace_s", float),
-            "--isolation": ("isolation", str), "--poll": ("poll_s", float)}
+            "--isolation": ("isolation", str), "--poll": ("poll_s", float), "--pass-env": ("pass_env", str),
+            "--claude-auth": ("claude_auth", str)}
     pos, opts = [], {}
     it = iter(argv)
     for a in it:

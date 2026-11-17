@@ -127,7 +127,7 @@ def test_sandbox_profile_text(tmp_path):
                               [tmp_path / "b.sock"], [4318], home=tmp_path / "home")
     assert '(deny network-outbound (remote ip "localhost:*"))' in prof
     assert prof.index("localhost:*") < prof.index("localhost:4318")  # the later rule wins
-    assert "b.sock" in prof and ".claude/CLAUDE.md" in prof and ".codex/AGENTS.md" in prof
+    assert "b.sock" in prof and "home/.claude\"" in prof and "home/.claude.json" in prof and "home/.agents" in prof
 
 
 @pytest.mark.skipif(not wa.sandbox_available(), reason="macOS sandbox-exec only")
@@ -145,7 +145,8 @@ def test_the_sandbox_lets_an_agent_reach_only_its_own_socket_and_directory(tmp_p
     own, other = short / "a0.sock", short / "a1.sock"
     servers = [_serve(own), _serve(other)]
     try:
-        prof = wa.sandbox_profile(adir, run, task, own, [other], [], home=tmp_path / "home")
+        prof = wa.sandbox_profile(adir, run, task, own, [other], [], home=tmp_path / "home",
+                                  tmp_root=tmp_path / "claude-tmp")
         (adir / "p.sb").write_text(prof)
         code = ("import socket,sys\n"
                 "for p in sys.argv[1:3]:\n"
@@ -171,6 +172,51 @@ def test_the_sandbox_lets_an_agent_reach_only_its_own_socket_and_directory(tmp_p
         import shutil
 
         shutil.rmtree(short, ignore_errors=True)
+
+
+SESSION_PROBE = ("import os,sys\n"
+                 "for p in sys.argv[1:]:\n"
+                 "    try: (os.listdir(p) if os.path.isdir(p) else open(p).read()); print('ok')\n"
+                 "    except OSError: print('denied')\n")
+
+
+@pytest.mark.skipif(not wa.sandbox_available(), reason="macOS sandbox-exec only")
+def test_agent_a_cannot_list_or_read_the_sessions_of_agent_b_or_the_operator(tmp_path):
+    """Each agent keeps its Claude sessions in its own CLAUDE_CONFIG_DIR; the operator's ~/.claude, ~/.codex
+    (apart from auth.json) and the Claude temporary root are closed."""
+    run, home, ctmp = tmp_path / "run", tmp_path / "home", tmp_path / "claude-tmp"
+    a, b = run / "agents" / "s0-claude", run / "agents" / "s1-claude"
+    env_a = wa.environment(wa.Seat(0, "claude", "default", "s0-claude"), "t", a, Path("/x.sock"), "http://x",
+                           base={"PATH": "/usr/bin", "HOME": str(home)}, claude_token="tok")
+    assert env_a["CLAUDE_CONFIG_DIR"] == str(a / "claude-config") and env_a["CLAUDE_CODE_OAUTH_TOKEN"] == "tok"
+    for d in (a / "claude-config/projects/p", b / "claude-config/projects/q", home / ".claude/projects/r",
+              home / ".codex", ctmp / "slug"):
+        d.mkdir(parents=True)
+    (b / "claude-config/projects/q/s.jsonl").write_text("b's session")
+    (home / ".claude/history.jsonl").write_text("operator prompts")
+    (home / ".codex/auth.json").write_text("{}")
+    (home / ".codex/AGENTS.md").write_text("operator rules")
+    (a / "claude-config/projects/p/mine.jsonl").write_text("mine")
+    prof = wa.sandbox_profile(a, run, tmp_path / "task", tmp_path / "own.sock", [], [], home=home, tmp_root=ctmp)
+    (a / "p.sb").write_text(prof)
+    paths = [a / "claude-config/projects/p", a / "claude-config/projects/p/mine.jsonl", home / ".codex/auth.json",
+             b / "claude-config/projects", b / "claude-config/projects/q/s.jsonl", home / ".claude/projects",
+             home / ".claude/history.jsonl", home / ".codex/AGENTS.md", ctmp]
+    r = subprocess.run(["/usr/bin/sandbox-exec", "-f", str(a / "p.sb"), sys.executable, "-I", "-c", SESSION_PROBE,
+                        *map(str, paths)], check=False, capture_output=True, text=True, timeout=60)
+    assert r.stdout.split() == ["ok"] * 3 + ["denied"] * 6, r
+
+
+def test_the_agent_environment_is_an_allowlist():
+    src = {"PATH": "/usr/bin:/bin", "HOME": "/h", "USER": "u", "LANG": "C", "CLAUDE_CODE_SESSION_ID": "parent",
+           "CLAUDE_CODE_MESSAGING_TOKEN": "t", "OPENROUTER_API_KEY": "k", "AWS_SECRET_ACCESS_KEY": "s", "FOO": "1"}
+    base = wa.scrubbed_base(src, extra=("FOO",))
+    assert set(base) == {"PATH", "HOME", "USER", "LANG", "FOO"}
+    assert base["PATH"].endswith("/usr/bin:/bin:/usr/sbin:/sbin")
+    env = wa.environment(wa.Seat(0, "claude", "default", "s0-claude"), "t", Path("/tmp/wa-env/a"), Path("/s"),
+                         "http://x", base=base)
+    assert not {k for k in env if "SESSION_ID" in k or "MESSAGING" in k or k.endswith("_API_KEY")}
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in env and env["TMPDIR"] == "/tmp/wa-env/a/tmp"
 
 
 # ---------------------------------------------------------------------------------------------- metering
