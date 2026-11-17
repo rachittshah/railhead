@@ -252,7 +252,9 @@ def cross_region_needs(snapshot: list[dict], max_distance: int | None = None) ->
     for i in snapshot:
         counts[str(i["region"])] = counts.get(str(i["region"]), 0) + 1
     return {"industries": len(snapshot), "industries_by_region": counts, "local": local, "cross_only": cross,
-            "by_region": by_region, "tender_candidates": len(candidates(snapshot)), "max_distance": max_distance}
+            "by_region": by_region, "tender_candidates": len(candidates(snapshot)),
+            "tender_candidates_cross_only": len(candidates(snapshot, max_distance or 0)) if max_distance else None,
+            "max_distance": max_distance}
 
 
 def _addressed_to(ex: Exchange, r: dict, me: str) -> bool:

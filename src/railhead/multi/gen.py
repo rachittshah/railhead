@@ -151,6 +151,7 @@ TRACKS = {
     "decade": Track("decade", agents=8, map_log2=9, horizon_days=3650, runoff_days=365),
 }
 ARMS = ("enforced", "cheap_talk")
+REACH_TILES = 128  # "within reach": the Manhattan distance of a delivery that cross-region needs and tenders count
 
 
 @dataclass(frozen=True)
@@ -215,14 +216,16 @@ def gen_track(track: str, seed: int, out: Path, rotations: list[int] | None = No
                 tdir = Path(out) / plan.task_id
                 tdir.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(work / "start.sav", tdir / "start.sav")
+                tcfg = {"reach_tiles": REACH_TILES, **(tender or {})}  # tenders need another company's region
                 market = MarketConfig(arm=arm, seed=seed, start_balances=dict(start_balances or {}),
-                                      quarter_days=t.quarter_days, tender=dict(tender or {}))
+                                      quarter_days=t.quarter_days, tender=tcfg)
                 rm = region_maps[r]
                 extra = {"track": track, "seed": seed, "rotation": r, "arm": arm,
                          "region_types": {str(k): v for k, v in rm.types.items()},
                          "region_industries": {str(k): sum(region_of(rm, x, y) == k for x, y in ind_tiles)
                                                for k in sorted(rm.regions)},
-                         "region_needs": cross_region_needs(industry_snapshot(ind_rows, rm, 0), max_distance=128)}
+                         "region_needs": cross_region_needs(industry_snapshot(ind_rows, rm, 0),
+                                                          max_distance=REACH_TILES)}
                 specs.append(write_task(tdir, plan.task_id, companies, horizon_days or t.horizon_days,
                                         t.runoff_days, scenario=sc,
                                         split=split, regions=rm, market=market, extra_objective=extra,

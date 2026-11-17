@@ -51,6 +51,10 @@ class TenderConfig:
     - ``max_price = quantity * (payout_base_per_unit + payout_per_unit_per_tile * distance)``
     - ``penalty_per_unit = max_price * penalty_bp // 10000 // quantity``
     - bids close ``bid_ticks`` after opening; delivery window = [bid close, bid close + ``window_ticks``]
+    - ``reach_tiles`` > 0: a destination qualifies only if no industry in its own region produces the cargo
+      within ``reach_tiles`` (Manhattan), and the nearest producer in another region is within it. Every
+      such tender needs a station in another company's region (a licence or a subcontract). 0: the old rule
+      (a producer in another region, at any distance, even if the own region has one).
     """
     per_quarter: int = 3
     quantity_base: int = 200
@@ -61,6 +65,7 @@ class TenderConfig:
     penalty_bp: int = 5000
     bid_ticks: int = 7 * TICKS_PER_DAY
     window_ticks: int = 90 * TICKS_PER_DAY
+    reach_tiles: int = 0
 
     def __post_init__(self) -> None:
         for k, v in asdict(self).items():
@@ -78,19 +83,24 @@ def draw(n: int, *labels: Any) -> int:
     return int.from_bytes(h, "big") % n
 
 
-def candidates(industries: list[dict[str, Any]] | list[Industry]) -> list[dict[str, int]]:
+def candidates(industries: list[dict[str, Any]] | list[Industry], reach: int = 0) -> list[dict[str, int]]:
     inds = sorted((i if isinstance(i, Industry) else Industry.from_dict(i) for i in industries), key=lambda i: i.id)
     if len({i.id for i in inds}) != len(inds):
         raise ExchangeError("bad_snapshot", "duplicate industry id")
     out = []
     for dest in inds:
         for cargo in sorted(set(dest.accepts)):
-            best = None
+            best, local = None, False
             for p in inds:
-                if p.region != dest.region and cargo in p.produces:
-                    d = abs(p.tile[0] - dest.tile[0]) + abs(p.tile[1] - dest.tile[1])
-                    if best is None or (d, p.id) < best:
-                        best = (d, p.id)
+                if cargo not in p.produces or p.id == dest.id:
+                    continue
+                d = abs(p.tile[0] - dest.tile[0]) + abs(p.tile[1] - dest.tile[1])
+                if p.region == dest.region:
+                    local = local or (reach > 0 and d <= reach)
+                elif best is None or (d, p.id) < best:
+                    best = (d, p.id)
+            if reach > 0 and (local or best is None or best[0] > reach):
+                continue
             if best is not None:
                 out.append({"industry": dest.id, "cargo": cargo, "distance": best[0], "source_industry": best[1],
                             "region": dest.region})
@@ -101,7 +111,7 @@ def generate_tenders(industries: list[dict[str, Any]], *, seed: int, quarter: in
                      config: TenderConfig | None = None, first_index: int = 1) -> list[dict[str, Any]]:
     """Tenders for one quarter. Ids are ``T<n>`` from ``first_index`` upward."""
     cfg = config or TenderConfig()
-    pool = candidates(industries)
+    pool = candidates(industries, cfg.reach_tiles)
     picked = []
     for i in range(min(cfg.per_quarter, len(pool))):
         picked.append(pool.pop(draw(len(pool), seed, quarter, "pick", i)))
