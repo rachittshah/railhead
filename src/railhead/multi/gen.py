@@ -158,10 +158,12 @@ class TaskPlan:
     seed: int
     rotation: int
     arm: str
+    horizon_days: int | None = None  # None: the horizon of the track
 
     @property
     def task_id(self) -> str:
-        return f"{FAMILY}-{self.track}-s{self.seed:04d}-r{self.rotation}-{self.arm}"
+        h = "" if self.horizon_days is None else f"-h{self.horizon_days}"
+        return f"{FAMILY}-{self.track}-s{self.seed:04d}-r{self.rotation}-{self.arm}{h}"
 
 
 def plan_track(track: str, seeds: list[int], rotations: str | list[int] = "cycle",
@@ -187,9 +189,11 @@ def plan_track(track: str, seeds: list[int], rotations: str | list[int] = "cycle
 
 def gen_track(track: str, seed: int, out: Path, rotations: list[int] | None = None,
               arms: tuple[str, ...] = ARMS, start_balances: dict[int, int] | None = None,
-              tender: dict | None = None, split: str = "train") -> list[TaskSpec]:
+              tender: dict | None = None, split: str = "train", horizon_days: int | None = None) -> list[TaskSpec]:
     """Make the world of one seed once, then one task directory for each (rotation, arm). All of them
-    have the same start.sav; the rotation changes only regions.json, the arm only the market config."""
+    have the same start.sav; the rotation changes only regions.json, the arm only the market config.
+    ``horizon_days`` shortens (or lengthens) the track horizon for smoke runs; the task id then ends in
+    ``-h<days>`` so a short game is never mistaken for a track game."""
     from railhead.gen.scenario import sample_scenario, server_config
 
     t = TRACKS[track]
@@ -205,7 +209,7 @@ def gen_track(track: str, seed: int, out: Path, rotations: list[int] | None = No
             ind_tiles = [(int(i["x"]), int(i["y"])) for i in w.call("industries")]
         for r in rotations:
             for arm in arms:
-                plan = TaskPlan(track, seed, r, arm)
+                plan = TaskPlan(track, seed, r, arm, horizon_days)
                 tdir = Path(out) / plan.task_id
                 tdir.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(work / "start.sav", tdir / "start.sav")
@@ -216,7 +220,8 @@ def gen_track(track: str, seed: int, out: Path, rotations: list[int] | None = No
                          "region_types": {str(k): v for k, v in rm.types.items()},
                          "region_industries": {str(k): sum(region_of(rm, x, y) == k for x, y in ind_tiles)
                                                for k in sorted(rm.regions)}}
-                specs.append(write_task(tdir, plan.task_id, companies, t.horizon_days, t.runoff_days, scenario=sc,
+                specs.append(write_task(tdir, plan.task_id, companies, horizon_days or t.horizon_days,
+                                        t.runoff_days, scenario=sc,
                                         split=split, regions=rm, market=market, extra_objective=extra,
                                         title=f"Waybill ({track} track): a shared world with a contract market"))
         return specs
@@ -250,8 +255,8 @@ def main(argv: list[str] | None = None) -> int:
 
 def track_main(argv: list[str]) -> int:
     """python -m railhead.multi.gen track <short|decade> <first_seed> <count> <out_dir>
-    [--rotations cycle|all] [--arms enforced,cheap_talk] [--start-balances 0=50000,1=0]"""
-    opts = {"--rotations": "cycle", "--arms": ",".join(ARMS), "--start-balances": ""}
+    [--rotations cycle|all] [--arms enforced,cheap_talk] [--start-balances 0=50000,1=0] [--horizon DAYS]"""
+    opts = {"--rotations": "cycle", "--arms": ",".join(ARMS), "--start-balances": "", "--horizon": ""}
     pos = []
     it = iter(argv)
     for a in it:
@@ -269,7 +274,8 @@ def track_main(argv: list[str]) -> int:
     plans = plan_track(track, seeds, opts["--rotations"], arms)
     for seed in seeds:
         rots = sorted({p.rotation for p in plans if p.seed == seed})
-        for spec in gen_track(track, seed, out, rotations=rots, arms=arms, start_balances=sb):
+        for spec in gen_track(track, seed, out, rotations=rots, arms=arms, start_balances=sb,
+                              horizon_days=int(opts["--horizon"]) if opts["--horizon"] else None):
             print(spec.task_id)
     return 0
 

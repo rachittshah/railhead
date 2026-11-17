@@ -473,3 +473,18 @@ def test_market_wake_kinds_need_a_market(make):
     with pytest.raises(OpError) as e:
         ex(c, 0, "market")
     assert e.value.code == "ERR_NO_MARKET"
+
+
+def test_control_snapshot_gives_the_live_end_state(make):
+    c = make()
+    snap = c.control({"op": "snapshot"})
+    assert snap["ticks"] == c.sw.ticks and "h" in snap["checksum"]
+    assert snap["net_worth"] == {str(k): v for k, v in c.sw.net_worth().items()}
+
+
+def test_the_entry_point_takes_a_turn_budget(monkeypatch, tmp_path):
+    seen = {}
+    monkeypatch.setattr(coord_mod, "serve", lambda t, s, b: seen.update(task=t, state=s, budget=b))
+    assert coord_mod.main([str(tmp_path / "t"), str(tmp_path / "s"), "--turn-s", "45"]) == 0
+    assert seen["budget"] == 45.0
+    assert coord_mod.main([str(tmp_path / "t")]) == 2
