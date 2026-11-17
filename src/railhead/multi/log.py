@@ -22,6 +22,7 @@ import json
 from typing import Any
 
 from railhead.actions import ActionArgError, check_until
+from railhead.replay import ReplayRejected
 
 LOG_V3 = 3
 TICKS_PER_DAY = 74
@@ -29,8 +30,8 @@ AUTO_WAIT_DAYS = 7  # the wait that the coordinator records for an agent that ru
 WAKE_REASONS_FIXED = {"elapsed", "horizon"}
 
 
-class LogRejected(ValueError):
-    """The log breaks a v3 ordering rule: no honest coordinator writes it."""
+class LogRejected(ReplayRejected):
+    """The log breaks a v3 ordering rule: no honest coordinator writes it (a :class:`ReplayRejected`)."""
 
 
 def meta_digest_v3(company: int, m: str, a: dict[str, Any]) -> int:
