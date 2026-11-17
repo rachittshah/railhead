@@ -152,11 +152,17 @@ def test_the_sandbox_lets_an_agent_reach_only_its_own_socket_and_directory(tmp_p
                 "    except OSError: print('denied')\n"
                 "for p in sys.argv[3:]:\n"
                 "    try: open(p).read(); print('ok')\n"
-                "    except OSError: print('denied')\n")
+                "    except OSError: print('denied')\n"
+                "import os, pathlib\n"  # harnesses canonicalize their own paths (Codex: CODEX_HOME)
+                "try: pathlib.Path(sys.argv[3]).resolve(strict=True); os.stat(sys.argv[3]); print('ok')\n"
+                "except OSError: print('denied')\n"
+                "try: os.listdir(os.path.dirname(os.path.dirname(sys.argv[3]))); print('ok')\n"
+                "except OSError: print('denied')\n")
         r = subprocess.run(["/usr/bin/sandbox-exec", "-f", str(adir / "p.sb"), sys.executable, "-I", "-c", code,
                             str(own), str(other), str(adir / "mine.txt"), str(other_dir / "agent.log"),
                             str(task / "task.json")], check=False, capture_output=True, text=True, timeout=60)
-        assert r.stdout.split() == ["ok", "denied", "ok", "denied", "denied"], r
+        # own socket, other socket, own file, other agent's transcript, task.json, resolve own path, list agents/
+        assert r.stdout.split() == ["ok", "denied", "ok", "denied", "denied", "ok", "denied"], r
     finally:
         for s in servers:
             s.close()

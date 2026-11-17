@@ -233,17 +233,19 @@ def sandbox_profile(agent_dir: Path, run_dir: Path, task_dir: Path, own_socket: 
     writing the run directory (the merged log, the other agents' transcripts, the OTLP data) and the task
     directory (the market seed), apart from the agent's own directory; connecting to the control socket
     and the other agents' sockets; TCP to localhost (the engine's game and admin ports) apart from the
-    OTLP sink; and reading the operator's personal agent instructions."""
+    OTLP sink; and reading the operator's personal agent instructions. The denials are of file contents
+    and directory listings (``file-read-data``), not of metadata: a harness must be able to resolve the
+    path of its own directory, which needs ``lstat`` on every parent."""
     home = Path(home or Path.home())
     lines = ["(version 1)", "(allow default)",
-             f"(deny file-read* file-write* (subpath {_sb(run_dir)}) (subpath {_sb(task_dir)}))",
-             f"(allow file-read* file-write* (subpath {_sb(agent_dir)}))",
-             f"(allow file-read* file-write* (literal {_sb(own_socket)}))",
-             (f"(deny file-read* (literal {_sb(home / '.claude/CLAUDE.md')}) (subpath {_sb(home / '.claude/rules')})"
+             f"(deny file-read-data file-write* (subpath {_sb(run_dir)}) (subpath {_sb(task_dir)}))",
+             f"(allow file-read* file-read-data file-write* (subpath {_sb(agent_dir)}))",
+             f"(allow file-read* file-read-data file-write* (literal {_sb(own_socket)}))",
+             (f"(deny file-read-data (literal {_sb(home / '.claude/CLAUDE.md')}) (subpath {_sb(home / '.claude/rules')})"
              f" (subpath {_sb(home / '.agents')}) (literal {_sb(home / '.codex/AGENTS.md')}))")]
     for s in other_sockets:
         lines.append(f"(deny network-outbound (remote unix-socket (path-literal {_sb(s)})))")
-        lines.append(f"(deny file-read* file-write* (literal {_sb(s)}))")
+        lines.append(f"(deny file-read-data file-write* (literal {_sb(s)}))")
     lines.append('(deny network-outbound (remote ip "localhost:*"))')
     lines += [f'(allow network-outbound (remote ip "localhost:{p}"))' for p in allow_ports]
     return "\n".join(lines) + "\n"
