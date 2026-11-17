@@ -144,14 +144,25 @@ class Track:
     horizon_days: int
     runoff_days: int
     quarter_days: int = 90
+    min_cross_only: int = 0  # seal-time minimum of region_needs.cross_only; a seed below it is rejected
 
 
 TRACKS = {
-    "short": Track("short", agents=4, map_log2=8, horizon_days=730, runoff_days=0),
+    # short: run-off 365 days (as decade and single-agent Railhead), and at least 5 cross-region needs (the
+    # median of seeds 1-20 is 4; 5 keeps 9 of 20; docs/WAYBILL-PILOT.md 8)
+    "short": Track("short", agents=4, map_log2=8, horizon_days=730, runoff_days=365, min_cross_only=5),
     "decade": Track("decade", agents=8, map_log2=9, horizon_days=3650, runoff_days=365),
 }
 ARMS = ("enforced", "cheap_talk")
 REACH_TILES = 128  # "within reach": the Manhattan distance of a delivery that cross-region needs and tenders count
+
+
+class SeedRejected(ValueError):
+    """A seed whose world has too few cross-region needs (``Track.min_cross_only``)."""
+
+    def __init__(self, seed: int, needs: dict, minimum: int) -> None:
+        super().__init__(f"seed {seed}: {needs['cross_only']} cross-region needs < minimum {minimum}")
+        self.seed, self.needs, self.minimum = seed, needs, minimum
 
 
 @dataclass(frozen=True)
@@ -191,7 +202,8 @@ def plan_track(track: str, seeds: list[int], rotations: str | list[int] = "cycle
 
 def gen_track(track: str, seed: int, out: Path, rotations: list[int] | None = None,
               arms: tuple[str, ...] = ARMS, start_balances: dict[int, int] | None = None,
-              tender: dict | None = None, split: str = "train", horizon_days: int | None = None) -> list[TaskSpec]:
+              tender: dict | None = None, split: str = "train", horizon_days: int | None = None,
+              min_cross_only: int | None = None) -> list[TaskSpec]:
     """Make the world of one seed once, then one task directory for each (rotation, arm). All of them
     have the same start.sav; the rotation changes only regions.json, the arm only the market config.
     ``horizon_days`` shortens (or lengthens) the track horizon for smoke runs; the task id then ends in
@@ -210,6 +222,11 @@ def gen_track(track: str, seed: int, out: Path, rotations: list[int] | None = No
             region_maps = {r: region_map_for(w, t.agents, r) for r in rotations}
             ind_rows = list(w.call("industries"))
             ind_tiles = [(int(i["x"]), int(i["y"])) for i in ind_rows]
+        # the needs do not depend on the rotation (it only changes which slot gets which rectangle)
+        needs = cross_region_needs(industry_snapshot(ind_rows, region_maps[rotations[0]], 0), max_distance=REACH_TILES)
+        minimum = t.min_cross_only if min_cross_only is None else min_cross_only
+        if needs["cross_only"] < minimum:
+            raise SeedRejected(seed, needs, minimum)
         for r in rotations:
             for arm in arms:
                 plan = TaskPlan(track, seed, r, arm, horizon_days)
@@ -225,7 +242,8 @@ def gen_track(track: str, seed: int, out: Path, rotations: list[int] | None = No
                          "region_industries": {str(k): sum(region_of(rm, x, y) == k for x, y in ind_tiles)
                                                for k in sorted(rm.regions)},
                          "region_needs": cross_region_needs(industry_snapshot(ind_rows, rm, 0),
-                                                          max_distance=REACH_TILES)}
+                                                          max_distance=REACH_TILES),
+                         "min_cross_only": minimum}
                 specs.append(write_task(tdir, plan.task_id, companies, horizon_days or t.horizon_days,
                                         t.runoff_days, scenario=sc,
                                         split=split, regions=rm, market=market, extra_objective=extra,
@@ -247,10 +265,29 @@ def region_needs(task_dir: Path, max_distance: int | None = 128) -> dict:
         shutil.rmtree(work, ignore_errors=True)
 
 
+def survey(track: str, seeds: list[int], max_distance: int = REACH_TILES) -> dict[int, dict]:
+    """region_needs of the track world of each seed (no task is kept): the data for ``min_cross_only``."""
+    out = {}
+    for seed in seeds:
+        tmp = Path(tempfile.mkdtemp(prefix="rh-survey-"))
+        try:
+            spec = gen_track(track, seed, tmp, arms=("enforced",), min_cross_only=0)[0]
+            out[seed] = spec.objective["region_needs"]
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+    return out
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv[:1] == ["track"]:
         return track_main(argv[1:])
+    if argv[:1] == ["survey"] and len(argv) == 4:  # python -m railhead.multi.gen survey <track> <first> <count>
+        first, count = int(argv[2]), int(argv[3])
+        for seed, n in survey(argv[1], list(range(first, first + count))).items():
+            print(json.dumps({"seed": seed, "cross_only": n["cross_only"], "local": n["local"],
+                              "tender_pool_cross_only": n["tender_candidates_cross_only"]}), flush=True)
+        return 0
     if argv[:1] == ["needs"] and len(argv) in (2, 3):  # python -m railhead.multi.gen needs <task_dir> [max_dist]
         print(json.dumps(region_needs(Path(argv[1]), int(argv[2]) if len(argv) == 3 else 128), indent=1))
         return 0
@@ -289,15 +326,27 @@ def track_main(argv: list[str]) -> int:
         print(track_main.__doc__, file=sys.stderr)
         return 2
     track, first, count, out = pos[0], int(pos[1]), int(pos[2]), Path(pos[3])
-    seeds = list(range(first, first + count))
     arms = tuple(a for a in opts["--arms"].split(",") if a)
     sb = {int(k): int(v) for k, v in (kv.split("=") for kv in opts["--start-balances"].split(",") if kv)}
-    plans = plan_track(track, seeds, opts["--rotations"], arms)
-    for seed in seeds:
-        rots = sorted({p.rotation for p in plans if p.seed == seed})
-        for spec in gen_track(track, seed, out, rotations=rots, arms=arms, start_balances=sb,
-                              horizon_days=int(opts["--horizon"]) if opts["--horizon"] else None):
+    horizon = int(opts["--horizon"]) if opts["--horizon"] else None
+    n = TRACKS[track].agents
+    accepted, seed = 0, first
+    while accepted < count:  # a seed below Track.min_cross_only is skipped: the next seed is tried
+        if seed > first + 50 * count:
+            print(f"no {count} seeds with enough cross-region needs from seed {first}", file=sys.stderr)
+            return 1
+        rots = plan_track(track, [seed], [accepted % n] if opts["--rotations"] == "cycle" else "all", arms)
+        try:
+            specs = gen_track(track, seed, out, rotations=sorted({p.rotation for p in rots}), arms=arms,
+                              start_balances=sb, horizon_days=horizon)
+        except SeedRejected as e:
+            print(f"# {e}", file=sys.stderr)
+            seed += 1
+            continue
+        for spec in specs:
             print(spec.task_id)
+        accepted += 1
+        seed += 1
     return 0
 
 

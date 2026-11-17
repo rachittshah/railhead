@@ -228,14 +228,18 @@ def cross_region_needs(snapshot: list[dict], max_distance: int | None = None) ->
     ``max_distance`` tiles, Manhattan, when given): ``local`` if a producer is in the destination's own
     region, else ``cross_only``. A company can build stations only in its own region, so a cross-only
     delivery needs a station in the other company's region: a partner (a supply contract or a tender
-    subcontract). ``tender_candidates`` is the pool the quarterly tenders are drawn from (all cross-region)."""
+    subcontract). ``tender_candidates`` is the pool the quarterly tenders are drawn from (all cross-region).
+    Only industries inside a company's region count (region >= 0): a cross-only need can then always be met
+    with a licence from the producer's or the destination's region owner."""
     from railhead.exchange.tenders import candidates
 
     local = cross = 0
     by_region: dict[str, dict[str, int]] = {}
     for dest in snapshot:
+        if dest["region"] < 0:
+            continue
         for cargo in dest["accepts"]:
-            prods = [p for p in snapshot if cargo in p["produces"] and p["id"] != dest["id"]]
+            prods = [p for p in snapshot if cargo in p["produces"] and p["id"] != dest["id"] and p["region"] >= 0]
             if max_distance is not None:
                 prods = [p for p in prods if abs(p["tile"][0] - dest["tile"][0])
                          + abs(p["tile"][1] - dest["tile"][1]) <= max_distance]

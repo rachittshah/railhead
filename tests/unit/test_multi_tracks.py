@@ -43,3 +43,8 @@ def test_a_horizon_override_shows_in_the_task_id():
 
     assert TaskPlan("short", 3, 1, "enforced").task_id == "waybill-short-s0003-r1-enforced"
     assert TaskPlan("short", 3, 1, "enforced", 60).task_id == "waybill-short-s0003-r1-enforced-h60"
+
+
+def test_the_short_track_has_a_run_off_and_a_cross_region_minimum():
+    s = TRACKS["short"]
+    assert s.runoff_days == 365 and s.min_cross_only == 5 and TRACKS["decade"].runoff_days == 365
