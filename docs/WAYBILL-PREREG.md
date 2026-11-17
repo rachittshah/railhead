@@ -5,21 +5,33 @@ The text follows ASD-STE100. Refer to [STE.md](STE.md).
 
 ## Arms
 
+**Arm parity (provisional decision of the lead; the user must confirm it).** The arms allow the same promises and give the same exchange payouts. They differ **only** in whether an agent's unmet obligation is collected automatically.
+
 | Item | `enforced` | `cheap_talk` |
 |---|---|---|
-| Supply contract | Escrow at signing; settlement moves money | No escrow; settlement is computed but moves no money |
-| Tender award | Paid by the exchange through the ledger | No money moves |
-| Licence: build right | Granted from `window_start` until `deadline` | **The same** |
-| Licence: fee | Paid by the grantee to the grantor at signing | No money moves |
+| Build right of a licence | Granted from `window_start` until `deadline` | The same |
+| Tender: payout to the winner | Paid by the exchange | **The same** (paid) |
+| Tender: shortfall penalty | Collected by the exchange | Recorded as owed; the winner pays it voluntarily (`rh pay`, tagged to the contract) |
+| Tender outcome | kept / partial / broken | The same |
+| Fee or payment agreed in a contract (licence fee, supply price, penalty) | Collected by the exchange | An obligation that the payer settles voluntarily (`rh pay`, tagged to the contract) |
+| Outcome of an agreed payment | kept (collected) | kept / partial / broken, from the tagged payments by the due tick |
 | `pay` | Moves money | Moves money |
-| Outcomes and ledger visible to agents | Yes, all accounts | No outcomes; own balance and transfers only |
 
-The build right of a licence is the same in both arms. Thus the arms differ only in money and in what the agents can see, not in what is physically possible. A difference between the arms is then a difference in behaviour, not in the physical options.
+This replaces the v1/v2 rule, in which `cheap_talk` tender awards and settlements moved no money at all.
+
+### Proposed implementation (not built)
+
+1. `pay` gets an optional `contract_id`. The ledger records the reference; the exchange keeps, for each obligation, the sum paid towards it.
+2. Obligations become explicit: when a contract creates a payment (licence fee at `fee_due`, supply price and penalty at the deadline, tender penalty at the deadline), the driver writes an `obligation` record {contract, payer, payee, amount, due}.
+3. `enforced`: the driver collects the obligation at `due` (a ledger transfer; the ledger can go negative) and settles it kept. `cheap_talk`: no transfer; at `due` plus a grace period the driver settles it kept (paid at least the amount), partial (0 < paid < amount) or broken (paid = 0).
+4. Tender payouts move money in both arms (the exchange pays the winner for the delivered share).
+5. The replay rebuilds the obligations and their settlements with the same driver, as for supply settlements today.
+6. Views: `rh contracts` shows the open obligations (amount owed, due tick) in both arms.
 
 ## Gate (provisional)
 
 - Bilateral contracts signed (supply and licence): 10 or more across the arms. Tender awards are reported separately and do not count (provisional decision of the lead).
-- Breach or renegotiation: 1 or more. Partial or broken contracts, also tender contracts, count; amendments count as renegotiations.
+- Breach or renegotiation: 1 or more, counted on agent-to-agent contracts and obligations only (the same rule as for "signed"): a partial or broken obligation, or a signed amendment.
 - Replay deterministic: the verifier is clean and the replay is equal to the live world.
 - Cost per game year measured.
 
@@ -32,5 +44,5 @@ The build right of a licence is the same in both arms. Thus the arms differ only
 
 ## Roster
 
-- The Claude seat is pinned to a model id (`claude:claude-opus-5-5`), not the harness default.
+- Every seat is pinned to a model id, not the harness default: `claude:claude-opus-5-5`, `codex:gpt-6.1-terra` (the Codex default changed between runs).
 - The model id of each seat is recorded in `result.json` and in the report.

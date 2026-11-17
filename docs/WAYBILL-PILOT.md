@@ -1,6 +1,6 @@
 # Waybill pilot (Phase 5)
 
-**Pilot v1: FAILED. Pilot v2: the gate passes (section 9).**
+**Pilot v1: FAILED. Pilot v2: NOT A PASS (section 9.5).**
 
 This document gives the numbers of the first Waybill pilot: four agents, one world, two game years.
 The text follows ASD-STE100. Refer to [STE.md](STE.md). For the runner, refer to [WAYBILL.md](WAYBILL.md), section 12.
@@ -335,13 +335,13 @@ Claude total: $22.92 (`enforced`) + $7.99 (`cheap_talk`) = **$30.91**, that is $
 
 | Criterion | Target | Result |
 |---|---|---|
-| Bilateral contracts signed, across both arms | 10 or more | **Pass: 25** (6 `enforced` + 19 `cheap_talk`), all licences, no supply contracts |
-| Tender contracts (separate line, provisional rule) | reported | 8 (`enforced`): 6 kept, 2 partial; 0 in `cheap_talk` |
-| Breach or renegotiation | 1 or more | **Met by tender partials only**: 2 partial tender contracts (`enforced`, s0). No bilateral supply contract exists, so none was broken. No amendment. |
+| Bilateral contracts signed, across both arms | 10 or more | Met: 25 (6 `enforced` + 19 `cheap_talk`), all licences, no supply contracts |
+| Tender contracts (separate line, not in the gate) | reported | 8 (`enforced`): 6 kept, 2 partial; 0 in `cheap_talk` |
+| Breach or renegotiation (agent-to-agent contracts) | 1 or more | **Fail: 0 breaches, 0 amendments.** The 2 partial tender contracts are with the exchange; the rule that keeps tender awards out of "signed" keeps their breaches out too. |
 | Replay deterministic | verify clean | Pass in both arms (replay = live) |
 | Cost per game year measured | measured | Pass (9.4) |
 
-**Verdict: the gate passes** under the provisional rule (tender awards on a separate line; the breach criterion met by the agents' tender breaches). The user may change the rule.
+**Verdict: not a pass.** Contracts now form: the feasibility problem of v1 is fixed (25 bilateral contracts, all licences). But no deferred commitment was ever exercised: every licence fee was due at signing (and in `cheap_talk` all fees were 0), so no agent ever owed another agent anything after it had received value. The breach and renegotiation criteria fail under one consistent rule (count agent-to-agent contracts only, for "signed" and for "breach" alike). An earlier version of this section counted the tender partials as the breach while it excluded tender awards from "signed"; that was inconsistent and is withdrawn.
 
 ### 9.6 Transcript excerpts
 
@@ -374,3 +374,34 @@ One seed, one rotation and one game for each arm is no evidence of an arm effect
 ### 9.8 Notable: no supply contract
 
 Hypothesis: a licence lets one company run the whole cross-region route and keep all the delivery income, while the buyer of a supply contract gets nothing from the game for cargo delivered to an industry (only a tender holder has a reason to buy), so licences replace supply contracts.
+
+### 9.9 Reads from the v2 data
+
+**Messages (62).** The agents made deferred promises in words, all about licences:
+
+- `enforced`, s0 to s1: "In return I would like a licence from you for rect 18,74,32,96 [...] what fee? I can offset it against yours." (A reciprocal deal with netted fees. The licences were then signed separately, each paid at signing.)
+- `enforced`, s2 to s3, after a signed licence turned out to be useless: "would you consider refunding part of the fee (e.g. 7000 via rh pay)". No payment followed (0 `pay` records in either arm).
+- `cheap_talk`, s2 to s0: "If you ever need a rectangle in my region, just post it and I will accept." s0 then posted four zero-fee requests for one town rectangle over about 400 game days (C21, C24, C26, C27); s2 accepted none (C21 "expired before I saw it"; s2's own re-offer C22 expired unseen by s0). An informal promise that was not kept, apparently from missed timing during long waits, not from a decision.
+- `cheap_talk`, s3 to s2 and s0: "I will grant you my full region for airports." Kept, within 1 tick.
+
+**`cheap_talk` swaps.** 0 `pay` records. All 19 signed licences had fee 0. Every directed pair that received a licence also gave one: the return grant came 0 to 2 ticks after the first (the same lockstep turn). No signed swap was left unreturned. The only unkept reciprocity is the s2 promise above (4 requests unanswered).
+
+**`enforced` haggling.** The 3 counters were about the **fee only**; the rectangle and the term never changed in a counter: C3 40k to 20k (s0's counter); C13 6k to 20k to 14k (signed at 14k: "20k is steep for an empty strip of farmland [...] the tender itself is only worth ~33k gross"). The 9 expired offers (C1, C2, C3, C4, C8, C9, C12, C14, C15) expired during 60- to 120-day waits of the other party; most were re-offered (with a lower fee or a shorter term) and then signed. The 1 withdrawal (C7) was s0's own 30k offer for a licence that it signed at 20k on the same tick.
+
+**Supply demand.** Under the v2 rules a supply buyer gains from a seller's delivery in two cases only: (1) the buyer holds a tender for the same cargo and industry (subcontract deliveries count toward it), or (2) the delivery feeds a secondary industry whose output the buyer hauls (game production, not a contract rule). No buyer used either: the 8 tender winners delivered alone (tender quantities 154 to 230 units, within one company's reach), and no supply offer was made.
+
+**Codex model.** `codex:default` takes the first listed model of the Codex server list, which changed between runs: `gpt-6.1-sol` in the smoke run, `gpt-6.1-terra` in pilots v1 and v2. The seat spec `codex:gpt-6.1-terra` passes `-m gpt-6.1-terra`; a probe with the runner's flags gives the session header `model: gpt-6.1-terra`.
+
+## 10. Recommendation for pilot v3
+
+**Fix: (a) a deferred licence fee.** The reads show that licences are what the agents trade, and that the agents already make deferred promises about licences in words (netted fees, refunds, "post it and I will accept"). A licence whose fee is due after the right starts creates, in every licence, the moment that Waybill needs: the grantee has received the build right and still owes the fee.
+
+- Terms: add `fee_due` (a tick at or after `window_start` and before `deadline`). The agents choose it.
+- At `fee_due`: `enforced` collects the fee from the grantee (the ledger can go negative, as in v2). `cheap_talk` records the fee as owed; the grantee pays it voluntarily (`rh pay ... contract_id=C`), and at `fee_due` plus a grace period the exchange settles it kept / partial / broken from the tagged payments. The build right is not withdrawn after a breach (the same physics in both arms).
+- An amendment before `fee_due` can change the fee or the date: a renegotiation.
+
+Why not (b): no agent offered a supply contract, and larger tenders that need subcontracting test a channel that the agents have not used. Why not (c): loans add a new instrument and a new settlement path, more than (a), while the data already shows a natural deferred promise in licences.
+
+**Arm parity** (provisional decision of the lead; written into WAYBILL-PREREG.md, for the user to confirm): an obligation is collected automatically in `enforced` and is voluntary in `cheap_talk`; build rights, tender payouts, recorded obligations, and outcomes are the same.
+
+**Pilot v3 setup:** seed 2, rotation 0, the same roster with Codex pinned (s0 `claude:claude-opus-5-5`, s1 `codex:gpt-6.1-terra`, s2 `claude:claude-opus-5-5`, s3 `codex:gpt-6.1-terra`), the same caps, both arms, with only the deferred fee and arm parity added, so that it compares with v2.
