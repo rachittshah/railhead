@@ -7,6 +7,8 @@ lists the companies as ``[{id, name, slot}]``.
 
     python -m railhead.multi.gen <seed> <out_dir> [--agents N] [--split train] [--horizon DAYS]
         [--runoff DAYS] [--map-log2 K] [--start-cash MONEY]
+    python -m railhead.multi.gen track <short|decade> <first_seed> <count> <out_dir>
+        [--rotations cycle|all] [--arms enforced,cheap_talk] [--start-balances SLOT=POUNDS,...]
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ import shutil
 import sys
 import tempfile
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 from railhead.multi.market import MarketConfig
@@ -129,8 +132,99 @@ def gen_waybill(seed: int, out: Path, n: int = 3, split: str = "train", horizon_
         shutil.rmtree(work, ignore_errors=True)
 
 
+# ---------------------------------------------------------------------- task tracks
+@dataclass(frozen=True)
+class Track:
+    """A statistics-friendly task variant (docs/WAYBILL.md, section 11)."""
+
+    name: str
+    agents: int
+    map_log2: int
+    horizon_days: int
+    runoff_days: int
+    quarter_days: int = 90
+
+
+TRACKS = {
+    "short": Track("short", agents=4, map_log2=8, horizon_days=730, runoff_days=0),
+    "decade": Track("decade", agents=8, map_log2=9, horizon_days=3650, runoff_days=365),
+}
+ARMS = ("enforced", "cheap_talk")
+
+
+@dataclass(frozen=True)
+class TaskPlan:
+    track: str
+    seed: int
+    rotation: int
+    arm: str
+
+    @property
+    def task_id(self) -> str:
+        return f"{FAMILY}-{self.track}-s{self.seed:04d}-r{self.rotation}-{self.arm}"
+
+
+def plan_track(track: str, seeds: list[int], rotations: str | list[int] = "cycle",
+               arms: tuple[str, ...] = ARMS) -> list[TaskPlan]:
+    """The tasks of one track. ``rotations``: ``"cycle"`` gives seed number i (in the list) the rotation
+    i mod N, so N consecutive seeds give each slot (each model of a fixed roster) each region type once;
+    ``"all"`` gives every seed all N rotations; or an explicit list (one rotation per seed). Every
+    (seed, rotation) has one task per arm: the arms are paired (same start.sav, same regions)."""
+    t = TRACKS[track]
+    if rotations == "cycle":
+        rots = [[i % t.agents] for i in range(len(seeds))]
+    elif rotations == "all":
+        rots = [list(range(t.agents)) for _ in seeds]
+    else:
+        if len(rotations) != len(seeds):
+            raise ValueError("one rotation per seed")
+        rots = [[int(r) % t.agents] for r in rotations]
+    for a in arms:
+        if a not in ARMS:
+            raise ValueError(f"unknown arm {a!r} (arms: {', '.join(ARMS)})")
+    return [TaskPlan(track, seed, r, arm) for seed, rs in zip(seeds, rots, strict=True) for r in rs for arm in arms]
+
+
+def gen_track(track: str, seed: int, out: Path, rotations: list[int] | None = None,
+              arms: tuple[str, ...] = ARMS, start_balances: dict[int, int] | None = None,
+              tender: dict | None = None, split: str = "train") -> list[TaskSpec]:
+    """Make the world of one seed once, then one task directory for each (rotation, arm). All of them
+    have the same start.sav; the rotation changes only regions.json, the arm only the market config."""
+    from railhead.gen.scenario import sample_scenario, server_config
+
+    t = TRACKS[track]
+    rotations = [seed % t.agents] if rotations is None else rotations
+    sc = sample_scenario(seed, split, FAMILY)
+    sc["map_log2"] = t.map_log2
+    work = Path(tempfile.mkdtemp(prefix=f"rh-gen-{track}-{seed}-"))
+    specs = []
+    try:
+        with World.create(work / "gen", server_config(sc), found_company=False) as w:
+            companies = build_start(w, work / "start.sav", t.agents)
+            region_maps = {r: region_map_for(w, t.agents, r) for r in rotations}
+        for r in rotations:
+            for arm in arms:
+                plan = TaskPlan(track, seed, r, arm)
+                tdir = Path(out) / plan.task_id
+                tdir.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(work / "start.sav", tdir / "start.sav")
+                market = MarketConfig(arm=arm, seed=seed, start_balances=dict(start_balances or {}),
+                                      quarter_days=t.quarter_days, tender=dict(tender or {}))
+                rm = region_maps[r]
+                extra = {"track": track, "seed": seed, "rotation": r, "arm": arm,
+                         "region_types": {str(k): v for k, v in rm.types.items()}}
+                specs.append(write_task(tdir, plan.task_id, companies, t.horizon_days, t.runoff_days, scenario=sc,
+                                        split=split, regions=rm, market=market, extra_objective=extra,
+                                        title=f"Waybill ({track} track): a shared world with a contract market"))
+        return specs
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
+    if argv[:1] == ["track"]:
+        return track_main(argv[1:])
     opts = {"--agents": "3", "--split": "train", "--horizon": "730", "--runoff": "0", "--map-log2": "",
             "--start-cash": ""}
     pos = []
@@ -148,6 +242,32 @@ def main(argv: list[str] | None = None) -> int:
                        map_log2=int(opts["--map-log2"]) if opts["--map-log2"] else None,
                        start_cash=int(opts["--start-cash"]) if opts["--start-cash"] else None)
     print(spec.task_id, [c["name"] for c in spec.objective["companies"]])
+    return 0
+
+
+def track_main(argv: list[str]) -> int:
+    """python -m railhead.multi.gen track <short|decade> <first_seed> <count> <out_dir>
+    [--rotations cycle|all] [--arms enforced,cheap_talk] [--start-balances 0=50000,1=0]"""
+    opts = {"--rotations": "cycle", "--arms": ",".join(ARMS), "--start-balances": ""}
+    pos = []
+    it = iter(argv)
+    for a in it:
+        if a in opts:
+            opts[a] = next(it)
+        else:
+            pos.append(a)
+    if len(pos) != 4 or pos[0] not in TRACKS:
+        print(track_main.__doc__, file=sys.stderr)
+        return 2
+    track, first, count, out = pos[0], int(pos[1]), int(pos[2]), Path(pos[3])
+    seeds = list(range(first, first + count))
+    arms = tuple(a for a in opts["--arms"].split(",") if a)
+    sb = {int(k): int(v) for k, v in (kv.split("=") for kv in opts["--start-balances"].split(",") if kv)}
+    plans = plan_track(track, seeds, opts["--rotations"], arms)
+    for seed in seeds:
+        rots = sorted({p.rotation for p in plans if p.seed == seed})
+        for spec in gen_track(track, seed, out, rotations=rots, arms=arms, start_balances=sb):
+            print(spec.task_id)
     return 0
 
 
