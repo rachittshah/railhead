@@ -482,3 +482,15 @@ def test_an_opencode_profile_denies_only_the_engine_ports():
                               home=Path("/h"), deny_ports=[5001, 5002])
     assert "localhost:*" not in prof and "localhost:4318" not in prof
     assert '(deny network-outbound (remote ip "localhost:5001"))' in prof and "localhost:5002" in prof
+
+
+def test_the_model_that_ran_comes_from_the_transcript(tmp_path):
+    claude = tmp_path / "c.log"
+    claude.write_text('{"type":"system","subtype":"init","model":"claude-sonnet-5-5","session_id":"x"}\n')
+    codex = tmp_path / "x.log"
+    codex.write_text("OpenAI Codex v0\n--------\nmodel: gpt-6.1-terra\nprovider: openai\n")
+    assert wa.model_used(wa.Seat(0, "claude", "default", "s0"), claude) == "claude-sonnet-5-5"
+    assert wa.model_used(wa.Seat(1, "codex", "default", "s1"), codex) == "gpt-6.1-terra"
+    assert wa.model_used(wa.Seat(2, "opencode", "opencode/big-pickle", "s2"), tmp_path / "none") == \
+        "opencode/big-pickle"
+    assert wa.model_used(wa.Seat(0, "claude", "default", "s0"), tmp_path / "none") is None

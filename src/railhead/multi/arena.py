@@ -524,6 +524,21 @@ def contract_stats(exchange: dict, companies: list[dict]) -> dict:
     return {"total": total, "by_company": per, "gate": gate}
 
 
+def model_used(seat: Seat, agent_log: Path) -> str | None:
+    """The model that the harness really ran, from its transcript (a seat of model ``default`` gets the
+    harness default): the Claude ``init`` event, the Codex ``model:`` header line; else the seat's model."""
+    if seat.vendor in ("claude", "codex") and agent_log.exists():
+        import re as _re
+
+        text = agent_log.read_text(encoding="utf-8", errors="replace")
+        pat = r'"type":\s*"system",\s*"subtype":\s*"init".*?"model":\s*"([^"]+)"' if seat.vendor == "claude" \
+            else r"^model:\s*(\S+)"
+        found = _re.findall(pat, text, _re.MULTILINE)
+        if found:
+            return found[-1]
+    return None if seat.model == DEFAULT_MODEL else seat.model
+
+
 def build_result(manifest: dict, scores: dict, live: dict | None, seats: list[Seat], clock: list[dict],
                  run_dir: Path) -> dict:
     task_id = manifest["task_id"]
@@ -544,6 +559,7 @@ def build_result(manifest: dict, scores: dict, live: dict | None, seats: list[Se
         rows.append({
             "slot": c["slot"], "id": c["id"], "name": c["name"],
             "agent": s.label if s else None, "vendor": s.vendor if s else None, "model": s.model if s else None,
+            "model_used": model_used(s, run_dir / "agents" / s.label / "agent.log") if s else None,
             "agent_status": s.status if s else "absent", "agent_note": s.note if s else "no player: retired at start",
             "runner_submitted": (s.status in ("retired", "failed")) if s else True,
             "sessions": len(s.launches) if s else 0, "resumes": s.resumes if s else 0,
