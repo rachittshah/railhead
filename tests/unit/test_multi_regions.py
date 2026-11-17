@@ -145,6 +145,12 @@ def test_rotation_gives_each_slot_each_type():
         for s, t in enumerate(rot):
             seen[s].add(t)
     assert all(v == set(range(n)) for v in seen.values())
-    rm = make_region_map(256, 256, 4, [(10, 10), (200, 200)], seed=101)
+    rm = make_region_map(256, 256, 4, [(10, 10), (200, 200)], offset=101)
     assert rm.types == {s: (s + 101) % 4 for s in range(4)}
     assert region_of(rm, 128, 128) in range(4)
+
+
+def test_terraform_footprints_include_the_shared_corners():
+    assert len(footprint("land_raise", {"tile": idx(5, 5), "corner": "n"}, MX)) == 9
+    lv = footprint("land_level", {"from_tile": idx(5, 5), "to_tile": idx(6, 7)}, MX)
+    assert (4, 4) in lv and (7, 8) in lv and len(lv) == 4 * 5

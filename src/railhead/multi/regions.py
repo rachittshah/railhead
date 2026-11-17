@@ -81,9 +81,15 @@ def footprint(m: str, a: dict[str, Any], map_x: int, probe: Probe | None = None)
         return []
     t = lambda k: xy(int(a[k]), map_x)
     if m in ("rail_track", "rail_remove", "rail_signal", "rail_remove_signal", "rail_waypoint", "water_canal",
-             "land_raise", "land_lower", "land_demolish"):
+             "land_demolish"):
         return [t("tile")]
-    if m in ("rail_line", "road_line", "road_one_way", "road_remove", "land_level"):
+    if m in ("land_raise", "land_lower"):  # corners are shared: the 8 neighbours change too
+        x, y = t("tile")
+        return _box((x - 1, y - 1), (x + 1, y + 1))
+    if m == "land_level":
+        (x0, y0), (x1, y1) = t("from_tile"), t("to_tile")
+        return _box((min(x0, x1) - 1, min(y0, y1) - 1), (max(x0, x1) + 1, max(y0, y1) + 1))
+    if m in ("rail_line", "road_line", "road_one_way", "road_remove"):
         return _box(t("from_tile"), t("to_tile"))
     if m == "bridge_build":
         return _box(t("start_tile"), t("end_tile"))
@@ -264,17 +270,18 @@ def split_regions(map_x: int, map_y: int, n: int, points: list[tuple[int, int]],
     return rec(full, n, sorted(inside))
 
 
-def rotation(seed: int, n: int) -> list[int]:
-    """Region type for each slot: slot s plays region type (s + seed) mod n. Over n consecutive seeds,
-    each slot (and so each model of a fixed roster) plays each region type once."""
-    return [(s + seed) % n for s in range(n)]
+def rotation(offset: int, n: int) -> list[int]:
+    """Region type for each slot: slot s plays region type (s + offset) mod n. Over the n offsets
+    0..n-1, each slot (and so each model of a fixed roster) plays each region type once."""
+    return [(s + offset) % n for s in range(n)]
 
 
-def make_region_map(map_x: int, map_y: int, n: int, industry_tiles: list[tuple[int, int]], seed: int) -> RegionMap:
+def make_region_map(map_x: int, map_y: int, n: int, industry_tiles: list[tuple[int, int]],
+                    offset: int) -> RegionMap:
     """One region per company. The bisection order gives the region types 0..n-1; :func:`rotation`
-    assigns them to slots by the seed."""
+    with ``offset`` assigns them to slots."""
     rects = split_regions(map_x, map_y, n, industry_tiles)
-    rot = rotation(seed, n)
+    rot = rotation(offset, n)
     return RegionMap(map_x, map_y, {s: [rects[rot[s]]] for s in range(n)}, {s: rot[s] for s in range(n)})
 
 

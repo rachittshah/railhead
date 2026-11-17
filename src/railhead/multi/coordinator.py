@@ -272,7 +272,12 @@ class Coordinator:
             "submitted": c in self.submitted, "objective": {}, "turn_budget_s": self.turn_budget_s,
             "map_x": self.sw.world.admin.welcome.map_x, "map_y": self.sw.world.admin.welcome.map_y,
             "briefing": self.spec.briefing,
+            "region": self.region_of(c),
         }
+
+    def region_of(self, c: int) -> list[list[int]] | None:
+        """The franchise rectangles [x0, y0, x1, y1] of company ``c`` now, or None without regions."""
+        return None if self.regions is None else self.regions.rects_at(self.slot_of[c], self.sw.ticks)
 
     def _wait(self, c: int, req: dict) -> dict:
         unknown = set(req) - {"op", "days", "ticks", "until"}
