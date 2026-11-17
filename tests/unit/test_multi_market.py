@@ -47,7 +47,7 @@ def test_config_from_objective_and_start_balances():
     m = market(start_balances={1: 700})
     assert m.balance(5) == 700 and m.balance(3) == 0
     assert m.ex.records[0]["tick"] == START
-    with pytest.raises(Exception):
+    with pytest.raises(TypeError):
         MarketConfig.from_objective({"market": {"tender": {"nope": 1}}})
 
 
