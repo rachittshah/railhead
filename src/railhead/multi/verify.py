@@ -2,12 +2,13 @@
 (docs/WAYBILL.md, section 5).
 
   1. integrity: start.sav must match the sealed hash (else tamper=1)
-  2. replay a private copy of the log (``replay_multi``) with the player-action whitelist and the task
+  2. the companies of the log header must be the companies of the task (id, slot, name), else rejected=1
+  3. replay a private copy of the log (``replay_multi``) with the player-action whitelist and the task
      horizon (an illegal log => rejected=1). A divergence is attributed by a second replay, as in
      ``railhead.verify``: replays that agree with each other but not with the log => rejected=1;
      replays that disagree => valid=0
-  3. the world runs on to the horizon (if the log ends before it) and through the run-off
-  4. the net worth (cash minus loan) of each company at the horizon and after the run-off
+  4. the world runs on to the horizon (if the log ends before it) and through the run-off
+  5. the net worth (cash minus loan) of each company at the horizon and after the run-off
 
     python -m railhead.multi.verify <task_dir> <start.sav> <actions.jsonl> <out_dir>
 
@@ -22,12 +23,20 @@ import sys
 import tempfile
 from pathlib import Path
 
+from railhead.actionlog import read_log
 from railhead.multi.log import TICKS_PER_DAY
 from railhead.multi.replay import horizon_tick, replay_multi
 from railhead.replay import ReplayRejected, default_whitelist
 from railhead.seal import check_start
 from railhead.task import TaskSpec
 from railhead.verify import _log_at_fault
+
+
+def _norm(companies: list[dict]) -> list[tuple]:
+    try:
+        return sorted((int(c["id"]), int(c["slot"]), str(c["name"])) for c in companies)
+    except (KeyError, TypeError, ValueError):
+        return [("invalid",)]
 
 
 def verify_multi(task_dir: Path, start_sav: Path, log: Path, workdir: Path) -> dict:
@@ -46,6 +55,13 @@ def verify_multi(task_dir: Path, start_sav: Path, log: Path, workdir: Path) -> d
         return replay_multi(start_sav, snap, workdir / sub, allowed=default_whitelist() or set(),
                             keep_open=keep_open, max_ticks=max_ticks, horizon_days=spec.horizon_days)
 
+    # The task, not the log, says which company is which slot: a header that relabels them is false.
+    try:
+        header = next(iter(read_log(snap))).raw
+    except (StopIteration, ValueError):
+        return base | {"rejected": 1}
+    if _norm(header.get("companies") or []) != _norm(spec.objective.get("companies") or []):
+        return base | {"rejected": 1}
     try:
         res = run("replay", keep_open=True)
     except (ReplayRejected, ValueError, KeyError, TypeError):

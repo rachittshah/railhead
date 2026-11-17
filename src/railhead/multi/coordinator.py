@@ -213,8 +213,9 @@ class Coordinator:
             return self._wait(c, req)
         if op == "history":
             n = int(req.get("n", 30))
-            recs = [r.raw for r in read_log(self.log_path)
-                    if r.kind == "step" or (r.kind != "header" and r.raw.get("company") == c)]
+            with self.world_lock:  # no record is half written while the lock is held
+                recs = [r.raw for r in read_log(self.log_path)
+                        if r.kind == "step" or (r.kind != "header" and r.raw.get("company") == c)]
             return recs[-n:]
         if op.startswith("fork_"):
             raise OpError("ERR_NOT_SUPPORTED", "forks are not available in a shared world")

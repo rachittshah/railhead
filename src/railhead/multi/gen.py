@@ -17,6 +17,7 @@ import tempfile
 import time
 from pathlib import Path
 
+from railhead.seal import seal_task
 from railhead.task import TaskSpec
 from railhead.world import AGENT_AI, World
 
@@ -85,6 +86,8 @@ def write_task(tdir: Path, task_id: str, companies: list[dict], horizon_days: in
                   "Your score is your net worth (cash minus loan) at the end."),
     )
     spec.save(Path(tdir))
+    if (Path(tdir) / "start.sav").exists():
+        seal_task(Path(tdir))  # the verifier then refuses a changed start.sav (tamper=1)
     return spec
 
 

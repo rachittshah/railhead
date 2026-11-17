@@ -90,6 +90,7 @@ Thus a `submit` that moves to a different company changes all later step checksu
 2. It founds N companies. For each company it starts the idle AI `RailheadIdle`, binds the new company, and gives it a neutral name (`Company A`, `Company B`, and so on).
 3. Optional `start_cash`: it sets the loan of each company to this value. A new company has cash equal to its loan, thus each company starts with this cash and a net worth of 0. The value must be a multiple of the loan interval and not more than the maximum loan. All companies get the same value.
 4. It saves `start.sav` and writes `task.json` with the family `waybill`. `objective.companies` is the list `[{id, name, slot}]`. `limits.agent_turn_s` is the turn budget of each agent.
+5. It seals the task (`sealed.json`), as `railhead export` does for a single-agent task.
 
 ```
 python -m railhead.multi.gen <seed> <out_dir> [--agents 3] [--horizon 730] [--runoff 0] [--map-log2 K] [--start-cash MONEY]
@@ -214,9 +215,10 @@ The result has the net worth (cash minus loan) of each company at the end of the
 `verify_multi(task_dir, start_sav, log, workdir)` does these steps:
 
 1. It examines the hash of `start.sav` (`tamper`).
-2. It replays the log. A rejected log gives `rejected = 1`. It attributes a divergence with a second replay, as the single-agent verifier does.
-3. It runs the world to the horizon and through the run-off.
-4. It gives the net worth of each company at the end of the log, at the horizon, and after the run-off.
+2. It examines that the companies of the log header (id, slot, and name) are the companies of `task.json`. If they are different, the log is rejected. Thus a header cannot change which net worth goes to which slot.
+3. It replays the log. A rejected log gives `rejected = 1`. It attributes a divergence with a second replay, as the single-agent verifier does.
+4. It runs the world to the horizon and through the run-off.
+5. It gives the net worth of each company at the end of the log, at the horizon, and after the run-off.
 
 ```
 python -m railhead.multi.verify <task_dir> <start.sav> <actions.jsonl> <out_dir>
@@ -232,7 +234,8 @@ The command writes `<out_dir>/scores.json`.
 | `tests/unit/test_multi_barrier.py` | The step length, the wakers, the wake conditions, and the straggler rule |
 | `tests/unit/test_multi_coordinator.py` | The coordinator on a fake engine: lockstep, stragglers, the examination under the world lock, submit, horizon, and the `rh` socket selection |
 | `tests/integration/test_multi_world.py` | Three companies in one start state, binding, and determinism |
-| `tests/integration/test_waybill.py` | The gate: three scripted agents play one game year through their sockets. The replay gives every step checksum and the net worth of each company. A forged act is rejected. |
+| `tests/integration/test_waybill.py` | The gate: three scripted agents play one game year through their sockets. The replay gives every step checksum and the net worth of each company. A forged act and a relabelled header are rejected. A restarted coordinator recovers the world and the barrier from the log. |
+| `tests/integration/test_waybill_events.py` | A short game: `station_first_vehicle` wakes its company early, `rh` acts through `RAILHEAD_SOCKET`, the world steps on after a submit, the replay is valid, and a moved submit and a changed `start.sav` are found |
 
 ## 7. Known limitations
 
@@ -241,3 +244,4 @@ The command writes `<out_dir>/scores.json`.
 - The socket gives the identity of the agent. Each agent must have access to its own socket only. Phase 4 isolates the agents.
 - After a restart, the vehicles and stations for `vehicle_crashed` and `station_first_vehicle`, and the month for `new_month`, come from the restart time.
 - Start cash is the same for all companies and is not more than the start loan.
+- These parts have tests on the fake engine only: the straggler rule and the rebuild after a world fault. The process entry point (`python -m railhead.multi.coordinator`) and the control socket have no automatic test.

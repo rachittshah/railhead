@@ -214,3 +214,15 @@ def test_a_restarted_coordinator_recovers_the_world_and_the_barrier(game, tmp_pa
         assert last["kind"] == "act" and last["company"] == c and last["seq"] == k + 1
     finally:
         coord.close()
+
+
+def test_a_header_that_relabels_the_companies_is_rejected(game, tmp_path):
+    recs = [r.raw for r in read_log(game["log"])]
+    comps = recs[0]["companies"]
+    swapped = [dict(comps[0], slot=1, name=comps[1]["name"]), dict(comps[1], slot=0, name=comps[0]["name"]),
+               comps[2]]
+    recs[0] = dict(recs[0], companies=swapped)
+    forged = tmp_path / "relabel.jsonl"
+    forged.write_text("".join(json.dumps(r, separators=(",", ":"), sort_keys=True) + "\n" for r in recs))
+    out = verify_multi(game["task"], game["task"] / "start.sav", forged, tmp_path / "v")
+    assert out["rejected"] == 1 and out["companies"] == []

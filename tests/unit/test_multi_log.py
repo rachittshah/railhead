@@ -239,3 +239,15 @@ def test_the_meta_digest_binds_the_company():
     assert meta_digest_v3(0, "submit", a) != meta_digest_v3(1, "submit", a)
     assert meta_digest_v3(0, "submit", a) == meta_digest_v3(0, "submit", dict(a))
     assert 0 < meta_digest_v3(2, "flag", {"note": "x"}) < 2 ** 31
+
+
+def test_the_single_agent_replay_rejects_a_v3_log(tmp_path):
+    """The version check runs before the engine starts: a v3 log never reaches the single-agent verifier."""
+    import json
+
+    from railhead.replay import ReplayRejected, replay
+
+    log = tmp_path / "a.jsonl"
+    log.write_text(json.dumps(HEADER) + "\n")
+    with pytest.raises(ReplayRejected, match="unknown log version"):
+        replay(tmp_path / "start.sav", log, tmp_path / "w")
