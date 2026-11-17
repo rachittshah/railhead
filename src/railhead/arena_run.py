@@ -311,7 +311,7 @@ def _agent_alive(p: Player, pdir: Path) -> bool:
         os.kill(pid, 0)
     except (OSError, ValueError):
         return False
-    out = subprocess.run(["ps", "-p", str(pid), "-o", "command="], check=False, capture_output=True, text=True).stdout
+    out = subprocess.run(["ps", "-ww", "-p", str(pid), "-o", "command="], check=False, capture_output=True, text=True).stdout
     return ("--play-script" if p.vendor == "script" else p.vendor) in out
 
 

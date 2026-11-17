@@ -472,7 +472,7 @@ class Runner:
             os.kill(int(pid), 0)
         except (OSError, ValueError):
             return False
-        cmdline = subprocess.run(["ps", "-p", str(pid), "-o", "command="], check=False, capture_output=True,
+        cmdline = subprocess.run(["ps", "-ww", "-p", str(pid), "-o", "command="], check=False, capture_output=True,
                                  text=True).stdout
         return needle in cmdline
 
