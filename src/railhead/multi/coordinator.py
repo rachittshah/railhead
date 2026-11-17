@@ -317,10 +317,11 @@ class Coordinator:
         if m in QUERIES:
             with self.world_lock:
                 ex = self.market.ex
+                # the exchange's own tick is that of its last record; agents need the world tick
                 if m == "view":
-                    return ex.public_view(me)
+                    return ex.public_view(me) | {"tick": self.sw.ticks}
                 if m == "market":
-                    return ex.market(me) | {"region": self.region_of(c), "arm": ex.arm}
+                    return ex.market(me) | {"tick": self.sw.ticks, "region": self.region_of(c), "arm": ex.arm}
                 return getattr(ex, m)(me)
         if m not in COMMANDS:
             raise OpError("ERR_UNKNOWN_OP", f"unknown market operation {m!r}; queries: {', '.join(QUERIES)}; "

@@ -488,3 +488,11 @@ def test_the_entry_point_takes_a_turn_budget(monkeypatch, tmp_path):
     assert coord_mod.main([str(tmp_path / "t"), str(tmp_path / "s"), "--turn-s", "45"]) == 0
     assert seen["budget"] == 45.0
     assert coord_mod.main([str(tmp_path / "t")]) == 2
+
+
+def test_market_views_give_the_world_tick_not_the_tick_of_the_last_exchange_record(make):
+    c = make(horizon_days=60, market=market_cfg())
+    run_agents([lambda s=s: c.handle(s, {"op": "wait", "days": 3}) for s in (0, 1, 2)])
+    assert c.sw.ticks == 1000 + 3 * D
+    assert ex(c, 0, "market")["tick"] == c.sw.ticks
+    assert ex(c, 0, "view")["tick"] == c.sw.ticks
