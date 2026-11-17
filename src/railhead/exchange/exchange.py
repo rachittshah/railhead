@@ -33,6 +33,7 @@ from .settlement import ARMS, compute_supply_settlement, settle_supply
 from .tenders import TICKS_PER_DAY, TenderConfig, auction, generate_tenders
 
 DEFAULT_OFFER_TICKS = 30 * TICKS_PER_DAY
+LICENCE_END = "ended"  # the outcome of a licence at its deadline (it has no performance to measure)
 MAX_MESSAGE_CHARS = 4000
 MAX_MEMO_CHARS = 200
 
@@ -272,12 +273,16 @@ class Exchange:
             if terms[f] is None:
                 terms[f] = company
         self._check_supply_window(terms, tick)
+        licence = c.kind == "licence"
         if self.arm == "enforced":
-            self._need_funds([(terms["buyer"], terms["price"]), (terms["seller"], terms["bond"])])
+            self._need_funds([(terms["grantee"], terms["fee"])] if licence else
+                             [(terms["buyer"], terms["price"]), (terms["seller"], terms["bond"])])
         c.move("signed", tick, "accept", company)
         c.terms, c.signed_tick, c.responder = terms, tick, None
         c.terms_history = [{"from_tick": tick, "terms": copy.deepcopy(terms)}]
-        if self.arm == "enforced":
+        if self.arm == "enforced" and licence:  # the fee goes to the grantor at signing: no escrow
+            self._move(terms["grantee"], terms["grantor"], terms["fee"], "licence_fee", c.id, tick)
+        elif self.arm == "enforced":
             self._move(terms["buyer"], escrow_account(c.id), terms["price"], "escrow", c.id, tick)
             self._move(terms["seller"], bond_account(c.id), terms["bond"], "bond", c.id, tick)
             c.escrow_price, c.escrow_bond = terms["price"], terms["bond"]
@@ -326,6 +331,18 @@ class Exchange:
             c.pending_amendment = {"by": company, "tick": tick, "terms": new}
             c.events.append({"tick": tick, "event": "amend_propose", "company": company})
             return
+        if c.kind == "licence":  # a changed fee moves the difference between the parties (enforced)
+            df = new["fee"] - c.terms["fee"]
+            if self.arm == "enforced":
+                self._need_funds([(new["grantee"], max(df, 0)), (new["grantor"], max(-df, 0))])
+                self._move(new["grantee"], new["grantor"], df, "licence_fee", c.id, tick)
+                self._move(new["grantor"], new["grantee"], -df, "licence_refund", c.id, tick)
+            c.terms, c.pending_amendment = new, None
+            c.terms_history.append({"from_tick": tick, "terms": copy.deepcopy(new)})
+            c.events.append({"tick": tick, "event": "amend_sign", "company": company})
+            if c.status == "signed" and tick >= new["window_start"]:
+                c.move("active", tick, "activate")
+            return
         dp, db = new["price"] - c.escrow_price, new["bond"] - c.escrow_bond
         if self.arm == "enforced":
             self._need_funds([(new["buyer"], max(dp, 0)), (new["seller"], max(db, 0))])
@@ -347,6 +364,13 @@ class Exchange:
             raise ExchangeError("bad_state", f"{c.id} is {c.status}; only signed or active contracts settle")
         if tick < c.terms["deadline"]:
             raise ExchangeError("not_due", f"{c.id} deadline {c.terms['deadline']} is after tick {tick}")
+        if c.kind == "licence":  # a licence ends: no deliveries, no money
+            if (r["delivered"], r["parts"], r["outcome"]) != (0, [], LICENCE_END):
+                raise ExchangeError("record_mismatch", f"{c.id}: a licence ends with delivered 0, no parts, "
+                                                       f"outcome {LICENCE_END!r}")
+            c.move("settled", tick, "settle")
+            c.outcome, c.settlement = LICENCE_END, {"outcome": LICENCE_END, "delivered": 0, "parts": []}
+            return
         expect = compute_supply_settlement(c.terms, r["delivered"])["outcome"]
         if r["outcome"] != expect:
             raise ExchangeError("record_mismatch", f"{c.id}: outcome {r['outcome']!r} != computed {expect!r}")
@@ -495,7 +519,8 @@ class Exchange:
         parts = {t["seller"]: [t["seller"], t["window_start"], t["deadline"]]}
         if c.tender_id is not None:
             for s in sorted(self.contract_map.values(), key=_id_key):
-                if (s.tender_id is None and s.signed_tick is not None and s.terms["buyer"] == t["seller"]
+                if (s.kind == "supply" and s.tender_id is None and s.signed_tick is not None
+                        and s.terms["buyer"] == t["seller"]
                         and s.terms["cargo"] == t["cargo"] and s.terms["industry"] == t["industry"]
                         and s.signed_tick <= t["deadline"] and s.terms["seller"] != t["seller"]):
                     start = max(t["window_start"], s.signed_tick)
@@ -510,6 +535,10 @@ class Exchange:
         out = self.advance(tick)
         due = [c for c in self.contract_map.values() if c.status in LIVE_STATUSES and c.terms["deadline"] <= tick]
         for c in sorted(due, key=lambda c: (c.terms["deadline"], _id_key(c))):
+            if c.kind == "licence":
+                out.append(self._record("settle", tick, None, contract_id=c.id, delivered=0, parts=[],
+                                        outcome=LICENCE_END))
+                continue
             parts = []
             for company, start, end in self.delivery_parts(c):
                 n = deliveries_fn(company, c.terms["cargo"], c.terms["industry"], start, end)
@@ -556,6 +585,18 @@ class Exchange:
                 tenders.append(v)
         return {"tick": self.tick, "order_book": book, "tenders": tenders}
 
+    def licences_held(self, company: str, tick: int) -> list[dict[str, Any]]:
+        """The licences that let ``company`` build at ``tick``: signed or active, window_start <= tick <
+        deadline. [{contract_id, grantor, rect, window_start, deadline}] in contract order."""
+        out = []
+        for c in sorted(self.contract_map.values(), key=_id_key):
+            t = c.terms
+            if (c.kind == "licence" and c.status in LIVE_STATUSES and t["grantee"] == company
+                    and t["window_start"] <= tick < t["deadline"]):
+                out.append({"contract_id": c.id, "grantor": t["grantor"], "rect": list(t["rect"]),
+                            "window_start": t["window_start"], "deadline": t["deadline"]})
+        return out
+
     def contracts(self, company: str) -> list[dict[str, Any]]:
         """``rh contracts``: every contract and offer the company is party to, or may answer."""
         self._company(company)
@@ -583,7 +624,7 @@ class Exchange:
         awards = []
         if self.arm == "enforced":
             for c in sorted(self.contract_map.values(), key=_id_key):
-                if c.status == "settled" and c.settlement is not None:
+                if c.status == "settled" and c.settlement is not None and c.kind == "supply":
                     settlements.append({"contract_id": c.id, "seller": c.terms["seller"], "buyer": c.terms["buyer"],
                                         "outcome": c.outcome, "delivered": c.settlement["delivered"],
                                         "quantity": c.terms["quantity"], "tick": c.events[-1]["tick"]})

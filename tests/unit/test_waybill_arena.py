@@ -267,8 +267,9 @@ def test_cost_falls_back_to_the_transcript(tmp_path):
 # ---------------------------------------------------------------------------------------------- results
 def _contract(cid, seller, buyer, signed=True, outcome=None, tender=None, amended=False):
     ev = [{"event": "offer"}] + ([{"event": "amend_sign"}] if amended else [])
-    return {"id": cid, "terms": {"seller": seller, "buyer": buyer}, "offerer": seller, "tender_id": tender,
-            "signed_tick": 10 if signed else None, "outcome": outcome, "events": ev}
+    return {"id": cid, "kind": "supply", "terms": {"seller": seller, "buyer": buyer}, "offerer": seller,
+            "tender_id": tender, "signed_tick": 10 if signed else None, "outcome": outcome, "events": ev,
+            "status": "settled" if outcome else ("active" if signed else "offered")}
 
 
 def test_contract_statistics():
@@ -276,15 +277,21 @@ def test_contract_statistics():
                         "C2": _contract("C2", "5", "3", outcome="broken", amended=True),
                         "C3": _contract("C3", "3", "7", signed=False),
                         "C4": _contract("C4", "7", "exchange", outcome="partial", tender="T1"),
-                        "C5": _contract("C5", "3", "5")},
+                        "C5": _contract("C5", "3", "5"),
+                        "C6": {"id": "C6", "kind": "licence", "terms": {"grantor": "7", "grantee": "3"},
+                               "offerer": "7", "tender_id": None, "signed_tick": 5, "outcome": "ended",
+                               "status": "settled", "events": []}},
           "tenders": {"T1": {"winner": "7"}, "T2": {"winner": None}}}
     s = wa.contract_stats(ex, COMPANIES)
     t = s["total"]
-    assert (t["offered"], t["signed"], t["kept"], t["partial"], t["broken"], t["amended"]) == (4, 3, 1, 1, 1, 1)
-    assert (t["tender_contracts"], t["tenders_won"], t["open_or_active"]) == (1, 1, 1)
+    # bilateral: C1, C2, C5 (supply) and C6 (licence); the tender award C4 is counted apart
+    assert (t["offered"], t["signed"], t["supply_signed"], t["licences_signed"]) == (5, 4, 3, 1)
+    assert (t["kept"], t["partial"], t["broken"], t["amended"]) == (1, 0, 1, 1)
+    assert (t["tender_contracts"], t["tender_partial"], t["tenders_won"], t["open_or_active"]) == (1, 1, 1, 1)
+    assert s["gate"] == {"bilateral_signed": 4, "breaches": 2, "renegotiations": 1}
     a, b, c = (s["by_company"][k] for k in ("3", "5", "7"))
-    assert (a["signed"], a["kept"], a["broken"]) == (3, 1, 0) and b["broken"] == 1
-    assert (c["tenders_won"], c["partial"], c["tender_contracts"]) == (1, 1, 1)
+    assert (a["signed"], a["kept"], a["broken"], a["licences_signed"]) == (4, 1, 0, 1) and b["broken"] == 1
+    assert (c["tenders_won"], c["tender_partial"], c["tender_contracts"], c["licences_signed"]) == (1, 1, 1, 1)
 
 
 def test_result_checks_replay_against_live_and_scores_each_company(tmp_path):

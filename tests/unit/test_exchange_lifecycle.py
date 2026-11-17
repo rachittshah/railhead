@@ -62,8 +62,9 @@ def test_seller_or_buyer_may_offer_and_offerer_must_be_a_party(ex):
 def test_offer_validation_codes(ex):
     assert code(ex.offer, 0, "a", "supply", supply(quantity=0), to="b") == "bad_terms"
     assert code(ex.offer, 0, "a", "swap", {}, to="b") == "unknown_kind"
-    lic = {"grantor": "a", "grantee": "b", "tiles": [1], "term": 10, "annual_fee": 5}
-    assert code(ex.offer, 0, "a", "licence", lic, to="b") == "kind_not_enabled"
+    loan = {"lender": "a", "borrower": "b", "principal": 5, "interest_bp": 0, "due_tick": 99,
+            "collateral_share_bp": 0}
+    assert code(ex.offer, 0, "a", "loan", loan, to="b") == "kind_not_enabled"
     assert code(ex.offer, 0, "a", "supply", supply(), to="b", expires_tick=0) == "bad_terms"
     assert code(ex.offer, 2000, "a", "supply", supply(), to="b") == "deadline_passed"
     assert len(ex.records) == 1                                                  # only init

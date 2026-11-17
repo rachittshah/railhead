@@ -163,7 +163,9 @@ def replay_multi(start_save: Path, log_path: Path, workdir: Path, allowed: set[s
                 if regions is not None:
                     slot = int(state.companies[r["company"]]["slot"])
                     try:
-                        regions.check_action(slot, r["ticks"], m, r.get("a") or {}, WorldProbe(sw, r["company"]))
+                        lic = market.licence_rects(r["company"], r["ticks"]) if market is not None else None
+                        regions.check_action(slot, r["ticks"], m, r.get("a") or {}, WorldProbe(sw, r["company"]),
+                                             lic)
                     except FranchiseError as e:
                         raise LogRejected(f"act seq={seq}: {e}") from None
                 res.acts += 1

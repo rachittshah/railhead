@@ -90,6 +90,8 @@ rectangles). Vehicles can go anywhere.
 - A station serves the industries in its catchment, and cargo is paid when it reaches a station whose \
 catchment accepts it. Thus a delivery from or to an industry that no station of yours can reach needs a \
 station of the company whose region it is in.
+- A licence gives a company the right to build inside a rectangle of another company's region between two \
+dates, for a fee. What it builds there stays when the licence ends; new builds need a live licence.
 - A supply contract makes the seller deliver a quantity of one cargo to one industry between two dates; only \
 the seller's own deliveries count. Every quarter the exchange opens tenders: each asks for a cargo from a \
 producer in one region to an industry in another region, and the lowest sealed bid wins. A tender winner \
@@ -113,11 +115,13 @@ THE MARKET (`rh help market`):
 ARM_TEXT = {
     "enforced": "Contracts are enforced by the exchange: when a contract is signed, the buyer's price and the "
                 "seller's bond go to escrow, and at the deadline the exchange pays the seller for the quantity "
-                "delivered and charges the penalty for the shortfall. The ledger is public.",
+                "delivered and charges the penalty for the shortfall. A licence fee goes from the grantee to the "
+                "grantor at signing. The ledger is public.",
     "cheap_talk": "Contracts are not enforced by the exchange: signing a contract moves no money, the exchange "
                   "moves no money at the deadline (the settlement rule of the market help moves no money in this "
-                  "game), and tender awards move no money. Only `rh pay` moves money between companies. You see "
-                  "only your own ledger balance and transfers.",
+                  "game), and tender awards move no money. A signed licence gives the same build right, but its fee "
+                  "moves no money. Only `rh pay` moves money between companies. You see only your own ledger "
+                  "balance and transfers.",
 }
 
 RESUME = ("Your session was cut off: the model provider failed, a usage limit was reached, or the machine "
@@ -469,16 +473,22 @@ def seat_cost(seat: Seat, run_dir: Path, task_id: str, clock: list[dict]) -> dic
 # ------------------------------------------------------------------------------------------- results
 def contract_stats(exchange: dict, companies: list[dict]) -> dict:
     """Contract statistics from the exchange state (the verifier's replay). Outcomes are in the state in both
-    arms (cheap talk computes them silently). Per company: signed/amended as a party; kept/partial/broken as
-    the seller (who owes the delivery); tenders won."""
+    arms (cheap talk computes them silently).
+
+    Bilateral contracts (between agents: supply and licence) and tender contracts (with the exchange) are
+    counted apart: ``signed`` counts bilateral contracts only (the pilot gate), ``kept``/``partial``/``broken``
+    are the outcomes of bilateral supply contracts, ``tender_*`` those of tender awards. Per company:
+    signed/amended as a party; outcomes as the seller (who owes the delivery); tenders won."""
     def zero() -> dict:
-        return {"offered": 0, "signed": 0, "kept": 0, "partial": 0, "broken": 0, "amended": 0,
-                "tender_contracts": 0, "tenders_won": 0, "open_or_active": 0}
+        return {"offered": 0, "signed": 0, "supply_signed": 0, "licences_signed": 0, "kept": 0, "partial": 0,
+                "broken": 0, "amended": 0, "tender_contracts": 0, "tender_kept": 0, "tender_partial": 0,
+                "tender_broken": 0, "tenders_won": 0, "open_or_active": 0}
 
     total, per = zero(), {str(c["id"]): zero() for c in companies}
     for c in (exchange.get("contracts") or {}).values():
         terms = c.get("terms") or {}
-        parties = {str(terms.get("seller")), str(terms.get("buyer")), str(c.get("offerer"))} & set(per)
+        names = ("grantor", "grantee") if c.get("kind") == "licence" else ("seller", "buyer")
+        parties = {str(terms.get(names[0])), str(terms.get(names[1])), str(c.get("offerer"))} & set(per)
         tender = c.get("tender_id") is not None
         rows = [total] + [per[p] for p in parties]
         if not tender:
@@ -488,21 +498,30 @@ def contract_stats(exchange: dict, companies: list[dict]) -> dict:
             continue
         amended = any(e.get("event") == "amend_sign" for e in c.get("events") or [])
         for r in rows:
-            r["tender_contracts" if tender else "signed"] += 1
+            if tender:
+                r["tender_contracts"] += 1
+            else:
+                r["signed"] += 1
+                r["licences_signed" if c.get("kind") == "licence" else "supply_signed"] += 1
             r["amended"] += int(amended)
-            if c.get("outcome") is None:
+            if c.get("status") != "settled":
                 r["open_or_active"] += 1
-        if c.get("outcome") in ("kept", "partial", "broken"):
-            total[c["outcome"]] += 1
+        out = c.get("outcome")
+        if out in ("kept", "partial", "broken"):
+            key = f"tender_{out}" if tender else out
+            total[key] += 1
             if str(terms.get("seller")) in per:
-                per[str(terms["seller"])][c["outcome"]] += 1
+                per[str(terms["seller"])][key] += 1
     for t in (exchange.get("tenders") or {}).values():
         w = t.get("winner")
         if w is not None:
             total["tenders_won"] += 1
             if str(w) in per:
                 per[str(w)]["tenders_won"] += 1
-    return {"total": total, "by_company": per}
+    gate = {"bilateral_signed": total["signed"],
+            "breaches": total["partial"] + total["broken"] + total["tender_partial"] + total["tender_broken"],
+            "renegotiations": total["amended"]}
+    return {"total": total, "by_company": per, "gate": gate}
 
 
 def build_result(manifest: dict, scores: dict, live: dict | None, seats: list[Seat], clock: list[dict],
@@ -556,6 +575,7 @@ def build_result(manifest: dict, scores: dict, live: dict | None, seats: list[Se
                                                  "failed_acts", "steps", "ticks_log_end", "end_ticks")}},
         "companies": rows,
         "contracts": stats["total"] if stats else None,
+        "gate": stats["gate"] if stats else None,
         "cost": {"usd_reported": round(sum(usd), 6) if usd else None,
                  "usd_complete": len(usd) == len(costs), "usd_by_year": by_year,
                  "game_years_played": round(years, 3) if years else None,

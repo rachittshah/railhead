@@ -4,8 +4,15 @@
 terms dict against it with a small built-in validator (the project has no runtime dependencies), then
 applies the cross-field rules that JSON Schema cannot express.
 
-Only ``supply`` is enabled for trading. ``licence`` and ``loan`` have schemas and validate, but
-:data:`ENABLED_KINDS` excludes them until their settlement rules exist.
+``supply`` and ``licence`` are enabled for trading. ``loan`` has a schema and validates, but
+:data:`ENABLED_KINDS` excludes it until its settlement rules exist.
+
+A licence gives the grantee the right to build inside the rectangle ``rect`` = [x0, y0, x1, y1] (both corners
+included) of the grantor's franchise region, from ``window_start`` until ``deadline`` (ticks), for a one-off
+``fee`` that the grantee pays the grantor at signing (enforced arm; in cheap talk no money moves, but the
+right is granted the same). Infrastructure built under a licence stays when it ends; only new builds
+need a live licence. The exchange does not know the regions: the coordinator and the replay clip the
+rectangle to the grantor's region at the tick of each build (railhead.multi.market).
 
 Lifecycle::
 
@@ -48,12 +55,12 @@ SCHEMAS: dict[str, dict[str, Any]] = {
         "title": "licence",
         "type": "object",
         "additionalProperties": False,
-        "required": ["grantor", "grantee", "tiles", "term", "annual_fee"],
+        "required": ["grantor", "grantee", "rect", "window_start", "deadline", "fee"],
         "properties": {
             "grantor": _OPEN_PARTY, "grantee": _OPEN_PARTY,
-            "tiles": {"type": "array", "minItems": 1, "items": _INT0},
-            "term": {"type": "integer", "minimum": 1},
-            "annual_fee": _INT0,
+            "rect": {"type": "array", "minItems": 4, "maxItems": 4, "items": _INT0},
+            "window_start": _INT0, "deadline": _INT0,
+            "fee": _INT0,
         },
     },
     "loan": {
@@ -77,7 +84,7 @@ PARTY_FIELDS: dict[str, tuple[str, str]] = {
     "licence": ("grantor", "grantee"),
     "loan": ("lender", "borrower"),
 }
-ENABLED_KINDS = frozenset({"supply"})
+ENABLED_KINDS = frozenset({"supply", "licence"})
 
 # status -> statuses it may move to
 TRANSITIONS: dict[str, frozenset[str]] = {
@@ -129,6 +136,8 @@ def schema_errors(value: Any, schema: dict[str, Any], path: str = "terms") -> li
     if isinstance(value, list):
         if len(value) < schema.get("minItems", 0):
             errs.append(f"{path}: fewer than {schema['minItems']} items")
+        if "maxItems" in schema and len(value) > schema["maxItems"]:
+            errs.append(f"{path}: more than {schema['maxItems']} items")
         if "items" in schema:
             for i, item in enumerate(value):
                 errs += schema_errors(item, schema["items"], f"{path}[{i}]")
@@ -154,10 +163,12 @@ def validate_terms(kind: str, terms: Any, *, open_party: bool = False) -> dict[s
         raise ExchangeError("bad_terms", f"{a} and {b} must be different companies")
     if kind == "supply":
         t.setdefault("bond", 0)
-        if t["deadline"] <= t["window_start"]:
-            raise ExchangeError("bad_terms", "deadline must be after window_start")
-    if kind == "licence" and len(set(t["tiles"])) != len(t["tiles"]):
-        raise ExchangeError("bad_terms", "tiles must be unique")
+    if kind in ("supply", "licence") and t["deadline"] <= t["window_start"]:
+        raise ExchangeError("bad_terms", "deadline must be after window_start")
+    if kind == "licence":
+        x0, y0, x1, y1 = t["rect"]
+        if x1 < x0 or y1 < y0:
+            raise ExchangeError("bad_terms", "rect must be [x0, y0, x1, y1] with x0 <= x1 and y0 <= y1")
     return t
 
 
