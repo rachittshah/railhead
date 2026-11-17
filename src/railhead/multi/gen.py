@@ -13,6 +13,7 @@ lists the companies as ``[{id, name, slot}]``.
 
 from __future__ import annotations
 
+import json
 import shutil
 import sys
 import tempfile
@@ -20,7 +21,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from railhead.multi.market import MarketConfig
+from railhead.multi.market import MarketConfig, cross_region_needs, industry_snapshot
 from railhead.multi.regions import REGIONS_FILE, RegionMap, make_region_map, region_of
 from railhead.seal import seal_task
 from railhead.task import TaskSpec
@@ -206,7 +207,8 @@ def gen_track(track: str, seed: int, out: Path, rotations: list[int] | None = No
         with World.create(work / "gen", server_config(sc), found_company=False) as w:
             companies = build_start(w, work / "start.sav", t.agents)
             region_maps = {r: region_map_for(w, t.agents, r) for r in rotations}
-            ind_tiles = [(int(i["x"]), int(i["y"])) for i in w.call("industries")]
+            ind_rows = list(w.call("industries"))
+            ind_tiles = [(int(i["x"]), int(i["y"])) for i in ind_rows]
         for r in rotations:
             for arm in arms:
                 plan = TaskPlan(track, seed, r, arm, horizon_days)
@@ -219,7 +221,8 @@ def gen_track(track: str, seed: int, out: Path, rotations: list[int] | None = No
                 extra = {"track": track, "seed": seed, "rotation": r, "arm": arm,
                          "region_types": {str(k): v for k, v in rm.types.items()},
                          "region_industries": {str(k): sum(region_of(rm, x, y) == k for x, y in ind_tiles)
-                                               for k in sorted(rm.regions)}}
+                                               for k in sorted(rm.regions)},
+                         "region_needs": cross_region_needs(industry_snapshot(ind_rows, rm, 0), max_distance=128)}
                 specs.append(write_task(tdir, plan.task_id, companies, horizon_days or t.horizon_days,
                                         t.runoff_days, scenario=sc,
                                         split=split, regions=rm, market=market, extra_objective=extra,
@@ -229,10 +232,25 @@ def gen_track(track: str, seed: int, out: Path, rotations: list[int] | None = No
         shutil.rmtree(work, ignore_errors=True)
 
 
+def region_needs(task_dir: Path, max_distance: int | None = 128) -> dict:
+    """cross_region_needs for the start world of a task (its start.sav and regions.json)."""
+    tdir = Path(task_dir)
+    work = Path(tempfile.mkdtemp(prefix="rh-needs-"))
+    try:
+        with World.load(work / "w", tdir / "start.sav") as w:
+            rows = list(w.call("industries"))
+        return cross_region_needs(industry_snapshot(rows, RegionMap.for_task(tdir), 0), max_distance=max_distance)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv[:1] == ["track"]:
         return track_main(argv[1:])
+    if argv[:1] == ["needs"] and len(argv) in (2, 3):  # python -m railhead.multi.gen needs <task_dir> [max_dist]
+        print(json.dumps(region_needs(Path(argv[1]), int(argv[2]) if len(argv) == 3 else 128), indent=1))
+        return 0
     opts = {"--agents": "3", "--split": "train", "--horizon": "730", "--runoff": "0", "--map-log2": "",
             "--start-cash": ""}
     pos = []

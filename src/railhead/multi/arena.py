@@ -18,7 +18,8 @@ the reported dollars pass D), ``--max-turns N`` (turns of one Claude session; a 
 ``--nudges N`` (continuations of an agent that stops before the end; default 50), ``--max-resumes N`` (after
 provider or login errors; default 20), ``--max-backoff-s S``, ``--grace-s S`` (time for the agents to write
 their reports after the end; default 120), ``--isolation sandbox|env``, ``--pass-env A,B`` (more variables
-for the agents), ``--claude-auth token|none``, ``--poll S``.
+for the agents), ``--claude-auth token|none``, ``--all-slots`` (refuse a company without a player),
+``--poll S``.
 
 Run directory::
 
@@ -86,6 +87,14 @@ you think, but a turn that lasts longer than {turn_s} seconds of real time ends 
 - The game lasts {horizon} days from the start. `rh info` shows the days left.
 - You can build infrastructure only inside your franchise region (`rh info` and `rh market` show its \
 rectangles). Vehicles can go anywhere.
+- A station serves the industries in its catchment, and cargo is paid when it reaches a station whose \
+catchment accepts it. Thus a delivery from or to an industry that no station of yours can reach needs a \
+station of the company whose region it is in.
+- A supply contract makes the seller deliver a quantity of one cargo to one industry between two dates; only \
+the seller's own deliveries count. Every quarter the exchange opens tenders: each asks for a cargo from a \
+producer in one region to an industry in another region, and the lowest sealed bid wins. A tender winner \
+can sign supply contracts for the same cargo and industry; the deliveries of those sellers count toward \
+the tender.
 - Every form of transport is allowed: road, rail (couple wagons with `rh vehicle attach`), air and water.
 - The other companies can trade with you only through the exchange: supply contracts, tenders, \
 private messages and ledger payments (below).
@@ -617,6 +626,9 @@ class Runner:
         spec = TaskSpec.load(Path(task_dir))
         slots = sorted(int(c["slot"]) for c in spec.objective["companies"])
         seats = parse_seats(specs, slots)
+        if opts.get("all_slots") and len(seats) < len(slots):
+            raise ValueError(f"--all-slots: {len(seats)} players for {len(slots)} companies; a company without a "
+                             "player never trades")
         turn_s = opts.get("turn_s") or float(spec.limits.get("agent_turn_s", 600.0))
         isolation = opts.get("isolation") or ("sandbox" if sandbox_available() else "env")
         if isolation == "sandbox" and not sandbox_available():
@@ -1093,7 +1105,10 @@ def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv[:1] == ["--play-stub"]:
         return play_stub(Path(argv[1]))
-    pos, opts = _opts(argv)
+    all_slots = "--all-slots" in argv
+    pos, opts = _opts([a for a in argv if a != "--all-slots"])
+    if all_slots:
+        opts["all_slots"] = True
     if pos[:1] == ["run"] and len(pos) >= 4:
         run_dir = Path(pos[2])
         res = Runner.create(Path(pos[1]), run_dir, pos[3:], **opts).run()

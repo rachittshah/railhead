@@ -189,3 +189,18 @@ def test_parse_command_resolves_companies_ticks_and_partial_terms():
                        ("nope", {}, "unknown market command")]:
         with pytest.raises(CommandError, match=frag):
             parse_command(m, a, me="3", now=START, companies=COMPANIES)
+
+
+def test_cross_region_needs_counts_deliveries_that_need_a_partner():
+    from railhead.multi.market import cross_region_needs
+
+    snap = [{"id": 1, "type": 0, "produces": [1], "accepts": [], "tile": [5, 5], "region": 0},     # coal mine, region 0
+            {"id": 2, "type": 0, "produces": [], "accepts": [1], "tile": [50, 5], "region": 1},    # power station, region 1
+            {"id": 3, "type": 0, "produces": [], "accepts": [1], "tile": [8, 5], "region": 0},     # power station, region 0
+            {"id": 4, "type": 0, "produces": [7], "accepts": [], "tile": [9, 9], "region": 0},
+            {"id": 5, "type": 0, "produces": [], "accepts": [7], "tile": [200, 9], "region": 1}]
+    n = cross_region_needs(snap)
+    assert (n["local"], n["cross_only"]) == (1, 2) and n["by_region"]["1"] == {"local": 0, "cross_only": 2}
+    assert n["tender_candidates"] == 2 and n["industries_by_region"] == {"0": 3, "1": 2}
+    near = cross_region_needs(snap, max_distance=100)
+    assert (near["local"], near["cross_only"]) == (1, 1)

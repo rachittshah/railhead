@@ -162,14 +162,7 @@ class Market:
 
     # ------------------------------------------------------------------ the driver
     def snapshot(self, industries: list[dict], tick: int) -> list[dict]:
-        out = []
-        for i in industries:
-            x, y = int(i["x"]), int(i["y"])
-            reg = region_of(self.regions, x, y, tick) if self.regions is not None else -1 - int(i["id"])
-            out.append({"id": int(i["id"]), "type": int(i.get("type", 0)),
-                        "produces": sorted({int(p["cargo"]) for p in i.get("produces", [])}),
-                        "accepts": sorted({int(c) for c in i.get("accepts", [])}), "tile": [x, y], "region": reg})
-        return out
+        return industry_snapshot(industries, self.regions, tick)
 
     def tick_records(self, tick: int, industries: Callable[[], list[dict]]) -> list[dict]:
         """System records for ``tick``: expiries, awards, activations and settlements that are due, then
@@ -201,6 +194,52 @@ class Market:
 
     def state(self) -> dict:
         return {"exchange": self.ex.state(), "monitors": self.book.state()}
+
+
+def industry_snapshot(industries: list[dict], regions: RegionMap | None, tick: int) -> list[dict]:
+    """Engine industry rows -> the exchange's industry snapshot (with the region slot of each industry)."""
+    out = []
+    for i in industries:
+        x, y = int(i["x"]), int(i["y"])
+        reg = region_of(regions, x, y, tick) if regions is not None else -1 - int(i["id"])
+        out.append({"id": int(i["id"]), "type": int(i.get("type", 0)),
+                    "produces": sorted({int(p["cargo"]) for p in i.get("produces", [])}),
+                    "accepts": sorted({int(c) for c in i.get("accepts", [])}), "tile": [x, y], "region": reg})
+    return out
+
+
+def cross_region_needs(snapshot: list[dict], max_distance: int | None = None) -> dict:
+    """How much of the world's freight crosses franchise regions, from an industry snapshot.
+
+    For each (destination industry, cargo it accepts) with a producer of that cargo somewhere (within
+    ``max_distance`` tiles, Manhattan, when given): ``local`` if a producer is in the destination's own
+    region, else ``cross_only``. A company can build stations only in its own region, so a cross-only
+    delivery needs a station in the other company's region: a partner (a supply contract or a tender
+    subcontract). ``tender_candidates`` is the pool the quarterly tenders are drawn from (all cross-region)."""
+    from railhead.exchange.tenders import candidates
+
+    local = cross = 0
+    by_region: dict[str, dict[str, int]] = {}
+    for dest in snapshot:
+        for cargo in dest["accepts"]:
+            prods = [p for p in snapshot if cargo in p["produces"] and p["id"] != dest["id"]]
+            if max_distance is not None:
+                prods = [p for p in prods if abs(p["tile"][0] - dest["tile"][0])
+                         + abs(p["tile"][1] - dest["tile"][1]) <= max_distance]
+            if not prods:
+                continue
+            row = by_region.setdefault(str(dest["region"]), {"local": 0, "cross_only": 0})
+            if any(p["region"] == dest["region"] for p in prods):
+                local += 1
+                row["local"] += 1
+            else:
+                cross += 1
+                row["cross_only"] += 1
+    counts: dict[str, int] = {}
+    for i in snapshot:
+        counts[str(i["region"])] = counts.get(str(i["region"]), 0) + 1
+    return {"industries": len(snapshot), "industries_by_region": counts, "local": local, "cross_only": cross,
+            "by_region": by_region, "tender_candidates": len(candidates(snapshot)), "max_distance": max_distance}
 
 
 def _addressed_to(ex: Exchange, r: dict, me: str) -> bool:

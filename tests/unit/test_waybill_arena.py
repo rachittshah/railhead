@@ -462,3 +462,8 @@ def test_opencode_cost_per_game_year_comes_from_its_own_step_events(tmp_path):
     c = wa.seat_cost(wa.Seat(2, "opencode", "opencode/big-pickle", "s2-opencode"), tmp_path, "t", clock)
     assert c["requests"] == 2 and c["input_tokens"] == 150 and c["cache_read_tokens"] == 7
     assert c["by_year"]["1950"]["input_tokens"] == 100 and c["by_year"]["1951"]["cost_usd"] == 0.5
+
+
+def test_all_slots_refuses_a_company_without_a_player(task, tmp_path):
+    with pytest.raises(ValueError, match="never trades"):
+        wa.Runner.create(task, tmp_path / "run", ["stub:/x", "stub:/y"], all_slots=True)
