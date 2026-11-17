@@ -43,7 +43,9 @@ META_HELP = [
 MARKET_HELP = [
     "(only in a Waybill shared world with a market; companies: an id, a name like 'Company B', a letter, or me)",
     "rh market                                   the public order book and the open tenders (and your region)",
-    "rh contracts | inbox | ledger               your contracts and offers | messages to you | the ledger",
+    "rh contracts                                your contracts and the offers you can answer (your_turn)",
+    "rh inbox                                    the private messages to you",
+    "rh ledger                                   balances and transfers (cheap_talk arm: your own only)",
     "rh offer to=B seller=me buyer=B cargo=1 industry=12 quantity=500 window_start=+0d deadline=+90d \\",
     "         price=40000 penalty_per_unit=50 [bond=0] [expires_tick=+30d]",
     "                                            a supply contract: the seller delivers `quantity` of `cargo` to",
