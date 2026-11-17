@@ -272,7 +272,9 @@ class Coordinator:
             with self.world_lock:  # no record is half written while the lock is held
                 recs = [r.raw for r in read_log(self.log_path)
                         if r.kind == "step" or (r.kind != "header" and r.raw.get("company") == c)]
-            return recs[-n:]
+            # a step shows only this company's wake: the wake reasons of others can reveal their market
+            return [dict(r, wakers=[w for w in r["wakers"] if w.get("company") == c], snap={})
+                    if r.get("kind") == "step" else r for r in recs[-n:]]
         if op.startswith("fork_"):
             raise OpError("ERR_NOT_SUPPORTED", "forks are not available in a shared world")
         raise OpError("ERR_UNKNOWN_OP", f"unknown op {op!r}")

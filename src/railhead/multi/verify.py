@@ -1,7 +1,8 @@
 """Verifier for a Waybill game: the net worth of each company from the sealed start and the v3 log only
 (docs/WAYBILL.md, section 5).
 
-  1. integrity: start.sav and regions.json must match the sealed hashes (else tamper=1)
+  1. integrity: start.sav, task.json (companies, market config) and regions.json must match the sealed
+     hashes (else tamper=1)
   2. the companies of the log header must be the companies of the task (id, slot, name), else rejected=1
   3. replay a private copy of the log (``replay_multi``) with the player-action whitelist and the task
      horizon (an illegal log => rejected=1). A divergence is attributed by a second replay, as in
@@ -45,7 +46,8 @@ def verify_multi(task_dir: Path, start_sav: Path, log: Path, workdir: Path) -> d
     task_dir, workdir = Path(task_dir), Path(workdir)
     spec = TaskSpec.load(task_dir)
     base: dict = {"valid": 1, "tamper": 0, "rejected": 0, "companies": []}
-    if not check_start(task_dir, start_sav) or not check_sealed_file(task_dir, REGIONS_FILE, "regions_json"):
+    if not check_start(task_dir, start_sav) or not check_sealed_file(task_dir, REGIONS_FILE, "regions_json") \
+            or not check_sealed_file(task_dir, "task.json", "task_json"):
         return base | {"tamper": 1}
     regions = RegionMap.for_task(task_dir)
     market_cfg = MarketConfig.from_objective(spec.objective)

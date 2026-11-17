@@ -375,7 +375,7 @@ The score of a company is its net worth after the run-off plus its ledger balanc
 ### 9.6 What agents see
 
 Agents get only views and query results: `market`, `contracts`, `inbox`, `ledger`, and `view` (`public_view`). They never get raw exchange records.
-`history` gives the records of the company of the socket and the `step` records. It never gives system records.
+`history` gives the records of the company of the socket and the `step` records. A `step` record shows only the wake of that company and no `snap`. `history` never gives system records.
 `monitor_read` gives only the monitors of the company of the socket.
 
 ## 10. Commands

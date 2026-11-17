@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from railhead.multi.market import MarketConfig
-from railhead.multi.regions import REGIONS_FILE, RegionMap, make_region_map
+from railhead.multi.regions import REGIONS_FILE, RegionMap, make_region_map, region_of
 from railhead.seal import seal_task
 from railhead.task import TaskSpec
 from railhead.world import AGENT_AI, World
@@ -202,6 +202,7 @@ def gen_track(track: str, seed: int, out: Path, rotations: list[int] | None = No
         with World.create(work / "gen", server_config(sc), found_company=False) as w:
             companies = build_start(w, work / "start.sav", t.agents)
             region_maps = {r: region_map_for(w, t.agents, r) for r in rotations}
+            ind_tiles = [(int(i["x"]), int(i["y"])) for i in w.call("industries")]
         for r in rotations:
             for arm in arms:
                 plan = TaskPlan(track, seed, r, arm)
@@ -212,7 +213,9 @@ def gen_track(track: str, seed: int, out: Path, rotations: list[int] | None = No
                                       quarter_days=t.quarter_days, tender=dict(tender or {}))
                 rm = region_maps[r]
                 extra = {"track": track, "seed": seed, "rotation": r, "arm": arm,
-                         "region_types": {str(k): v for k, v in rm.types.items()}}
+                         "region_types": {str(k): v for k, v in rm.types.items()},
+                         "region_industries": {str(k): sum(region_of(rm, x, y) == k for x, y in ind_tiles)
+                                               for k in sorted(rm.regions)}}
                 specs.append(write_task(tdir, plan.task_id, companies, t.horizon_days, t.runoff_days, scenario=sc,
                                         split=split, regions=rm, market=market, extra_objective=extra,
                                         title=f"Waybill ({track} track): a shared world with a contract market"))

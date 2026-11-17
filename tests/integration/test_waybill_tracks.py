@@ -30,6 +30,8 @@ def test_short_track_paired_arms_and_rotations(tmp_path):
         rm = RegionMap.load(d / "regions.json")
         assert (rm.map_x, rm.map_y) == (256, 256) and len(rm.regions) == n
         assert rm.types == {s: (s + obj["rotation"]) % n for s in range(n)}
+        counts = obj["region_industries"]
+        assert len(counts) == n and min(counts.values()) >= 1, counts
         maps[(obj["rotation"], obj["arm"])] = rm.to_json()
         assert "regions_json" in json.loads((d / "sealed.json").read_text())
     assert maps[(1, "enforced")] == maps[(1, "cheap_talk")] and maps[(1, "enforced")] != maps[(2, "enforced")]

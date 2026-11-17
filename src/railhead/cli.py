@@ -362,7 +362,7 @@ def _run(argv: list[str], as_json: bool) -> int:
             print(f"waited {out.get('days')} days -> {out.get('ymd')} (stopped because: {out.get('reason')}); "
                   f"{left} days left")
         return 0
-    if cmd in MARKET_QUERIES or cmd in MARKET_COMMANDS or (cmd == "tender" and rest[:1] == ["bid"]):
+    if cmd in MARKET_QUERIES or cmd in MARKET_COMMANDS or cmd == "tender":
         return _market(c, cmd, rest, as_json)
     if cmd in META_COMMANDS:
         _print(c.request("meta", m=cmd, a=parse_kv(rest, mx)), as_json)

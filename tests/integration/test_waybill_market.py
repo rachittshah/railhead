@@ -130,9 +130,35 @@ class Agent:
             self.c.request("act", m="rail_track", a={"tile": hy * W + hx, "track": "ne_sw", "dry_run": True})
         except DaemonError as e:
             self.notes["home"] = e.code
+        self.notes["rh"] = rh_calls(self.c.path)
         self.ex("msg", to="A", text="hello from C")
         self.notes["contracts"] = self.ex("contracts")
         self.idle()
+
+
+def rh_calls(sock: Path) -> list[tuple[int, str, str]]:
+    """`rh` as a model runs it: one market query that works and one command that fails."""
+    import contextlib
+    import io
+    import os
+
+    from railhead import cli
+
+    out = []
+    old = os.environ.get("RAILHEAD_SOCKET")
+    os.environ["RAILHEAD_SOCKET"] = str(sock)
+    try:
+        for argv in (["market"], ["accept", "contract_id=C99"], ["tender", "list"]):
+            o, e = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(o), contextlib.redirect_stderr(e):
+                rc = cli.main(argv)
+            out.append((rc, o.getvalue(), e.getvalue()))
+    finally:
+        if old is None:
+            os.environ.pop("RAILHEAD_SOCKET", None)
+        else:
+            os.environ["RAILHEAD_SOCKET"] = old
+    return out
 
 
 def make_world(tmp: Path):
@@ -182,10 +208,17 @@ def play(tmp: Path, arm: str) -> dict:
         with coord.world_lock:
             mk = coord.market
             live = {"ticks": coord.sw.ticks, "net_worth": coord.sw.net_worth(), "exchange": mk.ex.state(),
+                    "market": mk.state(),
                     "ledger": {int(c["id"]): mk.balance(int(c["id"])) for c in companies}}
             mk.ex.check_invariants()
     finally:
         coord.close()
+    again = Coordinator(tdir, state)  # recovery: the market comes back from the log
+    try:
+        recovered = again.market.state() if again.market is not None else None
+    finally:
+        again.close()
+    live["recovered"] = recovered
     return {"task": tdir, "log": state / "run" / "actions.jsonl", "companies": companies, "live": live,
             "notes": [a.notes for a in agents], "views": views, "plan": plan, "tmp": tmp, "regions": regions}
 
@@ -230,7 +263,8 @@ def test_forged_out_of_region_build_is_rejected_by_the_replay(enforced, tmp_path
     for ln in lines:
         r = json.loads(ln)
         if r.get("kind") == "act" and r.get("company") == cid_c and r["m"] == "rail_track":
-            r["a"]["tile"] = y * W + x  # same record, but on a tile of A's region
+            r["a"]["tile"] = y * W + x  # same record, but a real build on a tile of A's region
+            r["a"].pop("dry_run", None)
         forged.append(json.dumps(r, sort_keys=True))
     bad = tmp_path / "forged.jsonl"
     bad.write_text("\n".join(forged) + "\n")
@@ -340,3 +374,15 @@ def test_tender_opens_is_bid_awarded_and_settled(enforced):
     assert s["outcome"] in ("kept", "partial", "broken") and s["tick"] == t["deadline"]
     ex = enforced["live"]["exchange"]
     assert ex["tenders"][tid]["status"] == "settled"
+
+
+def test_a_restarted_coordinator_recovers_the_market(enforced, cheap):
+    for g in (enforced, cheap):
+        assert g["live"]["recovered"] == g["live"]["market"]
+
+
+def test_rh_market_commands_end_to_end(enforced):
+    (rc1, out1, _), (rc2, _, err2), (rc3, _, err3) = enforced["notes"][2]["rh"]
+    assert rc1 == 0 and json.loads(out1)["tenders"] and "region" in json.loads(out1)
+    assert rc2 == 1 and err2.startswith("ERR_UNKNOWN_CONTRACT")
+    assert rc3 == 2 and "usage: rh tender bid" in err3
