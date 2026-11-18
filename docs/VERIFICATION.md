@@ -186,7 +186,9 @@ When the agent is root in the same container as the daemon, the engine, and the 
 2. Choose in hindsight. It can play, then cut the log at the best point, or insert a promise before the first wait and calculate all later checksums again.
    Cutting the log needs no root and no private engine: the agent can write its log. The daemon then also replays a cut log, so the agent can go back in time and try again with the true engine.
 3. Make the trainer drop a game. A process that it leaves behind can stop the verify engine or fill the disk. The result is `valid = 0` with `error = 1`, or no reward file. SkyRL then retries and masks the episode.
-4. Edit or delete `run/forks.json` to get more fork days (this needs no root), and edit the daemon itself during the play.
+4. Edit the daemon itself during the play. (Deleting `run/forks.json` no longer resets the fork budget: the log has it.)
+
+**Decision (Phase 6) on the two open red-team tests** `test_attack_cutting_the_log_before_a_failed_promise_does_not_pay` and `test_attack_rewind_by_cutting_the_log_and_restarting_the_daemon`: they stay `xfail(strict=True)`. Both need a record of the log head that the agent cannot write. Inside the container (threat model M1) every file the daemon can write, the agent can also write, so no change to the daemon or the verifier can close them. The fix is the second row of the table below (a head hash committed outside the container while the agent plays) or the first (a separate user); both are infrastructure decisions of the owner. A change to the reward rule (for example, a bid log with no promise pays 0) would remove the incentive of the first test, but it changes the reward of existing published bid results, so it is not made here.
 
 These fixes remove the attacks above:
 

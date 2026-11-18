@@ -207,7 +207,9 @@ def test_attack_deleting_the_fork_budget_file_does_not_reset_it(real_daemon):
 
 
 # ------------------------------------------------------------------ R4: hindsight without a private engine
-@pytest.mark.xfail(strict=True, reason="decision: nothing outside the container binds the log length. The "
+@pytest.mark.xfail(strict=True, reason="decision (Phase 6, docs/VERIFICATION.md 6): not closable inside the "
+                   "container; needs a head hash committed outside it (an owner decision). "
+                   "Nothing outside the container binds the log length. The "
                    "agent cuts its log (here: to the header, or test.sh's fallback when the log is deleted) after "
                    "it saw a bad result. Bid family: no promise pays 0.5, more than a failed promise. Fix: commit "
                    "the log head outside the container, or query the live daemon for its head hash in test.sh "
@@ -220,7 +222,9 @@ def test_attack_cutting_the_log_before_a_failed_promise_does_not_pay(bid_task, e
     assert _verify(bid_task, cut, tmp_path / "c")["reward"] <= honest["reward"]
 
 
-@pytest.mark.xfail(strict=True, reason="decision: the daemon recovers by replay of whatever run/actions.jsonl "
+@pytest.mark.xfail(strict=True, reason="decision (Phase 6, docs/VERIFICATION.md 6): not closable inside the "
+                   "container; needs a head hash kept outside it or a separate user. "
+                   "The daemon recovers by replay of whatever run/actions.jsonl "
                    "holds. The agent waits, sees the result, shuts the daemon down through the socket, cuts the "
                    "log and runs `rh status`: the world is back at the cut. This is the private-engine attack of "
                    "section 6 with the task's own daemon. Fix: a head hash kept where the agent cannot write "

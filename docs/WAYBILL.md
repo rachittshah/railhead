@@ -265,6 +265,7 @@ The command writes `<out_dir>/scores.json`.
 - A market wake (`offer_received`, `message_received`) occurs at the next step. When a waiter's condition is already true, that step is one tick long.
 - In `cheap_talk`, the exchange collects no obligation; only `pay`, the start balances and tender payouts move money (arm parity, WAYBILL-EXCHANGE.md "Arms").
 - An amendment that changes the cargo or the industry gets a new monitor from its signing tick. Deliveries before that tick do not count.
+- A Waybill log verifies with the exchange rules of the code that wrote it. Pilot v1 logs (before `reach_tiles`) and pilot v2 logs (before obligations and instalments) do not verify with later commits; pilot v3 logs verify (rules 1). New track tasks record `market.rules`, so a later rules change can keep them verifiable.
 - Loan contracts are not tradable yet (`kind_not_enabled`). A licence has a one-off fee, no periodic fee, and cannot be revoked.
 
 ## 8. Franchise regions
