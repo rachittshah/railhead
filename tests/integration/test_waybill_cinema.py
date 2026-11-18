@@ -94,3 +94,56 @@ def test_cinema_samples_a_verified_run_and_renders_frames(tmp_path):
                         "--still-only", end_ymd]) == 0
     still = out / "stills" / f"cinema-enforced-light-at-{end_ymd}.png"
     assert mpimg.imread(still).shape[:2] == (1080, 1920)
+
+
+def test_observer_hook_does_not_change_the_replay_and_the_verifier_never_uses_it(tmp_path, monkeypatch):
+    """The same merged log replayed twice, with the sampling hook on a fine grid (37 ticks, so most steps
+    run in several pieces) and without it: every checkpoint, the final checksum, the net worth and the
+    exchange state are equal. ``verify_multi`` never passes the hook."""
+    from railhead.multi import verify as mv
+    from railhead.multi.market import MarketConfig
+    from railhead.multi.regions import RegionMap
+    from railhead.multi.replay import replay_multi
+    from railhead.replay import ReplayRejected, default_whitelist
+    from railhead.task import TaskSpec
+
+    tasks = tmp_path / "tasks"
+    specs = gen_track("short", 7, tasks, rotations=[0], arms=("cheap_talk",), horizon_days=HORIZON)
+    task = tasks / specs[0].task_id
+    run = tmp_path / "run"
+    res = wa.Runner.create(task, run, scripts(tmp_path, task), turn_s=120, poll_s=0.3, grace_s=10).run()
+    assert res["verify"]["clean"], res["verify"]
+    spec = TaskSpec.load(task)
+    log = run / "coord" / "run" / "actions.jsonl"
+    calls = {"grid": 0, "step": 0}
+
+    def observe(sw, market, why):
+        calls[why] += 1
+        for c in sw.ids:  # read like the sampler does
+            sw.query(c, "stations")
+            sw.query(c, "vehicles")
+
+    def replay(sub, **kw):
+        return replay_multi(task / "start.sav", log, tmp_path / sub, allowed=default_whitelist() or set(),
+                            horizon_days=spec.horizon_days, regions=RegionMap.for_task(task),
+                            market_cfg=MarketConfig.from_objective(spec.objective), require_seal=True, **kw)
+
+    plain = replay("plain")
+    hooked = replay("hooked", observe=observe, grid_ticks=37)
+    assert calls["grid"] > calls["step"] > 0
+    assert plain.valid and hooked.valid and not hooked.divergences
+    assert hooked.checkpoints == plain.checkpoints  # every step and seal checksum, every act outcome
+    assert hooked.final_checksum == plain.final_checksum and hooked.end_ticks == plain.end_ticks
+    assert hooked.net_worth == plain.net_worth
+    assert hooked.market.state() == plain.market.state()
+
+    seen = []
+
+    def spy(*a, **kw):
+        seen.append(kw)
+        raise ReplayRejected("spy")
+
+    monkeypatch.setattr(mv, "replay_multi", spy)
+    out = mv.verify_multi(task, task / "start.sav", log, tmp_path / "verify")
+    assert out["rejected"] == 1 and seen
+    assert all("observe" not in kw and "grid_ticks" not in kw for kw in seen)
