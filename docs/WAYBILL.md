@@ -438,7 +438,7 @@ The fee is paid in quarterly instalments (obligations). The fee and the arms: re
 | Track | Companies | Map | Horizon | Run-off | Minimum cross-region needs |
 |---|---|---|---|---|---|
 | `short` | 4 | 256 x 256 | 730 days (2 game years) | 365 days | 5 |
-| `decade` | 8 | 512 x 512 | 3650 days (10 game years) | 365 days | 0 (not measured) |
+| `decade` | 8 | 512 x 512 | 3650 days (10 game years) | 365 days | 10 |
 
 ```
 python -m railhead.multi.gen track <short|decade> <first_seed> <count> <out_dir> [--rotations cycle|all] [--arms enforced,cheap_talk] [--start-balances SLOT=POUNDS,...]
@@ -451,7 +451,8 @@ python -m railhead.multi.gen track <short|decade> <first_seed> <count> <out_dir>
 - The task id is `waybill-<track>-s<seed>-r<rotation>-<arm>`. `objective` also has `track`, `seed`, `rotation`, `arm`, `region_types`, `region_needs`, and `min_cross_only`.
 - A seed whose `region_needs.cross_only` (within 128 tiles) is less than the minimum of the track is rejected (`SeedRejected`), and `gen track` takes the next seed. `--rotations cycle` counts the accepted seeds.
 - The tenders of a track task use `reach_tiles` 128: a tender opens only where the destination's region has no producer of the cargo within 128 tiles (WAYBILL-EXCHANGE.md, "Tenders").
-- `python -m railhead.multi.gen survey <track> <first_seed> <count>` prints the cross-region needs of each seed.
+- `python -m railhead.multi.gen survey <track> <first_seed> <count>` prints the cross-region needs of each seed. Seeds 1 to 20: short 0 to 10 (median 4; minimum 5 keeps 9 of 20); decade 3 to 21 (median 11; minimum 10, that is 1.25 per region as on the short track, keeps 13 of 20).
+- `python -m railhead.multi.gen schedule <track> <seed,...> <player,...>` writes the seat-to-region schedule and the balance table (player x region type). With `--rotations cycle`, accepted seed number i plays rotation i mod N. `docs/data/waybill-schedule-short.json` is the schedule of the first 30 accepted short seeds with the alternating Claude/Codex roster: each vendor plays each region type 15 times. One player per seat would not balance over 30 seeds (8, 8, 7, 7); the decade track (3 seeds, 8 seats) cannot balance.
 
 ## 12. The arena runner
 
@@ -496,6 +497,7 @@ The runner retires a slot that has no player: it sends `submit` for that company
 | `--grace-s S` | 120 | The time that the agents get to write their reports after the end of the game |
 | `--isolation sandbox\|env` | `sandbox` on macOS, else `env` | Section 12.4 |
 | `--poll S` | 1 | The interval of the supervision loop |
+| `--traces on\|off` | `on` | `off`: the OTLP sink drops trace exports (logs and metrics stay). Pilot traces were about 160 MB per agent-hour; use `off` for long runs. |
 
 ### 12.2 The brief
 
@@ -614,3 +616,32 @@ For a company, `signed` and `amended` count the contracts where it is a party. `
 | `tender_candidates` | The pool of the quarterly tenders (each is cross-region) |
 
 `gen_track` writes the same counts to `objective.region_needs` of each task.
+
+### 12.11 Scale (8 agents, decade track)
+
+Load test with 8 stub agents on the decade track (seed 1), each turn 3 queries and a 30-day wait, some messages and payments (2026-11-18):
+
+| Run | Game time | Wall time | Steps | Coordinator memory | Engine memory | Merged log | Verify (replay + run-off) |
+|---|---|---|---|---|---|---|---|
+| 1 game year (`--horizon 365`) | 365 days + 365 run-off | 15 s | 16 | 27 MB | 42 MB | 31 KB | clean |
+| Full | 3650 days + 365 run-off | 86 s (6 s per game year) | 162 | 28 MB | 49 MB | 291 KB | 22 s, clean, sealed |
+
+The stubs build nothing, so the engine load and the log are much smaller than in a real game. Real logs: the worst pilot rate is 84 KB per agent-year (pilot v2 `cheap_talk`), which projects a decade game to about 7 MB; `verify_multi` rejects a merged log above 64 MiB (`MAX_LOG_BYTES`). The coordinator itself is not the limit: real wall time is set by the agents' turns (pilots: 15 to 25 minutes per game year with 4 agents).
+
+Changes from the load test: a stub or script agent runs a copy of its script in its agent directory (the sandbox closes other directories); the dollar-cap check reads only the new lines of the OTLP log; `--traces off`.
+
+Real smoke test with 8 live harnesses (2026-11-18): decade track seed 1, 90 game days, `enforced`, seats alternating `claude:claude-opus-5-5` and `codex:gpt-6.1-terra` (4 + 4; `model_used` matched every seat), `--turn-s 180 --run-s 2700 --usd-cap 15 --traces off`, sandbox isolation:
+
+| Item | Value |
+|---|---|
+| End | horizon, 2108 s (35 min); verify clean, replay = live, sealed |
+| Steps / actions (failed) | 80 / 765 (206) |
+| Errors | no provider error, no rate limit (HTTP 429), no auth error, no resume, no continuation, 0 runner submits |
+| Automatic waits (turn over 180 s) | 4 (s2 and s5 on the first turn, s5 and s7 once later) |
+| Claude per-request latency (OTLP `duration_ms`) | median 3.5 to 4.9 s, 90th percentile 9.8 to 13.1 s per seat |
+| Claude cost | $8.59 in total ($1.38 to $2.63 per seat) for 265 requests |
+| Codex | 84 to 153 requests and 3.7M to 8.3M input tokens per seat (no dollars) |
+| Market | 7 licence offers, 5 signed, 5 instalment obligations; 19 `message_received` wakes |
+| Merged log | 203 KB for 90 days |
+
+Projection: 35 minutes for 90 game days with 8 agents is about 2.4 h per game year in the first months; the pilots show that the later years are much faster (the agents wait in longer chunks), but a full decade game can be near the 12-hour wall budget. The turn budget and the dollar cap bound it.

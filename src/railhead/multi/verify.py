@@ -34,6 +34,10 @@ from railhead.seal import check_sealed_file, check_start
 from railhead.task import TaskSpec
 from railhead.verify import _log_at_fault
 
+# A merged log above this size is rejected before replay. The worst pilot rate (84 KB per agent-year)
+# projects a decade game (8 agents x 10 years) to about 7 MB; 64 MiB leaves a margin of about 10x.
+MAX_LOG_BYTES = 64 * 1024 * 1024
+
 
 def _norm(companies: list[dict]) -> list[tuple]:
     try:
@@ -54,6 +58,8 @@ def verify_multi(task_dir: Path, start_sav: Path, log: Path, workdir: Path) -> d
     workdir.mkdir(parents=True, exist_ok=True)
     if not Path(log).is_file():
         return base | {"rejected": 1}
+    if Path(log).stat().st_size > MAX_LOG_BYTES:
+        return base | {"rejected": 1, "oversized": 1}
     snap = workdir / "actions.jsonl"
     shutil.copyfile(log, snap)
 

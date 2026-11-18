@@ -151,7 +151,9 @@ TRACKS = {
     # short: run-off 365 days (as decade and single-agent Railhead), and at least 5 cross-region needs (the
     # median of seeds 1-20 is 4; 5 keeps 9 of 20; docs/WAYBILL-PILOT.md 8)
     "short": Track("short", agents=4, map_log2=8, horizon_days=730, runoff_days=365, min_cross_only=5),
-    "decade": Track("decade", agents=8, map_log2=9, horizon_days=3650, runoff_days=365),
+    # decade: at least 10 cross-region needs (1.25 per region, as the short track's 5 for 4 regions); seeds 1-20
+    # give a median of 11, and 10 keeps 13 of 20 (docs/WAYBILL.md 11)
+    "decade": Track("decade", agents=8, map_log2=9, horizon_days=3650, runoff_days=365, min_cross_only=10),
 }
 ARMS = ("enforced", "cheap_talk")
 EXCHANGE_RULES = 2  # new track tasks: FIFO payment allocation, late payments, instalments clipped to the end
@@ -266,6 +268,25 @@ def region_needs(task_dir: Path, max_distance: int | None = 128) -> dict:
         shutil.rmtree(work, ignore_errors=True)
 
 
+def rotation_schedule(track: str, seeds: list[int], roster: list[str]) -> dict:
+    """The seat-to-region schedule of a track (``--rotations cycle``): accepted seed number i plays rotation
+    i mod N, so seat s plays region type (s + i) mod N. ``roster`` is the vendor (or model) of each seat.
+    Returns the games and, for each vendor, how often it plays each region type (the balance table)."""
+    n = TRACKS[track].agents
+    if len(roster) != n:
+        raise ValueError(f"the {track} track has {n} seats, the roster {len(roster)}")
+    games, balance = [], {v: [0] * n for v in dict.fromkeys(roster)}
+    for i, seed in enumerate(seeds):
+        r = i % n
+        seats = [{"seat": s, "player": roster[s], "region_type": (s + r) % n} for s in range(n)]
+        for x in seats:
+            balance[x["player"]][x["region_type"]] += 1
+        games.append({"seed": seed, "rotation": r, "seats": seats})
+    return {"track": track, "seeds": len(seeds), "roster": roster, "games": games,
+            "balance": {v: {str(t): c for t, c in enumerate(row)} for v, row in balance.items()},
+            "balanced": all(len(set(row)) == 1 for row in balance.values())}
+
+
 def survey(track: str, seeds: list[int], max_distance: int = REACH_TILES) -> dict[int, dict]:
     """region_needs of the track world of each seed (no task is kept): the data for ``min_cross_only``."""
     out = {}
@@ -283,6 +304,10 @@ def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv[:1] == ["track"]:
         return track_main(argv[1:])
+    if argv[:1] == ["schedule"] and len(argv) == 4:  # schedule <track> <seed,seed,...> <roster,roster,...>
+        sched = rotation_schedule(argv[1], [int(x) for x in argv[2].split(",")], argv[3].split(","))
+        print(json.dumps(sched, indent=1))
+        return 0
     if argv[:1] == ["survey"] and len(argv) == 4:  # python -m railhead.multi.gen survey <track> <first> <count>
         first, count = int(argv[2]), int(argv[3])
         for seed, n in survey(argv[1], list(range(first, first + count))).items():

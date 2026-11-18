@@ -48,3 +48,16 @@ def test_a_horizon_override_shows_in_the_task_id():
 def test_the_short_track_has_a_run_off_and_a_cross_region_minimum():
     s = TRACKS["short"]
     assert s.runoff_days == 365 and s.min_cross_only == 5 and TRACKS["decade"].runoff_days == 365
+
+
+def test_the_rotation_schedule_balances_vendors_over_region_types():
+    from railhead.multi.gen import rotation_schedule
+
+    roster = ["claude", "codex", "claude", "codex"]
+    s = rotation_schedule("short", list(range(100, 130)), roster)  # 30 seeds
+    assert s["balanced"] and s["balance"]["claude"] == {"0": 15, "1": 15, "2": 15, "3": 15}
+    assert [g["rotation"] for g in s["games"][:5]] == [0, 1, 2, 3, 0]
+    assert s["games"][1]["seats"][3]["region_type"] == 0
+    seat0 = rotation_schedule("short", list(range(30)), ["a", "b", "c", "d"])  # one seat per player: 8,8,7,7
+    assert not seat0["balanced"] and seat0["balance"]["a"] == {"0": 8, "1": 8, "2": 7, "3": 7}
+    assert TRACKS["decade"].min_cross_only == 10
