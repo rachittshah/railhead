@@ -172,9 +172,12 @@ def parse_kv(pairs: list[str], map_x: int) -> dict[str, Any]:
 
 
 def _client() -> Client:
+    from railhead.client import env_socket
     from railhead.daemon import ensure_up
 
     c = Client()
+    if env_socket() is not None:  # a Waybill coordinator owns the world: never start railheadd here
+        return c
     try:
         c.request("ping")
     except (OSError, DaemonError):
