@@ -217,3 +217,11 @@ def test_rescore_reallocates_old_payments_under_rules2():
     assert again.rules == 2 and again.obligations["O1"]["paid"] == 250 and again.obligations["O2"]["paid"] == 0
     assert again.obligations["O2"]["status"] == "broken"
     again.check_invariants()
+
+
+def test_a_record_without_an_optional_field_is_stored_without_it():
+    ex = Exchange(CO, arm="cheap_talk", seed=1)  # rules 1: the init record has no rules/horizon_tick
+    assert "rules" not in ex.records[0] and "horizon_tick" not in ex.records[0]
+    assert Exchange.replay(ex.records).records == ex.records
+    two = Exchange(CO, arm="cheap_talk", seed=1, rules=2, horizon_tick=999)
+    assert (two.records[0]["rules"], two.records[0]["horizon_tick"]) == (2, 999)

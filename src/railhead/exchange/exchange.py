@@ -150,8 +150,10 @@ class Exchange:
             raise ExchangeError("bad_record", f"unknown op in {record!r}")
         op = record["op"]
         want = BASE_FIELDS | RECORD_FIELDS[op]
+        filled: set[str] = set()
         if set(record) != want and set(record) | OPTIONAL_FIELDS.get(op, frozenset()) == want:
-            record = {**record, **{k: None for k in want - set(record)}}
+            filled = want - set(record)
+            record = {**record, **{k: None for k in filled}}
         if set(record) != want:
             raise ExchangeError("bad_record", f"{op}: fields {sorted(record)} != {sorted(want)}")
         if record["seq"] != len(self.records):
@@ -171,6 +173,8 @@ class Exchange:
             self._company(company)
         rec = copy.deepcopy(record)
         getattr(self, f"_op_{op}")(rec)
+        for k in filled:  # a record without an optional field is kept without it (old logs stay byte-equal)
+            rec.pop(k, None)
         self.records.append(rec)
         self.tick = tick
         return copy.deepcopy(rec)
