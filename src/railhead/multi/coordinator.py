@@ -496,7 +496,8 @@ class Coordinator:
             if self.market.book.active:
                 self.market.book.sample(sw.ticks, self._logged(sw.monitor_rows))
             with self.cv:
-                obs.market = {c: pick_reason(r) for c, r in self.market.wakes(sw.ticks, self._ex_waiters()).items()}
+                all_market = self.market.wakes(sw.ticks, self._ex_waiters())
+                obs.market = {c: pick_reason(r) for c, r in all_market.items()}
         out = {"ymd": sw.ymd, "date": sw.date, "ticks": sw.ticks, "paused": True}
         # One section (cv is reentrant): a waiter must never see itself awake without its result, and a
         # failed step record rebuilds the barrier from the log before any waiter sees the wake.
@@ -507,7 +508,11 @@ class Coordinator:
             if self.market is not None:
                 self._logged(self._market_tick, sw)
             for c, reason in wakers:
-                self.results[c] = out | {"reason": reason, "days": (sw.ticks - starts[c]) // TICKS_PER_DAY}
+                # the log keeps one reason; the agent gets every reason of this tick (a deadline or the end of
+                # the wait must not hide that one of its payments falls due)
+                every = sorted({reason} | (all_market.get(c, set()) if self.market is not None else set()))
+                self.results[c] = out | {"reason": reason, "reasons": every,
+                                         "days": (sw.ticks - starts[c]) // TICKS_PER_DAY}
             self.cv.notify_all()
 
     def _ex_waiters(self) -> dict[int, tuple[list[str], int]]:

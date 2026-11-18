@@ -513,3 +513,20 @@ def test_obligation_statistics_and_the_gate_count_agent_to_agent_only():
     assert (t["tender_obligations_created"], t["tender_obligations_broken"]) == (1, 1)
     assert s["gate"]["breaches"] == 2  # O2 and O3; the tender penalty O4 does not count
     assert s["by_company"]["5"]["obligations_created"] == 3 and s["by_company"]["7"]["tender_obligations_broken"] == 1
+
+
+def test_preregistered_metrics_repayment_rate_and_on_time_rate():
+    def ob(i, paid, payments, settle=200, due=100, amount=100, collected=0, status="kept"):
+        return {"id": f"O{i}", "payer": "5", "payee": "3", "status": status, "amount": amount, "due": due,
+                "settle_tick": settle, "paid": paid, "payments": payments, "collected": collected, "paid_by_due": 0}
+
+    ex = {"contracts": {}, "tenders": {},
+          "obligations": {"O1": ob(1, 100, [[150, 100]]),                                  # on time (in grace)
+                          "O2": ob(2, 100, [[100 + 74 * 50, 100]], status="broken"),       # late, 50 days
+                          "O3": ob(3, 40, [[120, 40]], status="partial"),                  # partial
+                          "O4": ob(4, 0, [], amount=300, status="broken")}}                # unpaid
+    t = wa.contract_stats(ex, COMPANIES)["total"]
+    assert (t["obligations_timing_on_time"], t["obligations_timing_late"], t["obligations_timing_partial"],
+            t["obligations_timing_unpaid"]) == (1, 1, 1, 1)
+    assert t["obligations_days_late"] == [50.0]
+    assert t["obligations_repayment_rate"] == round(240 / 600, 4) and t["obligations_on_time_rate"] == 0.25

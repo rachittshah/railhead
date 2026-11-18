@@ -46,6 +46,7 @@ class MarketConfig:
     credit_limit: int | None = None
     quarter_days: int = 90
     tender: dict = field(default_factory=dict)  # TenderConfig fields
+    rules: int = 1  # exchange rules version (Exchange.rules); 1 keeps old logs verifiable
 
     @classmethod
     def from_objective(cls, objective: dict) -> MarketConfig | None:
@@ -55,7 +56,7 @@ class MarketConfig:
         cfg = cls(arm=d.get("arm", "enforced"), seed=int(d.get("seed", 0)),
                   start_balances={int(k): int(v) for k, v in (d.get("start_balances") or {}).items()},
                   credit_limit=d.get("credit_limit"), quarter_days=int(d.get("quarter_days", 90)),
-                  tender=dict(d.get("tender") or {}))
+                  tender=dict(d.get("tender") or {}), rules=int(d.get("rules", 1)))
         TenderConfig(**cfg.tender)  # fail early on a bad config
         if cfg.quarter_days < 1:
             raise ValueError("market.quarter_days must be 1 or more")
@@ -64,6 +65,8 @@ class MarketConfig:
     def to_json(self) -> dict:
         d = asdict(self)
         d["start_balances"] = {str(k): v for k, v in sorted(self.start_balances.items())}
+        if self.rules == 1:  # old task files have no field: keep them byte-identical
+            d.pop("rules")
         return d
 
 
@@ -138,7 +141,7 @@ class Market:
         self.ex = Exchange([ex_id(c["id"]) for c in sorted(companies, key=lambda c: int(c["slot"]))],
                            arm=cfg.arm, seed=cfg.seed, credit_limit=cfg.credit_limit,
                            tender_config=self.tender_config, start_balances={k: v for k, v in sb.items() if v},
-                           tick=start_tick)
+                           tick=start_tick, rules=cfg.rules, horizon_tick=horizon_tick)
         self.book = MonitorBook()
 
     # ------------------------------------------------------------------ schedule

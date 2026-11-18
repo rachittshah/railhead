@@ -368,7 +368,8 @@ def _run(argv: list[str], as_json: bool) -> int:
             print(json.dumps(out))
         else:
             left = c.request("info")["days_left"]
-            print(f"waited {out.get('days')} days -> {out.get('ymd')} (stopped because: {out.get('reason')}); "
+            why = ", ".join(out.get("reasons") or [out.get("reason")])
+            print(f"waited {out.get('days')} days -> {out.get('ymd')} (stopped because: {why}); "
                   f"{left} days left")
         return 0
     if cmd in MARKET_QUERIES or cmd in MARKET_COMMANDS or cmd == "tender":

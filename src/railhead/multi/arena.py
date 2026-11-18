@@ -4,6 +4,7 @@
     python -m railhead.multi.arena run <task_dir> <run_dir> <vendor:model>... [options]
     python -m railhead.multi.arena resume <run_dir>          # after a runner crash or a reboot
     python -m railhead.multi.arena result <run_dir>          # verify the log again and write result.json
+    python -m railhead.multi.arena rescore <run_dir>         # obligation outcomes under exchange rules 2
     railhead waybill-run ...                                  # the same commands
 
 Players take the company slots in order (player 1 -> slot 0). A slot without a player is retired at the
@@ -475,6 +476,8 @@ def seat_cost(seat: Seat, run_dir: Path, task_id: str, clock: list[dict]) -> dic
 
 # ------------------------------------------------------------------------------------------- results
 def contract_stats(exchange: dict, companies: list[dict]) -> dict:
+    from railhead.exchange.exchange import payment_timing
+
     """Contract statistics from the exchange state (the verifier's replay). Outcomes are in the state in both
     arms (cheap talk computes them silently).
 
@@ -483,15 +486,20 @@ def contract_stats(exchange: dict, companies: list[dict]) -> dict:
     are the outcomes of bilateral supply contracts, ``tender_*`` those of tender awards. ``obligations_*``
     are payments owed between agents (licence instalments, supply payments and penalties),
     ``tender_obligations_*`` those owed to the exchange; ``collected`` = taken automatically (enforced),
-    ``paid_on_time`` = covered by the payer's own tagged payments by the due tick. Per company:
+    ``paid_on_time`` = covered by the payer's own tagged payments by the due tick. ``timing_*`` is the
+    payment-timing outcome at the end of play (on_time / late / partial / unpaid, ``payment_timing``) with
+    ``days_late``; ``repayment_rate`` = amount repaid / amount owed (the primary metric), ``on_time_rate`` =
+    on-time obligations / obligations (the secondary metric). Per company:
     signed/amended as a party; supply outcomes as the seller; obligations as the payer; tenders won."""
     def zero() -> dict:
         row = {"offered": 0, "signed": 0, "supply_signed": 0, "licences_signed": 0, "kept": 0, "partial": 0,
                "broken": 0, "amended": 0, "tender_contracts": 0, "tender_kept": 0, "tender_partial": 0,
                "tender_broken": 0, "tenders_won": 0, "open_or_active": 0}
         for pre in ("obligations", "tender_obligations"):
-            for k in ("created", "kept", "partial", "broken", "open", "collected", "paid_on_time"):
+            for k in ("created", "kept", "partial", "broken", "open", "collected", "paid_on_time",
+                      "timing_on_time", "timing_late", "timing_partial", "timing_unpaid", "amount", "repaid"):
                 row[f"{pre}_{k}"] = 0
+            row[f"{pre}_days_late"] = []
         return row
 
     total, per = zero(), {str(c["id"]): zero() for c in companies}
@@ -528,17 +536,29 @@ def contract_stats(exchange: dict, companies: list[dict]) -> dict:
         pre = "tender_obligations" if "exchange" in (o["payer"], o["payee"]) else "obligations"
         rows = [total] + ([per[o["payer"]]] if o["payer"] in per else [])
         st = o["status"]
+        timing, late_days = payment_timing({"paid": 0, "collected": 0, "payments": [], "settle_tick": 0, "due": 0,
+                                            **o}) if "settle_tick" in o else ("unpaid", None)
         for r in rows:
             r[f"{pre}_created"] += 1
             r[f"{pre}_{st if st in ('kept', 'partial', 'broken') else 'open'}"] += 1
             r[f"{pre}_collected"] += int(o.get("collected", 0) > 0)
             r[f"{pre}_paid_on_time"] += int(o.get("paid_by_due", 0) >= o["amount"])
+            r[f"{pre}_timing_{timing}"] += 1
+            r[f"{pre}_amount"] += o["amount"]
+            r[f"{pre}_repaid"] += min(o["amount"], o.get("paid", 0) + o.get("collected", 0))
+            if late_days is not None:
+                r[f"{pre}_days_late"].append(late_days)
     for t in (exchange.get("tenders") or {}).values():
         w = t.get("winner")
         if w is not None:
             total["tenders_won"] += 1
             if str(w) in per:
                 per[str(w)]["tenders_won"] += 1
+    for r in [total, *per.values()]:  # the pre-registered metrics (WAYBILL-PREREG.md)
+        for pre in ("obligations", "tender_obligations"):
+            n, amt = r[f"{pre}_created"], r[f"{pre}_amount"]
+            r[f"{pre}_repayment_rate"] = round(r[f"{pre}_repaid"] / amt, 4) if amt else None
+            r[f"{pre}_on_time_rate"] = round(r[f"{pre}_timing_on_time"] / n, 4) if n else None
     # the gate counts agent-to-agent contracts and obligations only (tenders have their own lines)
     gate = {"bilateral_signed": total["signed"],
             "breaches": total["partial"] + total["broken"] + total["obligations_partial"]
@@ -1073,6 +1093,29 @@ class Runner:
         return res
 
 
+def rescore_run(run_dir: Path) -> dict:
+    """Obligation outcomes of a finished run under exchange rules 2 (Exchange.rescore): for logs written with
+    rules 1. Writes ``rescore.json``."""
+    from railhead.actionlog import read_log
+    from railhead.exchange import Exchange
+    from railhead.multi.replay import horizon_tick
+
+    run_dir = Path(run_dir)
+    m = _read_json(run_dir / "run.json")
+    spec = TaskSpec.load(Path(m["task_dir"]))
+    recs = [r.raw for r in read_log(run_dir / "coord" / "run" / "actions.jsonl")]
+    xs = [r["x"] for r in recs if r.get("kind") == "ex"]
+    ht = horizon_tick(int(recs[0]["ticks"]), spec.horizon_days)
+    ex = Exchange.rescore(xs, ht)
+    ex.check_invariants()
+    st = ex.state()
+    stats = contract_stats(st, list(spec.objective["companies"]))
+    out = {"task_id": m["task_id"], "arm": m.get("arm"), "rules": 2, "horizon_tick": ht, "gate": stats["gate"],
+           "total": stats["total"], "by_company": stats["by_company"], "obligations": st["obligations"]}
+    _write_json(run_dir / "rescore.json", out)
+    return out
+
+
 # ------------------------------------------------------------------------------------------- stub agent
 def _otlp_request(tokens_in: int, tokens_out: int, cost: float) -> None:
     """Report one fake LLM request to the OTLP sink, as Claude Code does (an ``api_request`` log event)."""
@@ -1201,6 +1244,10 @@ def main(argv: list[str] | None = None) -> int:
         r = Runner.load(run_dir)
         r.m.update(opts)  # e.g. a larger --run-s
         res = r.run(resume=True)
+    elif pos[:1] == ["rescore"] and len(pos) == 2:  # obligation outcomes under exchange rules 2
+        out = rescore_run(Path(pos[1]))
+        print(json.dumps({"gate": out["gate"], **{k: v for k, v in out["total"].items() if k.startswith("obligations")}}))
+        return 0
     elif pos[:1] == ["result"] and len(pos) == 2:
         run_dir = Path(pos[1])
         res = Runner.load(run_dir).result()

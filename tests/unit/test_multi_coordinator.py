@@ -573,3 +573,28 @@ def test_cheap_talk_obligation_wakes_the_payer_and_is_settled_from_tagged_paymen
     assert out["tag"] == "ERR_BAD_TAG"
     o = next(x for x in ex(c, 1, "contracts")[0]["your_obligations"] if x["amount"] == 400)
     assert o["paid"] == 400 and o["status"] == "open"  # settled after the grace period
+
+
+def test_a_coinciding_deadline_wake_does_not_hide_obligation_due_from_the_payer(make):
+    from railhead.multi.regions import RegionMap
+
+    rm = RegionMap(64, 64, {0: [[0, 0, 20, 63]], 1: [[21, 0, 40, 63]], 2: [[41, 0, 63, 63]]})
+    c = make(regions=rm, market=market_cfg("cheap_talk"), horizon_days=120)
+    cid = ex(c, 0, "offer", kind="licence", to="B", grantor="me", grantee="B", rect="5,0,15,10",
+             window_start="+0d", deadline="+100d", fee=800)["contract"]["contract_id"]
+    ex(c, 1, "accept", contract_id=cid)
+    end = c.sw.ticks + 91 * D
+    seen = []
+
+    def until_end(s):
+        t = c.sw.ticks
+        while t < end:
+            r = c.handle(s, {"op": "wait", "ticks": end - t, **({"until": ["deadline"]} if s == 1 else {})})
+            t = r["ticks"]
+            if s == 1:
+                seen.append(r)
+
+    run_agents([lambda s=s: until_end(s) for s in (0, 1, 2)])
+    due = next(r for r in seen if "obligation_due" in r["reasons"])
+    assert due["reason"] == "deadline"  # the logged reason (until=deadline also matches the due tick) ...
+    assert {"deadline", "obligation_due"} <= set(due["reasons"])  # ... and the payer still learns that it owes
