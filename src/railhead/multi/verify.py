@@ -106,6 +106,7 @@ def verify_multi(task_dir: Path, start_sav: Path, log: Path, workdir: Path) -> d
         extra = {"market": mk.state()} if mk is not None else {}
         return base | extra | {"companies": comps, "acts": res.acts, "failed_acts": res.failed_acts, "steps": res.steps,
                        "divergences": len(res.divergences), "valid": 0 if res.divergences else 1,
+                       "ticks_log_end": res.end_ticks, "checksum_log_end": res.final_checksum,
                        "end_ticks": sw.ticks}
     finally:
         sw.close()

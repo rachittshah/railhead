@@ -36,3 +36,10 @@ def test_all_rotations_and_explicit_rotations():
         plan_track("short", [1, 2], rotations=[1])
     with pytest.raises(ValueError):
         plan_track("short", [1], arms=("honest",))
+
+
+def test_a_horizon_override_shows_in_the_task_id():
+    from railhead.multi.gen import TaskPlan
+
+    assert TaskPlan("short", 3, 1, "enforced").task_id == "waybill-short-s0003-r1-enforced"
+    assert TaskPlan("short", 3, 1, "enforced", 60).task_id == "waybill-short-s0003-r1-enforced-h60"

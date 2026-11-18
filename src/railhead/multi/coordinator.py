@@ -16,7 +16,7 @@
   (and rebuilds the barrier from it). After a ``WorldFault`` it rebuilds the world from the log in the
   same way and replies ``ERR_INFRA``.
 
-    python -m railhead.multi.coordinator <task_dir> <state_dir>
+    python -m railhead.multi.coordinator <task_dir> <state_dir> [--turn-s SECONDS]
 """
 
 from __future__ import annotations
@@ -317,10 +317,11 @@ class Coordinator:
         if m in QUERIES:
             with self.world_lock:
                 ex = self.market.ex
+                # the exchange's own tick is that of its last record; agents need the world tick
                 if m == "view":
-                    return ex.public_view(me)
+                    return ex.public_view(me) | {"tick": self.sw.ticks}
                 if m == "market":
-                    return ex.market(me) | {"region": self.region_of(c), "arm": ex.arm}
+                    return ex.market(me) | {"tick": self.sw.ticks, "region": self.region_of(c), "arm": ex.arm}
                 return getattr(ex, m)(me)
         if m not in COMMANDS:
             raise OpError("ERR_UNKNOWN_OP", f"unknown market operation {m!r}; queries: {', '.join(QUERIES)}; "
@@ -574,6 +575,10 @@ class Coordinator:
                 live = sorted(self.barrier.live)
             return {"ticks": self.sw.ticks, "date": self.sw.ymd, "horizon_tick": self.horizon_tick,
                     "live": live, "waiting": waiting, "submitted": sorted(self.submitted)}
+        if op == "snapshot":  # the live end state, to compare with the replay of the log
+            with self.world_lock:
+                return {"ticks": self.sw.ticks, "date": self.sw.ymd, "checksum": self.sw.world.call("checksum"),
+                        "net_worth": {str(c): v for c, v in self.sw.net_worth().items()}}
         if op == "shutdown":
             self.stop.set()
             return {"stopping": True}
@@ -595,8 +600,8 @@ class Coordinator:
         control_socket_path(self.state).unlink(missing_ok=True)
 
 
-def serve(task_dir: Path, state: Path) -> None:
-    coord = Coordinator(Path(task_dir), Path(state).resolve()).start()
+def serve(task_dir: Path, state: Path, turn_budget_s: float | None = None) -> None:
+    coord = Coordinator(Path(task_dir), Path(state).resolve(), turn_budget_s=turn_budget_s).start()
     signal.signal(signal.SIGTERM, lambda *_: coord.stop.set())
     try:
         while not coord.stop.wait(0.2):
@@ -605,8 +610,17 @@ def serve(task_dir: Path, state: Path) -> None:
         coord.close()
 
 
+def main(argv: list[str]) -> int:
+    turn_s = None
+    if "--turn-s" in argv:
+        i = argv.index("--turn-s")
+        turn_s, argv = float(argv[i + 1]), argv[:i] + argv[i + 2:]
+    if len(argv) != 2:
+        print("usage: python -m railhead.multi.coordinator <task_dir> <state_dir> [--turn-s SECONDS]", file=sys.stderr)
+        return 2
+    serve(Path(argv[0]), Path(argv[1]), turn_s)
+    return 0
+
+
 if __name__ == "__main__":
-    if len(sys.argv) == 3:
-        serve(Path(sys.argv[1]), Path(sys.argv[2]))
-    else:
-        raise SystemExit("usage: python -m railhead.multi.coordinator <task_dir> <state_dir>")
+    raise SystemExit(main(sys.argv[1:]))
