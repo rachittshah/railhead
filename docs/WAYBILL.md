@@ -4,6 +4,7 @@ This document describes Waybill: several agents play one OpenTTD world, each age
 Sections 1 to 7 describe Phase 1: the log v3 format, the coordinator, the replay, and the verifier.
 Sections 8 to 11 describe Phases 2 and 3: franchise regions, the contract market, the `rh` market commands, and the task tracks.
 Section 12 describes Phase 4: the arena runner, which plays one task with one coordinator and N agent sessions.
+Section 13 describes the cinema renderer, which makes a video of a verified run.
 For the exchange records and rules, refer to [WAYBILL-EXCHANGE.md](WAYBILL-EXCHANGE.md).
 The text follows ASD-STE100. Refer to [STE.md](STE.md).
 For the single-agent design, refer to [ARCHITECTURE.md](ARCHITECTURE.md) and [VERIFICATION.md](VERIFICATION.md).
@@ -22,6 +23,7 @@ For the single-agent design, refer to [ARCHITECTURE.md](ARCHITECTURE.md) and [VE
 | Regions | `src/railhead/multi/regions.py` | Franchise regions: the footprint of each build action and the region check (pure Python) |
 | Market | `src/railhead/multi/market.py` | The market driver: the exchange, the cargo monitors, the forced stops, and the market wake reasons (pure Python) |
 | Arena runner | `src/railhead/multi/arena.py` | Plays one task: the coordinator, one harness session for each agent, isolation, budgets, cost, resume, and `result.json` |
+| Cinema | `src/railhead/cinema/` | Makes a video and stills of a verified run from a sampled replay (section 13) |
 
 Single-agent Railhead does not change.
 The single-agent replay and verifier accept log versions 1 and 2 only. They reject a v3 log.
@@ -645,3 +647,82 @@ Real smoke test with 8 live harnesses (2026-11-18): decade track seed 1, 90 game
 | Merged log | 203 KB for 90 days |
 
 Projection: 35 minutes for 90 game days with 8 agents is about 2.4 h per game year in the first months; the pilots show that the later years are much faster (the agents wait in longer chunks), but a full decade game can be near the 12-hour wall budget. The turn budget and the dollar cap bound it.
+
+## 13. Cinema
+
+`railhead waybill-cinema` makes a video and stills of one or two verified runs (`result.json` from section 12). It has two stages, as `railhead timelapse` has ([TIMELAPSE.md](TIMELAPSE.md)). The output goes to `--out`. Do not put it in the repository.
+
+```
+railhead waybill-cinema <run_dir> [<run_dir_2>] --out DIR [--task DIR [--task2 DIR]]
+                        [--sample-only | --render-only] [--resample] [--grid-days 2]
+                        [--theme dark,light] [--seconds 60] [--cuts main,split,social,square,stills]
+                        [--4k] [--no-quotes] [--still-only YYYY-MM-DD] [--engine-shots]
+```
+
+Example (the two arms of one seed; the split screen needs two runs of the same `start.sav`):
+
+```
+railhead waybill-cinema runs/s2-enforced runs/s2-cheap --out out/cinema --theme dark --4k
+railhead waybill-cinema runs/s2-enforced runs/s2-cheap --out out/cinema --render-only --cuts split --still-only 2001-03-01
+```
+
+### 13.1 Sample (needs the engine)
+
+1. The task directory comes from `run.json` (`task_dir`), or from `--task`.
+2. The merged log is replayed from the sealed `start.sav` with `replay_multi`, with the same arguments as `verify_multi` (whitelist, horizon, regions, market, `require_seal`).
+3. The replay hook `observe` runs each step in pieces. The pieces stop at each tick `start + k * grid` (`--grid-days`, default 2 days). Both arms of one seed have the same stops. The hook only reads the world (`SharedWorld.query`). The step records, their checksums, and the market driver do not change. Without the hook, the replay is as before.
+4. After the log, the world runs to the horizon (with the market stops of the verifier) and through the run-off, with the same grid stops.
+5. At each stop the sampler records, for each company: cash, loan, net worth, ledger balance, stations, routes (consecutive stops of the vehicle orders, by mode) and vehicles by mode. It also records the exchange counters (the arena `contract_stats` and the licences in force). The industry tiles, the regions, and the exchange state at the horizon go into the sample file one time.
+6. The sampler compares each number that `result.json` also has: the net worth at the horizon and after the run-off, the ledger balance, and the score of each company; the acts, failed acts, steps, log-end tick and end tick; and the contract totals. If one number is different, the command stops with exit code 1 (`CinemaMismatch`), and the render stage refuses the sample file.
+
+7. At three ticks the sampler also saves the world (`World.save`, a synchronous `save` over the admin port) for the close-ups of section 13.3: 60 days after the first licence is accepted, at the first broken obligation, and at the horizon. The saves go to `<out>/saves/<arm>/`. A save does not change the world: the integration test replays one log with and without the hook and the saves, and compares all checksums, the net worth and the exchange state.
+
+The file is `<out>/samples/<arm>.json`. A second run uses it again if the log hash is the same (`--resample` makes it again). Pilot v3 (2 arms, 4 companies, 1095 game days) samples in about 25 seconds for each arm.
+
+### 13.2 Render (no engine)
+
+| Cut | File | Size |
+|---|---|---|
+| Split screen (the main cut): the two arms side by side, synchronised by game date | `cinema-split-<theme>.mp4` (`-4k.mp4` with `--4k`) | 1920x1080 (3840x2160), 30 fps |
+| One arm, full screen, with the leaderboard and slow zooms on key moments | `cinema-<arm>-<theme>.mp4` | 1920x1080, 30 fps |
+| Social cut (rendered again in 15 seconds, not accelerated) | `cinema-social-15s-<theme>.mp4` | 1920x1080 |
+| Square cut | `cinema-square-<theme>.mp4` | 1080x1080 |
+| Stills of key moments | `stills/<cut>-<frame>-<moment>.png` | as the cut |
+
+What the frame shows:
+
+- **Base:** the engine minimap of the start state (land, water, towns in three tones), the region borders and letters in the company colours. The colour of a company comes from its slot. Amber and red are only for late and broken payments.
+- **Networks:** the routes and the stations of each company, as in the timelapse. A route or a station shows from the first sample that has it.
+- **Contracts:** a signed licence is a rectangle in the grantor's region in the licensee's colour, with a dashed arc from the licensee's region. A payment on time (or a collection by the exchange in `enforced`) moves a pulse along the arc. A late payment pulses amber. A broken obligation flashes red and leaves a mark on the arc. When a licence ends, a faint dotted arc stays, with its marks. A tender win is a diamond at the destination industry, with the outcome after settlement. Messages and offers are small sparks between regions. All contract events are at their exact ticks from the replay's exchange state.
+- **Score bars:** diverging from a marked zero (£0): a loss is an outlined bar to the left with its value at its end, a profit a solid bar to the right. Both panels of the split screen use the same scale.
+- **Labels on the map:** on a plate with a halo, on a short leader line away from the routes.
+- **HUD:** the date, the phase (agents in charge or run-off), the arm (`ENFORCED` or `CHEAP TALK`), the score race (net worth plus ledger, one money scale for both arms), the model of each company (`model_used`), and the counters (contracts signed, licences in force, instalments collected or paid on time, promises broken, tenders won, messages).
+- **Captions:** the first licence, the first payment or collection, the first renegotiation, the first late payment, the first broken promise, the first tender win, and the horizon. A caption can quote an agent message. The quote is the first sentence, not more than 96 characters. A message with a path, a link, an address, a key, code or an unusual character is not quoted. `--no-quotes` removes all quotes.
+- **Time:** game time is uniform, slower near key moments and faster in the run-off. Pulses and flashes are timed in video frames.
+
+The render checks that each station is in its owner's region or in a licence that the owner holds (`overlay_outside`, printed; 0 is correct).
+
+Fonts: the system fonts Avenir and DIN Alternate (macOS), else DejaVu Sans (bundled with matplotlib).
+
+### 13.3 Engine close-ups (`--engine-shots`)
+
+`--engine-shots` adds real OpenTTD pictures (the engine's own graphics, OpenGFX) as inserts: the first licensed site, the site of the first broken promise, and licensed sites at the horizon. Each insert shows while the caption about that site shows, with a slow push-in and a label (date, licensee, grantor, contract).
+
+The dedicated server cannot make them. It runs with the null blitter (screen depth 0): `screenshot normal`, `big` and `giant` over the admin port write nothing and log `Screenshot failed!`. Only `minimap` works, because it draws its own 32-bit buffer. The null video driver also cannot make them: it forces the null blitter, and it does not run the queue in which the screenshot requests of the console wait.
+
+Thus `railhead.cinema.shots` uses the GUI build of the engine (`$RAILHEAD_OPENTTD_GUI`, else `.cache/openttd-src/build-gui/openttd`) with a real video driver (cocoa on macOS):
+
+1. For each save, the GUI engine loads it in a private instance directory (`-x -X`). `scripts/game_start.scr` contains `screenshot giant`, which draws the whole map at the default zoom (about 16000 x 8000 pixels for 256 x 256 tiles, 4 seconds). A small window opens and closes when the PNG is complete. The save is not written back.
+2. Each close-up is a 960 x 540 crop of that image around the licensee's stations on the site (`iso_px` maps a tile to the image). The giant image is then deleted. The crops are in `<out>/shots/<arm>/`, with `shots.json`.
+
+`scrollto` followed by `screenshot normal` would avoid the giant image, but the loaded game resets the view after `game_start.scr` runs, so each such shot showed the saved view.
+
+This step needs a display. It cannot run in CI.
+
+### 13.4 Limitations
+
+- The base map is the minimap of the start state. Towns that grow and terrain changes do not show.
+- Air routes are drawn as arcs between the stations; other routes as straight lines between consecutive stops, not along the track or the road.
+- A company's anchor (the start of its arcs) is the centre of its region, not its headquarters.
+- The money between two samples is interpolated linearly. The networks change only at samples (at most one grid step late).
+- A caption quote is the nearest safe message between the two companies, up to 60 game days before the moment (120 days after it for a broken promise). It can be later than the moment it captions.

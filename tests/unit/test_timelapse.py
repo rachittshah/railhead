@@ -165,3 +165,16 @@ def test_layout_fits_1080p_without_overlaps():
 
 def test_box_fraction_flips_y():
     assert Box(0, 0, 1920, 540).frac() == (0.0, 0.5, 1.0, 0.5)
+
+
+def test_copy_as_png_converts_an_engine_bmp(tmp_path):
+    # An engine built without libpng (the CI build) writes screenshots as BMP.
+    pil = pytest.importorskip("PIL.Image")
+    from railhead.timelapse import copy_as_png
+
+    bmp = tmp_path / "shot.bmp"
+    pil.new("RGB", (4, 3), (10, 20, 30)).save(bmp, format="BMP")
+    out = tmp_path / "minimap.png"
+    copy_as_png(bmp, out)
+    with pil.open(out) as im:
+        assert im.format == "PNG" and im.size == (4, 3) and im.getpixel((1, 1)) == (10, 20, 30)

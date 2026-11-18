@@ -165,22 +165,41 @@ def probe(task_dir: Path, out: Path) -> dict:
         info = w.call("map_info")
         start = make_sample(ticks=st["ticks"], ymd=st["ymd"], phase="play", money_=cash, loan=loan,
                             stations=w.call("stations"), orders={}, vehicles=w.call("vehicles"))
-        name = "railhead_timelapse_base"
-        shot = w.server.workdir / "screenshot" / f"{name}.png"
-        shot.unlink(missing_ok=True)
-        w.admin.rcon(f"screenshot minimap {name}")
-        deadline = time.monotonic() + 30
-        while not shot.exists() and time.monotonic() < deadline:
-            time.sleep(0.1)
-        if not shot.exists():
-            raise RuntimeError(f"the engine did not write {shot}")
-        time.sleep(0.5)  # let the PNG writer finish
-        shutil.copy(shot, base / "minimap.png")
+        minimap_shot(w, base / "minimap.png")
     shutil.rmtree(work, ignore_errors=True)
     doc = {"start_sav": _sha(sav), "start_date": int(st["date"]), "start_ticks": int(st["ticks"]),
            "start_ymd": st["ymd"], "size_x": info["size_x"], "size_y": info["size_y"], "start": start}
     meta.write_text(json.dumps(doc, indent=1) + "\n")
     return doc
+
+
+def minimap_shot(w, dest: Path, name: str = "railhead_timelapse_base") -> Path:
+    """The engine's own minimap of a loaded world (``screenshot minimap`` over the admin port), copied to
+    ``dest`` as PNG. An engine built without libpng (the CI build) writes BMP; that file is converted."""
+    shots = [w.server.workdir / "screenshot" / f"{name}.{ext}" for ext in ("png", "bmp")]
+    for s in shots:
+        s.unlink(missing_ok=True)
+    w.admin.rcon(f"screenshot minimap {name}")
+    deadline = time.monotonic() + 30
+    while not any(s.exists() for s in shots) and time.monotonic() < deadline:
+        time.sleep(0.1)
+    found = [s for s in shots if s.exists()]
+    if not found:
+        raise RuntimeError(f"the engine did not write {shots[0]} (or .bmp)")
+    time.sleep(0.5)  # let the image writer finish
+    copy_as_png(found[0], Path(dest))
+    return Path(dest)
+
+
+def copy_as_png(src: Path, dest: Path) -> None:
+    """Copy an engine screenshot to ``dest``; a BMP is converted to PNG (Pillow, a matplotlib dependency)."""
+    if src.suffix.lower() == ".png":
+        shutil.copy(src, dest)
+        return
+    from PIL import Image
+
+    with Image.open(src) as im:
+        im.convert("RGB").save(dest, format="PNG")
 
 
 def expected_results(arena_dir: Path, player: str, expected_doc: dict | None) -> dict:
@@ -781,11 +800,11 @@ def render_theme(out: Path, docs: list[dict], start: dict, theme: str, seconds: 
     return made
 
 
-def _png(buf: memoryview, path: Path) -> None:
+def _png(buf: memoryview, path: Path, width: int = W, height: int = H) -> None:
     import matplotlib.image as mpimg
     import numpy as np
 
-    mpimg.imsave(path, np.asarray(buf).reshape(H, W, 4)[..., :3].copy())
+    mpimg.imsave(path, np.asarray(buf).reshape(height, width, 4)[..., :3].copy())
 
 
 def loops(out: Path, theme: str = "dark") -> list[Path]:

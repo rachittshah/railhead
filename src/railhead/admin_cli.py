@@ -15,6 +15,7 @@
     railhead stats <export.json|map_dir>... [--tasks DIR] [--finished-only] [--out FILE]   paired differences across maps, with intervals (docs/SEEDGAMES.md)
     railhead anchor fetch <AI>... | anchor <task_dir> --ai <AI> [--seeds N] [--out FILE]   script AIs as a ceiling on a task (docs/ANCHORS.md)
     railhead timelapse <arena_dir> --task tasks/<id> --out DIR   video of the networks growing, every frame from a replay (docs/TIMELAPSE.md)
+    railhead waybill-cinema <run_dir> [<run_dir_2>] --out DIR   video of a verified Waybill run: networks, contracts, money (docs/WAYBILL.md, Cinema)
     railhead view --attach <state_dir> [--bounds x,y,w,h]  spectate a live daemon world
     railhead view <task_id> [--days N] [--speed PCT] [--log L] [--bounds x,y,w,h]   watch a task live in the GUI (macOS)
     railhead export-manifest <out>  add this CPU architecture's sealed manifest to exported tasks
@@ -207,6 +208,10 @@ def main(argv: list[str] | None = None) -> int:
             from railhead.timelapse import main as timelapse_main
 
             return timelapse_main(argv[1:])
+        if cmd == "waybill-cinema":
+            from railhead.cinema import main as cinema_main
+
+            return cinema_main(argv[1:])
         if cmd == "harden":
             from railhead.gen.build import harden_catalog
 

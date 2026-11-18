@@ -17,6 +17,8 @@ divergence. The result has the net worth of each company of the header at the en
 from __future__ import annotations
 
 import copy
+import itertools
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -51,6 +53,15 @@ class MultiReplayResult:
     market: Market | None = None
     pending_sys: list[dict] = field(default_factory=list)  # driver records not yet in the log (a torn end)
     sealed: bool = False  # the log ends with the coordinator's seal record
+
+
+def grid_pieces(now: int, end: int, grid: int, origin: int = 0) -> list[int]:
+    """Tick counts that take the world from ``now`` to ``end`` with a stop at every ``origin + k * grid``
+    in between (an absolute grid: the same stops in every log of one start state). Their sum is
+    ``end - now``; no piece is empty."""
+    cuts = list(range(origin + ((now - origin) // grid + 1) * grid, end, grid)) if grid > 0 else []
+    edges = [now, *cuts, end]
+    return [b - a for a, b in itertools.pairwise(edges) if b > a]
 
 
 def horizon_tick(start_ticks: int, horizon_days: int | None) -> int | None:
@@ -99,10 +110,18 @@ def _market_after_step(market: Market, sw: SharedWorld, r: dict, waiting: dict[i
 def replay_multi(start_save: Path, log_path: Path, workdir: Path, allowed: set[str] | None = None,
                  keep_open: bool = False, max_ticks: int | None = None,
                  horizon_days: int | None = None, regions: RegionMap | None = None,
-                 market_cfg: MarketConfig | None = None, require_seal: bool = False) -> MultiReplayResult:
+                 market_cfg: MarketConfig | None = None, require_seal: bool = False,
+                 observe: Callable[[SharedWorld, Market | None, str], None] | None = None,
+                 grid_ticks: int | None = None) -> MultiReplayResult:
     """``require_seal`` (the verifier, exchange rules 2): a log that does not end with a ``seal`` record is
     scored as if it ended at its last ``step`` (and the system records of that tick); its later records are
-    not bound by any checksum, so they do not count."""
+    not bound by any checksum, so they do not count.
+
+    ``observe`` (read-only sampling, ``railhead.cinema``): called as ``observe(world, market, "step")``
+    after each step record (its checksum compared, the market driver run). With ``grid_ticks``, a step
+    also runs in pieces that stop at every ``start + k * grid_ticks`` inside it, with
+    ``observe(world, market, "grid")`` at each stop. The observer must only read (``SharedWorld.query``);
+    the step record, its checksum and the market driver do not change. Off by default."""
     allowed = default_whitelist() if allowed is None else allowed
     records = [r.raw for r in read_log(log_path)]  # read once: the checks and the replay see the same bytes
     wide = market_cfg is not None and market_cfg.rules >= 2
@@ -216,6 +235,11 @@ def replay_multi(start_save: Path, log_path: Path, workdir: Path, allowed: set[s
                 n = end - sw.ticks
                 if max_ticks is not None and sw.ticks + n > max_ticks:
                     n = max_ticks - sw.ticks
+                if observe is not None and grid_ticks:
+                    *pieces, n = grid_pieces(sw.ticks, sw.ticks + n, grid_ticks, start) or [0]
+                    for piece in pieces:
+                        sw.advance(piece)
+                        observe(sw, market, "grid")
                 sw.advance(n)
                 res.steps += 1
                 if sw.ticks == end:
@@ -226,6 +250,8 @@ def replay_multi(start_save: Path, log_path: Path, workdir: Path, allowed: set[s
                                                 "replay": got, "key": ("step", seq), "stop": end})
                     if market is not None:
                         queue += _market_after_step(market, sw, r, waiting_before)
+                if observe is not None:
+                    observe(sw, market, "step")
         res.pending_sys = queue
         res.end_ticks = sw.ticks
         res.final_checksum = world.call("checksum")
