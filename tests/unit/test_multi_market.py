@@ -132,12 +132,12 @@ def test_barrier_uses_the_market_cap_and_reason():
 def test_v3_rules_for_ex_records_and_market_reasons():
     hdr = {"kind": "header", "v": 3, "companies": COMPANIES, "ticks": START, "checksum": {"h": 1}}
     st = LogState(hdr, horizon_tick=START + 100 * D)
-    st.check({"kind": "ex", "seq": 1, "ticks": START, "company": None, "x": {"op": "init", "company": None}})
-    st.check({"kind": "ex", "seq": 2, "ticks": START, "company": 3, "x": {"op": "msg", "company": "3"}})
+    st.check({"kind": "ex", "seq": 1, "ticks": START, "company": None, "x": {"op": "init", "company": None, "tick": START}})
+    st.check({"kind": "ex", "seq": 2, "ticks": START, "company": 3, "x": {"op": "msg", "company": "3", "tick": START}})
     with pytest.raises(LogRejected):
-        st.check({"kind": "ex", "seq": 3, "ticks": START, "company": 3, "x": {"op": "msg", "company": "5"}})
+        st.check({"kind": "ex", "seq": 3, "ticks": START, "company": 3, "x": {"op": "msg", "company": "5", "tick": START}})
     with pytest.raises(LogRejected):
-        st.check({"kind": "ex", "seq": 3, "ticks": START, "company": None, "x": {"op": "settle", "company": "3"}})
+        st.check({"kind": "ex", "seq": 3, "ticks": START, "company": None, "x": {"op": "settle", "company": "3", "tick": START}})
     assert wait_args({"days": 3, "until": ["offer_received", "new_month"]})[1] == ["offer_received", "new_month"]
     with pytest.raises(LogRejected):
         wait_args({"days": 3, "until": ["offers"]})
@@ -151,7 +151,10 @@ def test_v3_rules_for_ex_records_and_market_reasons():
     st.check({"kind": "step", "seq": st.expect_seq, "ticks": START, "end_ticks": START + D, "checksum": {"h": 2},
               "wakers": [{"company": 3, "reason": "deadline"}]})
     st.check({"kind": "ex", "seq": st.expect_seq, "ticks": START + D, "company": None,
-              "x": {"op": "settle", "company": None}})  # system records while companies wait
+              "x": {"op": "settle", "company": None, "tick": START + D}})  # system records while companies wait
+    with pytest.raises(LogRejected, match="exchange tick"):  # the exchange clock must be the world clock
+        st.check({"kind": "ex", "seq": st.expect_seq, "ticks": START + D, "company": None,
+                  "x": {"op": "settle", "company": None, "tick": START + 9 * D}})
 
 
 def _copy(st: LogState) -> LogState:

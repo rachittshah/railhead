@@ -72,6 +72,32 @@ def is_build(m: str) -> bool:
     return m not in NOT_BUILDS
 
 
+MAX_DEMOLISH_TILES = 160  # the largest airport is 9 x 11 tiles; a station flood stops here (conservative)
+
+
+def demolish_footprint(index: int, map_x: int, probe: Probe | None) -> list[tuple[int, int]]:
+    """``land_demolish`` of a station tile can remove more than that tile (the engine removes a whole airport).
+    The footprint is then every tile of the same station that touches it (a 4-connected flood over ``tile``
+    queries), which is also conservative for joined rail stations. Other tiles: the tile itself."""
+    start = xy(index, map_x)
+    if probe is None:
+        return [start]
+    sid = int((probe.tile(index) or {}).get("station", -1))
+    if sid < 0:
+        return [start]
+    seen, todo, out = {start}, [start], [start]
+    while todo and len(out) < MAX_DEMOLISH_TILES:
+        x, y = todo.pop()
+        for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+            if (nx, ny) in seen or nx < 0 or ny < 0 or nx >= map_x:
+                continue
+            seen.add((nx, ny))
+            if int((probe.tile(ny * map_x + nx) or {}).get("station", -1)) == sid:
+                out.append((nx, ny))
+                todo.append((nx, ny))
+    return out
+
+
 def footprint(m: str, a: dict[str, Any], map_x: int, probe: Probe | None = None) -> list[tuple[int, int]]:
     """The tiles (x, y) that action ``m`` with canonical arguments ``a`` builds on or changes.
     Empty for an action that is not a build. Conservative where the engine adds pieces next to the
@@ -80,8 +106,9 @@ def footprint(m: str, a: dict[str, Any], map_x: int, probe: Probe | None = None)
     if not is_build(m):
         return []
     t = lambda k: xy(int(a[k]), map_x)
-    if m in ("rail_track", "rail_remove", "rail_signal", "rail_remove_signal", "rail_waypoint", "water_canal",
-             "land_demolish"):
+    if m == "land_demolish":
+        return demolish_footprint(int(a["tile"]), map_x, probe)
+    if m in ("rail_track", "rail_remove", "rail_signal", "rail_remove_signal", "rail_waypoint", "water_canal"):
         return [t("tile")]
     if m in ("land_raise", "land_lower"):  # corners are shared: the 8 neighbours change too
         x, y = t("tile")

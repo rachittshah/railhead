@@ -393,6 +393,7 @@ class Exchange:
             for o in self._contract_obligations(c.id):
                 if o["status"] == "open" and o["due"] > tick:
                     o["status"] = "replaced"
+                    fixed += o["paid"]  # money already paid toward a replaced instalment counts (not charged twice)
                 elif o["status"] != "replaced":
                     fixed += o["amount"]
             rest = max(0, new["fee"] - fixed)
@@ -501,7 +502,8 @@ class Exchange:
 
     def _op_obligation_settle(self, r: dict[str, Any]) -> None:
         o = self.obligations.get(r["obligation_id"]) if isinstance(r["obligation_id"], str) else None
-        if o is None or o["status"] != "open" or r["tick"] < o["settle_tick"]:
+        end = self.rules >= 2 and self.horizon_tick is not None and r["tick"] >= self.horizon_tick
+        if o is None or o["status"] != "open" or (r["tick"] < o["settle_tick"] and not end):
             raise ExchangeError("bad_state", f"obligation {r['obligation_id']!r} cannot settle at tick {r['tick']}")
         collected, outcome = self._obligation_result(o)
         if (r["collected"], r["paid"], r["outcome"]) != (collected, o["paid"], outcome):
@@ -725,8 +727,9 @@ class Exchange:
             outcome = compute_supply_settlement(c.terms, delivered)["outcome"]
             out.append(self._record("settle", tick, None, contract_id=c.id, delivered=delivered, parts=parts,
                                     outcome=outcome))
+        end = self.rules >= 2 and self.horizon_tick is not None and tick >= self.horizon_tick
         for o in sorted(self.obligations.values(), key=lambda o: (o["settle_tick"], _obl_key(o))):
-            if o["status"] == "open" and o["settle_tick"] <= tick:
+            if o["status"] == "open" and (o["settle_tick"] <= tick or end):  # rules 2: all settle at the end
                 collected, outcome = self._obligation_result(o)
                 out.append(self._record("obligation_settle", tick, None, obligation_id=o["id"], collected=collected,
                                         paid=o["paid"], outcome=outcome))

@@ -69,7 +69,7 @@ A licence gives the grantee the right to build inside `rect` of the grantor's fr
 | Item | Rule |
 |---|---|
 | Fee | Paid in equal quarterly instalments, in arrears: one obligation each quarter (90 days) after `window_start` before `deadline`, and the last at `deadline`. The remainder of the integer division goes on the last instalment; an instalment of 0 is dropped. A fee of 0 gives no obligations. Nothing is paid at signing. |
-| Amendment | When both parties sign new terms, the open instalments that are not yet due are replaced (status `replaced`): the new fee minus the instalments already due is spread over the instalment ticks of the new terms after the amendment tick. |
+| Amendment | When both parties sign new terms, the open instalments that are not yet due are replaced (status `replaced`): the new fee minus the instalments already due, and minus what was already paid toward the replaced ones, is spread over the instalment ticks of the new terms after the amendment tick. |
 | Build right | The same in both arms. Thus the arms differ in money only, not in what is physically possible. |
 | End | At `deadline`, the exchange writes a `settle` record with `delivered` 0, `parts` `[]` and the outcome `ended`. No money moves. |
 | Built infrastructure | It stays after the end, with the grantee as owner. New builds in the rectangle need a live licence. |
@@ -101,6 +101,7 @@ kind, payer, payee, amount, due, settle_tick, paid, paid_by_due, payments, colle
   - FIFO: a tagged payment goes to the oldest obligation of the contract (payer to `to`) that is not paid in full, also after its settlement (a late payment). The settle-time outcome (kept / partial / broken) does not change; the payment counts in `paid`, and `completed_tick` is the tick at which the obligation was paid in full.
   - End of play: no licence instalment falls due after `horizon_tick - GRACE_TICKS`. The amounts of later instalments fold into the last instalment that falls due in time (one instalment at that tick if none does).
   - `payment_timing(o)` gives the timing outcome at the end of play: `on_time` (paid in full before the settle tick: in `cheap_talk` by the due tick plus the 30-day grace period; in `enforced`, collected at the due tick), `late` (paid in full later, with the days late from the due tick), `partial`, or `unpaid`.
+  - End of play: at the horizon every open obligation settles (a licence that starts after the cut-off can have a settle tick after the horizon).
   - `Exchange.rescore(records, horizon_tick)` applies an existing (rules-1) log again under rules 2 and makes the `obligation_settle` records again: an analysis, not a verification.
 - `obligations_of(company)` gives the obligations that a company owes or is owed (not the replaced ones); `rh contracts` (per contract, `your_obligations`) and `rh market` (the open ones) show them.
 

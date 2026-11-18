@@ -89,6 +89,14 @@ The live world and the replay send the digest of each `meta` record to the GameS
 The v3 digest includes the company: `sha256({"c": company, "m": m, "a": a})`, first 31 bits.
 Thus a `submit` that moves to a different company changes all later step checksums.
 
+With exchange rules 2 (`market.rules = 2`), each company `meta` and `ex` record sends four notes: four 31-bit parts of the SHA-256 (124 bits). With one 31-bit note, a record could be replaced by another record with the same note (a 2026-11 review found two `pay` amounts with the same digest); with 124 bits that is not possible.
+
+### 2.5 Seal and exchange clock
+
+- With exchange rules 2, the coordinator writes a `seal` record when it closes: `{kind: "seal", seq, ticks, checksum}`. The checksum binds the records after the last `step`. No record may follow a seal. When the coordinator starts again, it removes a trailing seal and writes a new one at the next close.
+- The verifier (rules 2): if the log has no seal, it scores the log as if it ended at its last `step` (and the system records of that tick), because nothing binds the later records; `scores.json` gives `sealed` 0 or 1.
+- Every `ex` record must have the exchange `tick` equal to the world tick of the record (`LogState`), in all logs.
+
 ## 3. Start state
 
 `railhead.multi.gen` makes the start state of a Waybill task:
@@ -308,6 +316,7 @@ The replay calculates the footprint of each logged action again, with the region
 | `water_lock` | The middle tile and its two neighbours along the slope |
 | `bridge_tunnel` | The tiles from the start to the other end of the tunnel |
 | `land_raise`, `land_lower` | The tile and its 8 neighbours (the corners are shared) |
+| `land_demolish` of a station tile | Every tile of that station that touches it (a flood over `tile` queries, at most 160 tiles): demolishing one airport tile removes the whole airport |
 | `land_level` | The rectangle and a border of one tile |
 | `town_action` | The centre tile of the town (all town actions: advertising, road rebuild, statue, fund buildings, exclusive rights, bribe) |
 | `rail_set_type`, `road_set_type`, `vehicle_*`, `order_*`, `company_loan`, `company_rename` | No check |
@@ -355,7 +364,7 @@ The recovery of the coordinator takes the exchange from the replay.
 
 When a contract is signed (an accept, a tender award, or an amendment), the coordinator adds one engine cargo monitor for each (seller, cargo, industry) that the contract needs, if it does not have one. A subcontract seller of a tender is included.
 The replay adds the monitors at the same records. The monitors are not in the checksum.
-After each step, the coordinator reads the monitor totals. The deliveries in `[start, end]` are `total(end) - total(max(start, creation tick))`. A monitor counts nothing before it exists.
+After each step, the coordinator reads the monitor totals. The deliveries counted for `[start, end]` are `total(end) - total(max(start, creation tick))`: the totals are samples at step ends, so a delivery that the step ending at `start` contains counts as before `start`. In other words, the interval is `(start, end]` at the resolution of the steps. Live and replay use the same rule.
 
 ### 9.4 Forced stops and wakes
 
