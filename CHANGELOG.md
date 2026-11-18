@@ -27,7 +27,9 @@ Not published yet. The latest published image and Harbor datasets are 0.1.1.
   `cheap_talk`. `railhead waybill-run` plays one game with one harness session for each company (sandboxed,
   budgeted, resumable) and writes `result.json`; `rescore` reads old logs under exchange rules 2.
   `railhead waybill-analyze` computes the pre-registered metrics (`docs/WAYBILL-ANALYSIS.md`; the
-  pre-registration in `docs/WAYBILL-PREREG.md` is a draft). `railhead waybill-cinema` renders video and
+  pre-registration in `docs/WAYBILL-PREREG.md` is a draft); `railhead waybill-deliveries` replays a run with
+  cargo monitors on every company and cross-region need for the H3 cargo and H4 market-share measures.
+  `railhead waybill-cinema` renders video and
   stills of a verified run from its replay. Three pilots are in `docs/WAYBILL-PILOT.md`; no full runs yet.
 - Action log version 2 and a stricter replay (`docs/VERIFICATION.md`). Every record, `meta` included, must
   sit at the replayed tick with the next `seq`; every wait must carry a checksum and stay inside the

@@ -112,7 +112,8 @@ def replay_multi(start_save: Path, log_path: Path, workdir: Path, allowed: set[s
                  horizon_days: int | None = None, regions: RegionMap | None = None,
                  market_cfg: MarketConfig | None = None, require_seal: bool = False,
                  observe: Callable[[SharedWorld, Market | None, str], None] | None = None,
-                 grid_ticks: int | None = None) -> MultiReplayResult:
+                 grid_ticks: int | None = None,
+                 on_start: Callable[[SharedWorld, Market | None], None] | None = None) -> MultiReplayResult:
     """``require_seal`` (the verifier, exchange rules 2): a log that does not end with a ``seal`` record is
     scored as if it ended at its last ``step`` (and the system records of that tick); its later records are
     not bound by any checksum, so they do not count.
@@ -121,7 +122,11 @@ def replay_multi(start_save: Path, log_path: Path, workdir: Path, allowed: set[s
     after each step record (its checksum compared, the market driver run). With ``grid_ticks``, a step
     also runs in pieces that stop at every ``start + k * grid_ticks`` inside it, with
     ``observe(world, market, "grid")`` at each stop. The observer must only read (``SharedWorld.query``);
-    the step record, its checksum and the market driver do not change. Off by default."""
+    the step record, its checksum and the market driver do not change. Off by default.
+
+    ``on_start`` (``railhead.multi.deliveries``): called once as ``on_start(world, market)`` at the start
+    tick, after the header checksum and before the market's first monitor and the first record, so that
+    a delivery extraction can install its cargo monitors before anything can be delivered. Off by default."""
     allowed = default_whitelist() if allowed is None else allowed
     records = [r.raw for r in read_log(log_path)]  # read once: the checks and the replay see the same bytes
     wide = market_cfg is not None and market_cfg.rules >= 2
@@ -156,6 +161,9 @@ def replay_multi(start_save: Path, log_path: Path, workdir: Path, allowed: set[s
         queue: list[dict] = []  # system records that the driver made and the log must give next, in order
         if market_cfg is not None:
             market = Market(market_cfg, res.companies, start, state.horizon_tick, regions)
+        if on_start is not None:
+            on_start(sw, market)
+        if market is not None:
             queue.append(copy.deepcopy(market.ex.records[0]))
             queue += market.tick_records(start, sw.industries)
             market.book.ensure(market.ex, start, sw.monitor_add)

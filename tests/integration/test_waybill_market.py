@@ -313,6 +313,34 @@ def test_replay_gives_the_same_exchange_state_and_scores(enforced, tmp_path):
         assert row["score"] == enforced["live"]["net_worth"][cid] + enforced["live"]["ledger"][cid]
 
 
+def test_delivery_extraction_shares_monitors_with_the_book_without_changing_the_replay(enforced, tmp_path):
+    """The H3/H4 delivery extraction (railhead.multi.deliveries) on this game, with its monitors forced onto
+    the key of the kept contract (A's coal to the power station, which the market book also monitors) and
+    onto 60 more keys: the replay's checkpoints and final checksum equal a plain replay's, the market state
+    (exchange and the book's monitor ids and samples) and every score equal the verifier's, and the
+    extraction counts at least the delivery that the contract settled."""
+    from railhead.multi.deliveries import extract, keyed
+
+    cfg = MarketConfig.from_objective(_obj(enforced))
+    plain = replay_multi(enforced["task"] / "start.sav", enforced["log"], tmp_path / "plain", horizon_days=HORIZON,
+                         regions=enforced["regions"], market_cfg=cfg)
+    out = verify_multi(enforced["task"], enforced["task"] / "start.sav", enforced["log"], tmp_path / "v")
+    a, b, c = (int(x) for x in ids(enforced))
+    p = enforced["plan"]
+    kept = (a, p["coal"], p["ps"]["id"])
+    extra = [kept] + [(co, p["coal"], i) for co in (a, b, c) for i in range(20)]
+    got = extract(enforced["task"] / "start.sav", enforced["log"], tmp_path / "x", horizon_days=HORIZON,
+                  runoff_days=0, regions=enforced["regions"], market_cfg=cfg, require_seal=False,
+                  extra_keys=extra)
+    assert got["checkpoints"] == plain.checkpoints and got["final_checksum"] == plain.final_checksum
+    assert got["market"] == out["market"]
+    assert {r["id"]: r["score"] for r in got["replay"]["companies"]} == {r["id"]: r["score"] for r in out["companies"]}
+    assert list(kept) in [s["key"] for s in got["monitors"]["shared_with_book"]]  # the collision happened
+    assert got["monitors"]["extraction"] >= 40
+    settled = settles(enforced["log"])[enforced["notes"][0]["c1"]]["delivered"]
+    assert keyed(got["deliveries"]["horizon"])[kept] >= settled >= Q1
+
+
 def test_forged_delivery_count_is_rejected(enforced, tmp_path):
     lines = enforced["log"].read_text().splitlines()
     out = []

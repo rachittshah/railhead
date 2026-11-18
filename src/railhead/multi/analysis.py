@@ -4,8 +4,10 @@ docs/WAYBILL-PREREG.md).
     railhead waybill-analyze <run_dir> [<run_dir> ...] --out <dir> [--boot 10000] [--seed 0] [--no-figures]
 
 Input: run directories of ``railhead waybill-run`` (run.json, result.json, verify/scores.json with the
-exchange state). Runs are paired by (track, seed) and arm. Output in ``<dir>``: ``companies.csv``,
-``contracts.csv``, ``obligations.csv`` (tidy rows), ``exclusions.json``, ``analysis.json`` (every metric with
+exchange state), and ``deliveries.json`` of ``railhead waybill-deliveries`` when present (the H3 cargo and
+H4 market-share measures; used only if it matches the run's log and passed its check). Runs are paired by
+(track, seed) and arm. Output in ``<dir>``: ``companies.csv``, ``contracts.csv``, ``obligations.csv``,
+``markets.csv`` (tidy rows), ``exclusions.json``, ``analysis.json`` (every metric with
 its test and interval) and SVG figures. Pure Python (no SciPy): the Wilcoxon signed-rank test is exact for up
 to 25 non-zero pairs (normal approximation with tie correction above), the intervals are percentile
 bootstraps over seeds.
@@ -24,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from railhead.exchange.exchange import payment_timing
+from railhead.multi.deliveries import WINDOWS, measures, usable
 
 AGENT_VENDORS = ("claude", "codex", "opencode", "script", "stub")
 MIN_PAIRS = 6  # below 6 non-zero pairs a two-sided test cannot reach p < 0.05 (prereg 6): "not testable"
@@ -163,9 +166,11 @@ def load_run(run_dir: Path) -> dict:
     task = _read(Path(m.get("task_dir", "")) / "task.json") or {}
     track, seed, rotation = _seed_of(m, task.get("objective") or {})
     seats = {int(s["slot"]): s for s in m.get("seats", [])}
+    deliveries, why = usable(run_dir)
     return {"dir": str(run_dir), "name": run_dir.name, "manifest": m, "result": res, "scores": scores,
             "exchange": ((scores.get("market") or {}).get("exchange")) or {}, "seats": seats,
-            "track": track, "seed": seed, "rotation": rotation, "arm": m.get("arm")}
+            "track": track, "seed": seed, "rotation": rotation, "arm": m.get("arm"),
+            "deliveries": deliveries, "deliveries_missing": why}
 
 
 def exclusion_reasons(run: dict) -> list[str]:
@@ -357,15 +362,23 @@ def analyze(runs: list[dict], boot: int = 10_000, seed: int = 0) -> dict:
         for arm in ("enforced", "cheap_talk"):
             sc = [c["score"] for c in rows if c["arm"] == arm and c["score"] is not None]
             welfare[(tr, sd)][arm] = sum(sc) if sc else None
+    dl = delivery_measures(included)
     h3 = {"definition": "sum of scores (net worth after the run-off + ledger) of the companies of one game, "
                         "enforced minus cheap_talk, paired by seed", **_paired(welfare, "enforced", "cheap_talk",
                                                                                boot, rng),
-          "cargo_measure": "not available from the merged log (needs a replay-based delivery extraction)"}
+          "cargo_measure": _delivery_block(
+              dl, "cargo", "total cargo delivered by all companies to the industries of the cross-region needs, "
+                           "enforced minus cheap_talk, paired by seed (an estimate beside the confirmatory test, "
+                           "which stays on the sum of scores)", boot, rng)}
 
     h4 = {"definition": "share of tenders with 2 or more bidders where two bidders exchanged a message naming the "
                         "tender before bid close, enforced minus cheap_talk, paired by seed",
           **_paired(tender_coordination(included), "enforced", "cheap_talk", boot, rng),
-          "market_share_measure": "not available from the merged log (needs deliveries per market)"}
+          "market_share_measure": _delivery_block(
+              dl, "share_exclusive", "share of the cargo markets (cargo, destination industry) of the cross-region "
+                                     "needs with deliveries in which one licence partner pair (grantor and grantee "
+                                     "of a signed licence) delivered more than 80% of the quantity, enforced minus "
+                                     "cheap_talk, paired by seed", boot, rng)}
     h5 = reputation(contracts, obligations)
 
     tests = {"H1b": h1b.get("p"), "H2": h2["family_difference"].get("p"), "H3": h3.get("p")}
@@ -376,7 +389,8 @@ def analyze(runs: list[dict], boot: int = 10_000, seed: int = 0) -> dict:
                            "the estimates are descriptive") if paired_seeds < MIN_PAIRS else None,
             "H1a": h1a, "H1b": h1b, "H1c": h1c, "H2": h2, "H3": h3, "H4": h4, "H5": h5,
             "holm": {"tests": list(CONFIRMATORY), "alpha": 0.05, "result": holm(tests)},
-            "rows": {"companies": companies, "contracts": contracts, "obligations": obligations}}
+            "rows": {"companies": companies, "contracts": contracts, "obligations": obligations,
+                     "markets": dl["markets"]}}
 
 
 def power_estimate(cheap: list[dict]) -> dict:
@@ -440,6 +454,52 @@ def family_permutation(by_seed: dict[tuple, list[dict]], boot: int, rng: random.
         s, _ = stat(shuffled)
         hits += int(s is not None and abs(s) >= abs(obs) - 1e-12)
     out["p"] = (hits + 1) / (sims + 1)
+    return out
+
+
+def delivery_measures(runs: list[dict]) -> dict:
+    """The H3 cargo and H4 market-share values of each run with a usable ``deliveries.json``
+    (``railhead waybill-deliveries``), by window (``horizon``, ``end`` = after the run-off): per seed and arm,
+    the market rows, and the runs without one."""
+    values: dict[str, dict[str, dict]] = {w: {"cargo": defaultdict(dict), "share_exclusive": defaultdict(dict)}
+                                          for w in WINDOWS}
+    detail: dict[str, dict] = {}
+    markets, missing = [], {}
+    for r in runs:
+        if r.get("deliveries") is None:
+            missing[r["name"]] = r.get("deliveries_missing") or "no deliveries.json"
+            continue
+        m = measures(r["deliveries"], r["exchange"])
+        key = (r["track"], r["seed"])
+        detail[r["name"]] = {"licence_pairs": m["licence_pairs"], "needs": len(r["deliveries"]["needs"]),
+                             **{w: {"cargo": m[w]["cargo"],
+                                    **{k: v for k, v in m[w]["market_share"].items() if k != "rows"}}
+                                for w in WINDOWS}}
+        for w in WINDOWS:
+            values[w]["cargo"][key][r["arm"]] = m[w]["cargo"]
+            values[w]["share_exclusive"][key][r["arm"]] = m[w]["market_share"]["share_exclusive"]
+            for row in m[w]["market_share"]["rows"]:
+                markets.append({"run": r["name"], "track": r["track"], "seed": r["seed"], "arm": r["arm"],
+                                "window": w, **{k: v for k, v in row.items() if k != "by_company"},
+                                "by_company": json.dumps(row["by_company"])})
+    return {"values": values, "runs": detail, "markets": markets, "missing": missing}
+
+
+def _delivery_block(dl: dict, metric: str, definition: str, boot: int, rng: random.Random) -> dict:
+    """One delivery measure in both windows; ``end`` (after the run-off, the window of the score) first."""
+    if not dl["runs"]:
+        return {"definition": definition, "note": "no run has a usable deliveries.json (run railhead "
+                                                  "waybill-deliveries on the run directories first)",
+                "missing": dl["missing"]}
+    out: dict[str, Any] = {"definition": definition, "windows": {"end": "start to the end of the run-off",
+                                                                 "horizon": "start to the horizon"}}
+    for w in ("end", "horizon"):
+        vals = dl["values"][w][metric]
+        out[w] = {"by_seed": {f"{k[0]}:{k[1]}": v for k, v in sorted(vals.items(), key=lambda kv: str(kv[0]))},
+                  **_paired(vals, "enforced", "cheap_talk", boot, rng)}
+    out["runs"] = dl["runs"]
+    if dl["missing"]:
+        out["missing"] = dl["missing"]
     return out
 
 

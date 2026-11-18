@@ -116,3 +116,55 @@ def test_power_estimate_and_one_seed_does_not_crash(tmp_path):
     assert an.power_paired(1.0, 1.0, 30, sims=300) > 0.9 and an.power_paired(0.0, 1.0, 30, sims=300) < 0.2
     pytest.importorskip("matplotlib")
     assert {Path(f).name for f in res["figures"]} == {"h1a_repayment.svg", "h1a_timing.svg", "paired_differences.svg"}
+
+
+def licence(cid, grantor, grantee, signed=10):
+    return {"id": cid, "kind": "licence", "terms": {"grantor": grantor, "grantee": grantee}, "signed_tick": signed,
+            "status": "settled" if signed is not None else "expired", "events": []}
+
+
+def add_deliveries(run: Path, horizon, end, needs=((11, 3), (7, 1)), ok=True, log=b'{"kind":"header"}\n'):
+    import hashlib
+
+    (run / "coord" / "run").mkdir(parents=True, exist_ok=True)
+    (run / "coord" / "run" / "actions.jsonl").write_bytes(log)
+    doc = {"version": 1, "log_sha256": hashlib.sha256(log).hexdigest(), "check": {"ok": ok, "mismatches": []},
+           "needs": [list(n) for n in needs], "deliveries": {"log_end": horizon, "horizon": horizon, "end": end}}
+    (run / "deliveries.json").write_text(json.dumps(doc))
+
+
+def test_h3_cargo_and_h4_market_share_from_deliveries(tmp_path):
+    runs = []
+    for seed in range(1, 8):
+        e = make_run(tmp_path, f"s{seed}-enf", seed, "enforced", contracts=[licence("C1", "0", "1")])
+        c = make_run(tmp_path, f"s{seed}-cheap", seed, "cheap_talk",
+                     contracts=[licence("C1", "0", "1", signed=None)])
+        # enforced: the licence pair 0+1 supplies both markets; cheap talk: no signed licence, less cargo
+        add_deliveries(e, [[0, 3, 11, 50]], [[0, 3, 11, 90 + seed], [1, 1, 7, 10], [0, 9, 99, 1000]])
+        add_deliveries(c, [[0, 3, 11, 20]], [[0, 3, 11, 40], [1, 1, 7, 10]])
+        runs += [e, c]
+    res = an.run(runs, tmp_path / "out", boot=300, make_figures=False)
+    cm = res["H3"]["cargo_measure"]
+    assert cm["end"]["by_seed"]["?:1"] == {"enforced": 101, "cheap_talk": 50}  # (99, 9) is not a need
+    assert cm["end"]["median_difference"] == 54 and cm["end"]["p"] == pytest.approx(2 / 128)
+    assert cm["horizon"]["median_difference"] == 30
+    assert res["holm"]["tests"] == ["H1b", "H2", "H3"] and res["H3"]["n_nonzero"] == 0  # the test stays on scores
+    ms = res["H4"]["market_share_measure"]
+    assert ms["end"]["by_seed"]["?:1"] == {"enforced": 1.0, "cheap_talk": 0.0}
+    assert ms["end"]["median_difference"] == 1.0 and ms["runs"]["s1-enf"]["licence_pairs"] == [[0, 1]]
+    rows = (tmp_path / "out" / "markets.csv").read_text().splitlines()
+    assert rows[0].startswith("run,track,seed,arm,window,cargo,industry") and len(rows) == 1 + 7 * (3 + 2 + 1 + 1)
+
+
+def test_deliveries_missing_stale_or_failed_are_not_used(tmp_path):
+    e = make_run(tmp_path, "e", 1, "enforced")
+    c = make_run(tmp_path, "c", 1, "cheap_talk")
+    res = an.run([e, c], tmp_path / "out", boot=100, make_figures=False)
+    assert "no run has a usable deliveries.json" in res["H3"]["cargo_measure"]["note"]
+    add_deliveries(e, [], [[0, 3, 11, 5]], ok=False)
+    add_deliveries(c, [], [[0, 3, 11, 5]])
+    (c / "coord" / "run" / "actions.jsonl").write_text('{"kind":"header","changed":1}\n')
+    res = an.run([e, c], tmp_path / "out2", boot=100, make_figures=False)
+    miss = res["H4"]["market_share_measure"]["missing"]
+    assert miss == {"e": "deliveries.json failed its check against the verified run",
+                    "c": "deliveries.json is for another log"}
