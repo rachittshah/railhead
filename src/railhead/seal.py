@@ -34,6 +34,8 @@ def seal_task(task_dir: Path) -> dict:
     task_dir = Path(task_dir)
     sealed = {"start_sav": file_sha256(task_dir / "start.sav"),
               "task_json": file_sha256(task_dir / "task.json")}
+    if (task_dir / "regions.json").exists():
+        sealed["regions_json"] = file_sha256(task_dir / "regions.json")
     if (task_dir / "secret.json").exists():
         sealed["secret_json"] = file_sha256(task_dir / "secret.json")
     (task_dir / "sealed.json").write_text(json.dumps(sealed, indent=1))
@@ -53,3 +55,15 @@ def check_start(task_dir: Path, start_sav: Path) -> bool:
         return True
     sealed = json.loads(sealed_path.read_text())
     return file_sha256(Path(start_sav)) == sealed.get("start_sav")
+
+
+def check_sealed_file(task_dir: Path, name: str, key: str) -> bool:
+    """True when ``name`` in the task matches its sealed hash (or nothing about it is sealed)."""
+    sealed_path = Path(task_dir) / "sealed.json"
+    if not sealed_path.exists():
+        return True
+    want = json.loads(sealed_path.read_text()).get(key)
+    path = Path(task_dir) / name
+    if want is None:
+        return not path.exists()
+    return path.exists() and file_sha256(path) == want

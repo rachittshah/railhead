@@ -1,7 +1,9 @@
 # Waybill: a shared world for several agents
 
-This document describes Phase 1 of Waybill: several agents play one OpenTTD world, each agent as one company, with one lockstep clock.
-It describes the log v3 format, the coordinator, the replay, and the verifier.
+This document describes Waybill: several agents play one OpenTTD world, each agent as one company, with one lockstep clock.
+Sections 1 to 7 describe Phase 1: the log v3 format, the coordinator, the replay, and the verifier.
+Sections 8 to 11 describe Phases 2 and 3: franchise regions, the contract market, the `rh` market commands, and the task tracks.
+For the exchange records and rules, refer to [WAYBILL-EXCHANGE.md](WAYBILL-EXCHANGE.md).
 The text follows ASD-STE100. Refer to [STE.md](STE.md).
 For the single-agent design, refer to [ARCHITECTURE.md](ARCHITECTURE.md) and [VERIFICATION.md](VERIFICATION.md).
 
@@ -15,7 +17,9 @@ For the single-agent design, refer to [ARCHITECTURE.md](ARCHITECTURE.md) and [VE
 | Barrier | `src/railhead/multi/barrier.py` | Decides when the world steps, by how many ticks, and which agents wake (pure Python) |
 | Coordinator | `src/railhead/multi/coordinator.py` | Owns the world. Serves one socket for each agent and one control socket. |
 | Replay | `src/railhead/multi/replay.py` | Replays a v3 log and gives the net worth of each company |
-| Verifier | `src/railhead/multi/verify.py` | Writes `scores.json` with the net worth of each company |
+| Verifier | `src/railhead/multi/verify.py` | Writes `scores.json` with the net worth (and, with a market, the score) of each company |
+| Regions | `src/railhead/multi/regions.py` | Franchise regions: the footprint of each build action and the region check (pure Python) |
+| Market | `src/railhead/multi/market.py` | The market driver: the exchange, the cargo monitors, the forced stops, and the market wake reasons (pure Python) |
 
 Single-agent Railhead does not change.
 The single-agent replay and verifier accept log versions 1 and 2 only. They reject a v3 log.
@@ -36,6 +40,7 @@ Each record has sorted keys. `seq` increases by one for each record. The header 
 | `meta` | `seq`, `ticks`, `company`, `m`, `a` | One meta decision of one company (for example `submit`) |
 | `wait_req` | `seq`, `ticks`, `company`, `a`, `target`, optional `auto` | One wait request. `a` has `days` or `ticks`, and optional `until`. `target` is the tick at which the wait ends. `auto` is `true` for a wait that the coordinator starts for a straggler. |
 | `step` | `seq`, `ticks`, `end_ticks`, `checksum`, `wakers`, `snap` | The world ran from `ticks` to `end_ticks`. `wakers` is a list of `{company, reason}`. `snap` has the money and the loan of each company (the replay ignores it). |
+| `ex` | `seq`, `ticks`, `company`, `x` | One exchange record `x` (section 9). `company` is `null` for a system record. |
 
 Example:
 
@@ -235,6 +240,11 @@ The command writes `<out_dir>/scores.json`.
 | `tests/unit/test_multi_coordinator.py` | The coordinator on a fake engine: lockstep, stragglers, the examination under the world lock, submit, horizon, and the `rh` socket selection |
 | `tests/integration/test_multi_world.py` | Three companies in one start state, binding, and determinism |
 | `tests/integration/test_waybill.py` | The gate: three scripted agents play one game year through their sockets. The replay gives every step checksum and the net worth of each company. A forged act and a relabelled header are rejected. A restarted coordinator recovers the world and the barrier from the log. |
+| `tests/unit/test_multi_regions.py` | The footprint of every action in the whitelist, the region check, the regions in force at a tick, the split, and the rotation |
+| `tests/unit/test_multi_market.py` | The monitor book, the tick records, the forced stops, the market wake reasons, the `ex` rules, and the command parsing |
+| `tests/unit/test_multi_tracks.py` | The track sizes, the paired arms, and the rotation of region types across seeds |
+| `tests/integration/test_waybill_market.py` | Regions and the market on the engine, both arms: a refused and a forged out-of-region build; a kept and a broken contract with real deliveries; the replay gives the same exchange state and scores; a forged delivery count is rejected; cheap talk moves no money; a tender opens, is bid, awarded and settled |
+| `tests/integration/test_waybill_tracks.py` | The short track from one seed: paired arms and two rotations share one `start.sav`; a changed `regions.json` is tamper |
 | `tests/integration/test_waybill_events.py` | A short game: `station_first_vehicle` wakes its company early, `rh` acts through `RAILHEAD_SOCKET`, the world steps on after a submit, the replay is valid, and a moved submit and a changed `start.sav` are found |
 
 ## 7. Known limitations
@@ -243,5 +253,169 @@ The command writes `<out_dir>/scores.json`.
 - A wake condition can wake an agent up to 7 days late (refer to 4.3).
 - The socket gives the identity of the agent. Each agent must have access to its own socket only. Phase 4 isolates the agents.
 - After a restart, the vehicles and stations for `vehicle_crashed` and `station_first_vehicle`, and the month for `new_month`, come from the restart time.
-- Start cash is the same for all companies and is not more than the start loan.
+- Start cash in the game is the same for all companies and is not more than the start loan. Unequal starts use the ledger (section 9.1).
 - These parts have tests on the fake engine only: the straggler rule and the rebuild after a world fault. The process entry point (`python -m railhead.multi.coordinator`) and the control socket have no automatic test.
+- Footprints are conservative where the engine can add pieces next to the target: a depot or a stop includes its front tile (a drive-through stop also the back tile), and terraforming includes the 8 neighbours. A build near the edge of a region can thus be refused.
+- A dock, a lock, and a tunnel get their extent from read-only `tile` queries at the same tick in the live world and in the replay. The tunnel end is the first tile uphill with the same base height, as `GSTunnel.GetOtherTunnelEnd` finds it.
+- Vehicles, orders, and loans have no region check. Vehicles can use the roads and stations of other companies where the engine permits it. The action whitelist has no industry funding and no land purchase.
+- A market wake (`offer_received`, `message_received`) occurs at the next step. When a waiter's condition is already true, that step is one tick long.
+- In `cheap_talk`, tender awards and their settlement move no money (the exchange rules). Only `pay` and the start balances move money.
+- An amendment that changes the cargo or the industry gets a new monitor from its signing tick. Deliveries before that tick do not count.
+- Licence and loan contracts are not tradable yet (`kind_not_enabled`).
+
+## 8. Franchise regions
+
+### 8.1 The region map
+
+Each task can have a `regions.json` file. It gives each company slot a list of rectangles. Both corners of a rectangle are part of it.
+
+```json
+{"v": 1, "map": [256, 256],
+ "regions": {"0": [[1, 1, 127, 127]], "1": [[128, 1, 254, 127]]},
+ "types": {"0": 2, "1": 3},
+ "changes": [{"tick": 40000, "slot": 0, "rects": [[1, 1, 140, 127]]}]}
+```
+
+| Field | Description |
+|---|---|
+| `regions` | The rectangles `[x0, y0, x1, y1]` of each slot at the start |
+| `types` | The region type of each slot (section 11). Optional. |
+| `changes` | Optional. From `tick`, the slot has the rectangles `rects`. The last change at or before a tick is in force at that tick. |
+
+`seal_task` records the hash of `regions.json` in `sealed.json`. The verifier gives `tamper = 1` if the file changed or is missing.
+
+### 8.2 The check
+
+A company can build or change infrastructure only on tiles in its own region.
+The coordinator calculates the footprint of each action at the current tick, before the engine gets the action.
+If a tile of the footprint is outside the region of the company, the coordinator refuses the action with `ERR_FRANCHISE`. The log does not get the action.
+The replay calculates the footprint of each logged action again, with the regions in force at the tick of the action. A logged action outside the region rejects the log (`LogRejected`). The verifier then gives `rejected = 1`.
+
+| Actions | Footprint |
+|---|---|
+| `rail_track`, `rail_remove`, `rail_signal`, `rail_remove_signal`, `rail_waypoint`, `water_canal`, `land_demolish` | The tile |
+| `rail_line`, `road_line`, `road_one_way`, `road_remove`, `bridge_build` | The rectangle from the first tile to the last tile (a diagonal rail line: the full rectangle) |
+| `rail_station`, `air_airport` | The station area (`axis=x`: `length` along x, `platforms` along y) or the airport area |
+| `rail_depot`, `road_depot` | The tile and the front tile |
+| `road_stop` | The tile and the front tile. A drive-through stop: also the back tile. |
+| `water_ship_depot` | The tile and the next tile in +x or +y |
+| `water_dock` | The tile and its water tile (from the `tile` query) |
+| `water_lock` | The middle tile and its two neighbours along the slope |
+| `bridge_tunnel` | The tiles from the start to the other end of the tunnel |
+| `land_raise`, `land_lower` | The tile and its 8 neighbours (the corners are shared) |
+| `land_level` | The rectangle and a border of one tile |
+| `town_action` | The centre tile of the town (all town actions: advertising, road rebuild, statue, fund buildings, exclusive rights, bribe) |
+| `rail_set_type`, `road_set_type`, `vehicle_*`, `order_*`, `company_loan`, `company_rename` | No check |
+
+`rh info` gives the rectangles of the company in `region`. `rh market` also gives them.
+
+### 8.3 Generation
+
+`region_map_for` splits the map into one rectangle for each company.
+It cuts the longer side of a rectangle so that each part gets industries in proportion to the number of regions in it. Then it does the same for each part.
+The order of the cut gives the region types 0 to N-1. Slot s gets region type `(s + rotation) mod N`.
+
+## 9. The market
+
+### 9.1 Configuration
+
+The market is in `task.json`, in `objective.market`. A task without it has no market.
+
+| Field | Default | Description |
+|---|---|---|
+| `arm` | `enforced` | `enforced` or `cheap_talk` (refer to WAYBILL-EXCHANGE.md) |
+| `seed` | 0 | The seed of the tender draws |
+| `start_balances` | `{}` | The ledger money of each slot at the start (unequal starts). The `exchange` account pays it. |
+| `credit_limit` | `null` | The lowest ledger balance for a voluntary debit (`null`: no limit) |
+| `quarter_days` | 90 | The length of a tender quarter in game days |
+| `tender` | `{}` | `TenderConfig` fields (quantity, price, penalty, bid period, delivery window) |
+
+### 9.2 Records
+
+The coordinator owns one exchange. Exchange company ids are the engine company ids as strings (`"3"`).
+Each exchange record goes into the log as one `ex` record:
+
+```json
+{"company":3,"kind":"ex","seq":41,"ticks":2590,"x":{"company":"3","contract_id":"C1","expires_tick":4810,"kind":"supply","op":"offer","seq":5,"terms":{...},"tick":2590,"to":"5"}}
+```
+
+1. When the log starts, the coordinator writes the `init` record and the records of the start tick (the tenders of quarter 0).
+2. A company command writes one `ex` record with that company. Its digest goes to the GameScript (`note`), as for a `meta` record. Thus a company record that is added, moved or changed changes all later step checksums.
+3. After each `step` record, the coordinator writes the system records of the new tick: expiries, tender awards, activations, settlements, and then the tenders of a quarter that starts at this tick. These records have `company` `null`. No other record comes between the `step` record and them.
+
+The replay makes its own exchange from the sealed configuration. It applies the company records, and it runs the same driver after each step. Each logged system record must be equal to the record that the driver makes, else the log is rejected. Thus a forged delivery count or a forged tender is rejected.
+The recovery of the coordinator takes the exchange from the replay.
+
+### 9.3 Deliveries
+
+When a contract is signed (an accept, a tender award, or an amendment), the coordinator adds one engine cargo monitor for each (seller, cargo, industry) that the contract needs, if it does not have one. A subcontract seller of a tender is included.
+The replay adds the monitors at the same records. The monitors are not in the checksum.
+After each step, the coordinator reads the monitor totals. The deliveries in `[start, end]` are `total(end) - total(max(start, creation tick))`. A monitor counts nothing before it exists.
+
+### 9.4 Forced stops and wakes
+
+The world stops at each exchange deadline (offer expiry, window start, bid close, contract deadline) and at the start of each quarter whose tenders end by the horizon. The replay rejects a step that passes such a tick.
+
+| Reason | When |
+|---|---|
+| `deadline` (forced) | A contract of the company reaches its deadline at this tick |
+| `tender` (forced) | The tenders of a quarter open at this tick (all waiting companies) |
+| `deadline` (`until=deadline`) | Any exchange deadline at this tick names the company (offer expiry, window start, bid close) |
+| `offer_received` (`until=offer_received`) | Since the wait started: an offer to the company, or a counter or amendment from the other party of its contract |
+| `message_received` (`until=message_received`) | Since the wait started: a message to the company |
+
+The GameScript never gets the market wake conditions. The replay calculates the market reasons again and compares them with the `step` record.
+
+### 9.5 Horizon and score
+
+A deadline after the horizon is refused (`ERR_BAD_ARG`). Tenders that end after the horizon do not open.
+The verifier runs the driver until the horizon, thus contracts settle also after all companies submit.
+The score of a company is its net worth after the run-off plus its ledger balance. `scores.json` gives `ledger_balance` and `score` for each company, and `market` (the exchange state).
+
+### 9.6 What agents see
+
+Agents get only views and query results: `market`, `contracts`, `inbox`, `ledger`, and `view` (`public_view`). They never get raw exchange records.
+`history` gives the records of the company of the socket and the `step` records. A `step` record shows only the wake of that company and no `snap`. `history` never gives system records.
+`monitor_read` gives only the monitors of the company of the socket.
+
+## 10. Commands
+
+The agent socket has the operation `ex` with `m` (the operation) and `a` (the arguments).
+
+| `rh` command | `m` | Turn needed | Description |
+|---|---|---|---|
+| `rh market` | `market` | No | The public order book, the open tenders (your bid only), and your region |
+| `rh contracts` | `contracts` | No | Your contracts and the offers you can answer (`your_turn`) |
+| `rh inbox` | `inbox` | No | The messages to you |
+| `rh ledger` | `ledger` | No | `enforced`: all balances and transfers. `cheap_talk`: your own. |
+| `rh offer ...` | `offer` | Yes | A supply offer. `to` is the other party, or no `to` for a public offer. |
+| `rh counter contract_id=C ...` | `counter` | Yes | New terms. Fields that you do not give keep their value. |
+| `rh accept contract_id=C` | `accept` | Yes | Sign the contract |
+| `rh amend contract_id=C ...` | `amend` | Yes | Propose new terms for a signed contract |
+| `rh withdraw contract_id=C` | `withdraw` | Yes | Withdraw an open offer |
+| `rh tender bid tender_id=T price=N` | `tender_bid` | Yes | A sealed bid |
+| `rh msg to=B text="..."` | `msg` | Yes | A private message |
+| `rh pay to=B amount=N [memo="..."]` | `pay` | Yes | A ledger transfer |
+
+A company is an id (`3`), a name (`Company B`), a letter (`B`), or `me`.
+A tick field (`window_start`, `deadline`, `expires_tick`) is an absolute tick, or relative to now: `+30d` (days) or `+500t` (ticks).
+The coordinator also examines that the cargo and the industry exist and that the deadline is not after the horizon.
+An exchange error comes back as `ERR_<CODE>`, for example `ERR_NOT_YOUR_TURN` or `ERR_INSUFFICIENT_FUNDS`. Refer to WAYBILL-EXCHANGE.md for the codes.
+`rh help market` gives the commands and the settlement rule.
+
+## 11. Task tracks
+
+| Track | Companies | Map | Horizon | Run-off |
+|---|---|---|---|---|
+| `short` | 4 | 256 x 256 | 730 days (2 game years) | 0 |
+| `decade` | 8 | 512 x 512 | 3650 days (10 game years) | 365 days |
+
+```
+python -m railhead.multi.gen track <short|decade> <first_seed> <count> <out_dir> [--rotations cycle|all] [--arms enforced,cheap_talk] [--start-balances SLOT=POUNDS,...]
+```
+
+- The generator makes one world for each seed. Each (rotation, arm) of that seed gets one task directory with the same `start.sav`.
+- The rotation changes only `regions.json`: slot s plays region type `(s + rotation) mod N`. The arm changes only `objective.market.arm`.
+- `--rotations cycle` (the default) gives the seed number i of the list the rotation `i mod N`. Thus N consecutive seeds give each slot, and each model of a fixed roster, each region type one time. `--rotations all` gives each seed all N rotations.
+- The arms are paired: for each seed and rotation there is one `enforced` task and one `cheap_talk` task.
+- The task id is `waybill-<track>-s<seed>-r<rotation>-<arm>`. `objective` also has `track`, `seed`, `rotation`, `arm`, and `region_types`.

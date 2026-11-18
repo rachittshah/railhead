@@ -30,7 +30,7 @@ In both arms, `pay` moves money. In `cheap_talk`, tender awards also move no mon
 
 | Account | Rule |
 |---|---|
-| `<company id>` | Starts at 0. A voluntary debit must stay at or above `-credit_limit`. The default limit is `None` (no limit). |
+| `<company id>` | Starts at its `start_balances` value (default 0). A voluntary debit must stay at or above `-credit_limit`. The default limit is `None` (no limit). |
 | `exchange` | Funds tender escrow. Receives tender penalties. It can go negative without a limit. |
 | `escrow:<contract id>` | Holds the price of a signed contract. It is never negative. |
 | `escrow:<contract id>:bond` | Holds the seller bond. It is never negative. |
@@ -134,7 +134,7 @@ All records have `op`, `seq` (0, 1, 2 and so on), `tick` (never decreases) and `
 
 | `op` | Written by | Fields |
 |---|---|---|
-| `init` | constructor (system) | `arm`, `companies`, `seed`, `credit_limit`, `tender_config` |
+| `init` | constructor (system) | `arm`, `companies`, `seed`, `credit_limit`, `tender_config`, `start_balances` (money from `exchange` to each company: unequal starts) |
 | `offer` | company | `contract_id`, `kind`, `terms`, `to`, `expires_tick` |
 | `counter` | company | `contract_id`, `terms`, `expires_tick` |
 | `accept` | company | `contract_id` |

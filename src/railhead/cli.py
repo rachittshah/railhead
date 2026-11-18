@@ -7,6 +7,7 @@
     rh fork create name=a | fork do name=a m=road_line from_tile=.. | fork wait name=a days=60 | fork drop name=a
     rh fork q name=a m=company                          (read a fork's state)
     rh forecast|promise|abstain|flag|submit key=value ...
+    rh market | contracts | inbox | ledger | offer | counter | accept | amend | withdraw | tender bid | msg | pay
     rh q <query> k=v ... | rh do <gs_method> k=v ...     (raw JSON escape hatches)
 Tiles are written x,y. Add --json for machine-readable output.
 """
@@ -25,6 +26,10 @@ QUERY_COMMANDS = {
     "tile", "tiles", "subsidies", "catchment", "companies", "monitor_read", "map_info",
 }
 META_COMMANDS = {"forecast", "promise", "abstain", "flag", "submit"}
+# Waybill market (a shared world with a market): rh verb -> coordinator op=ex m=<name>
+MARKET_QUERIES = {"market": "market", "contracts": "contracts", "inbox": "inbox", "ledger": "ledger"}
+MARKET_COMMANDS = {"offer": "offer", "counter": "counter", "accept": "accept", "amend": "amend",
+                   "withdraw": "withdraw", "msg": "msg", "pay": "pay"}
 
 
 META_HELP = [
@@ -34,6 +39,30 @@ META_HELP = [
     "rh abstain reason=\"...\" [max_possible=N]   declare the contract impossible",
     "rh flag note=\"...\"                          report an environment problem",
     "rh submit confirm=yes                       end your mandate (irreversible; the world runs on)",
+]
+MARKET_HELP = [
+    "(only in a Waybill shared world with a market; companies: an id, a name like 'Company B', a letter, or me)",
+    "rh market                                   the public order book and the open tenders (and your region)",
+    "rh contracts                                your contracts and the offers you can answer (your_turn)",
+    "rh inbox                                    the private messages to you",
+    "rh ledger                                   balances and transfers (cheap_talk arm: your own only)",
+    "rh offer to=B seller=me buyer=B cargo=1 industry=12 quantity=500 window_start=+0d deadline=+90d \\",
+    "         price=40000 penalty_per_unit=50 [bond=0] [expires_tick=+30d]",
+    "                                            a supply contract: the seller delivers `quantity` of `cargo` to",
+    "                                            `industry` in [window_start, deadline]; omit to= (buyer=any) for",
+    "                                            a public offer. Ticks: absolute, or +Nd (days) / +Nt (ticks) from now",
+    "rh counter contract_id=C1 price=45000       new terms (fields you omit keep their value); the turn passes",
+    "rh accept contract_id=C1                    sign it (enforced arm: the buyer's price and the seller's bond",
+    "                                            go to escrow)",
+    "rh amend contract_id=C1 deadline=+120d      propose new terms for a signed contract; the same terms from",
+    "                                            the other party sign the amendment",
+    "rh withdraw contract_id=C1                  withdraw an open offer",
+    "rh tender bid tender_id=T1 price=N          a sealed bid (total price); the lowest bid wins at bid close",
+    "rh msg to=B text=\"...\"                      a private message",
+    "rh pay to=B amount=N [memo=\"...\"]            move money on the ledger",
+    "rh wait days=N until=deadline,offer_received,message_received   market wake conditions",
+    "Settlement at the deadline: the seller gets price*min(D,Q)/Q and pays penalty_per_unit*(Q-D) (bond",
+    "first). Your score is your net worth (cash minus loan) plus your ledger balance.",
 ]
 INFO_HELP = [
     "rh status | brief | info | history [n=30]",
@@ -115,6 +144,8 @@ def help_text(group: str | None = None) -> str:
     for name, spec in REGISTRY.items():
         g, v = name.split(".")
         groups.setdefault(g, []).append((v, spec))
+    if group == "market":
+        return "MARKET (Waybill)\n" + "\n".join(f"  {x}" for x in MARKET_HELP)
     if group is not None and group not in groups:
         raise ValueError(f"unknown group {group!r}; groups: {', '.join(groups)}")
     lines = []
@@ -131,6 +162,9 @@ def help_text(group: str | None = None) -> str:
                 lines.append(f"      {spec.doc}")
     if group is None:
         lines += ["", "TIME AND DECISIONS"] + [f"  {x}" for x in META_HELP]
+        lines += ["", "MARKET (Waybill shared world only; details: rh help market)",
+                  "  rh market | contracts | inbox | ledger | offer | counter | accept | amend | withdraw",
+                  "  rh tender bid | msg | pay"]
         lines += ["", "Details for one group: rh help <group>   (e.g. rh help vehicle)",
                   "Route recipes (the minimal calls that work): rh help rail | rh help water"]
     elif group in RECIPES:
@@ -264,6 +298,37 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
 
+def market_request(cmd: str, rest: list[str]) -> tuple[str, dict[str, Any]]:
+    """(market operation, arguments) for `rh <cmd> <rest...>`; ValueError with usage on a bad call."""
+    if cmd == "tender":
+        if rest[:1] != ["bid"]:
+            raise ValueError("usage: rh tender bid tender_id=T1 price=N")
+        op, rest = "tender_bid", rest[1:]
+    else:
+        op = MARKET_QUERIES.get(cmd) or MARKET_COMMANDS[cmd]
+    a: dict[str, Any] = {}
+    for p in rest:
+        if "=" not in p:
+            raise ValueError(f"expected key=value, got {p!r}; see rh help market")
+        k, v = p.split("=", 1)
+        if k in ("text", "memo", "contract_id", "tender_id", "to", "seller", "buyer") or v.startswith("+"):
+            a[k] = v  # keep text, ids and relative ticks as strings
+            continue
+        try:
+            a[k] = json.loads(v)
+        except json.JSONDecodeError:
+            a[k] = v
+    if op in MARKET_QUERIES.values() and a:
+        raise ValueError(f"rh {cmd} takes no arguments")
+    return op, a
+
+
+def _market(c: Client, cmd: str, rest: list[str], as_json: bool) -> int:
+    op, a = market_request(cmd, rest)
+    _print(c.request("ex", m=op, a=a), as_json)
+    return 0
+
+
 def _run(argv: list[str], as_json: bool) -> int:
     c = _client()
     info = c.request("info")
@@ -297,6 +362,8 @@ def _run(argv: list[str], as_json: bool) -> int:
             print(f"waited {out.get('days')} days -> {out.get('ymd')} (stopped because: {out.get('reason')}); "
                   f"{left} days left")
         return 0
+    if cmd in MARKET_QUERIES or cmd in MARKET_COMMANDS or cmd == "tender":
+        return _market(c, cmd, rest, as_json)
     if cmd in META_COMMANDS:
         _print(c.request("meta", m=cmd, a=parse_kv(rest, mx)), as_json)
         return 0

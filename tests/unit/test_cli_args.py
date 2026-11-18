@@ -71,3 +71,26 @@ def test_help_says_how_to_read_a_fork():
     from railhead.cli import help_text
 
     assert "fork q name=F m=company" in help_text()
+
+
+def test_market_commands_parse_to_ex_requests():
+    import pytest
+
+    from railhead.cli import help_text, market_request
+
+    assert market_request("market", []) == ("market", {})
+    assert market_request("tender", ["bid", "tender_id=T3", "price=900"]) == ("tender_bid", {"tender_id": "T3",
+                                                                                              "price": 900})
+    op, a = market_request("offer", ["to=B", "seller=me", "buyer=B", "cargo=1", "deadline=+90d", "price=40000"])
+    assert op == "offer" and a == {"to": "B", "seller": "me", "buyer": "B", "cargo": 1, "deadline": "+90d",
+                                   "price": 40000}
+    assert market_request("msg", ["to=2", 'text=hello there'])[1] == {"to": "2", "text": "hello there"}
+    with pytest.raises(ValueError, match="usage: rh tender bid"):
+        market_request("tender", ["list"])
+    with pytest.raises(ValueError, match="no arguments"):
+        market_request("ledger", ["x=1"])
+    text = help_text("market")
+    for verb in ("rh market", "rh offer", "rh counter", "rh accept", "rh amend", "rh withdraw", "rh contracts",
+                 "rh tender bid", "rh msg", "rh inbox", "rh pay", "rh ledger", "offer_received"):
+        assert verb in text
+    assert "rh help market" in help_text()
