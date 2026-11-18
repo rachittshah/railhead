@@ -706,3 +706,4 @@ Fonts: the system fonts Avenir and DIN Alternate (macOS), else DejaVu Sans (bund
 - Air routes are drawn as arcs between the stations; other routes as straight lines between consecutive stops, not along the track or the road.
 - A company's anchor (the start of its arcs) is the centre of its region, not its headquarters.
 - The money between two samples is interpolated linearly. The networks change only at samples (at most one grid step late).
+- A caption quote is the nearest safe message between the two companies, up to 60 game days before the moment (120 days after it for a broken promise). It can be later than the moment it captions.
