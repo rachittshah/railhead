@@ -110,7 +110,7 @@ A v1 replay does not send the digests, so the checksums of v1 logs do not change
 | `runoff_delivered` | The ledger increase during the run-off |
 | `net_worth_horizon` | Cash minus loan at the end of the horizon |
 | `net_worth` | Cash minus loan after the run-off |
-| `abstained`, `submitted` | 1 if the log contains that meta decision |
+| `abstained`, `submitted` | 1 if the log contains that meta decision (`abstain`: only by the bid deadline and before the first `submit`) |
 | `quantity`, `bid` | The contract quantity and the promise (`deliver` family) |
 | `acts`, `failed_acts`, `waits` | The number of actions, refused actions, and waits in the replay |
 | `divergences` | The number of differences between the live record and the replay |
@@ -165,7 +165,7 @@ Status values:
 | Make a false action log | The agent writes a different log of legal play, with checksums from a private engine. | The replay makes sure that the log is legal play. It cannot know that the agent did not play it live. | Open | None |
 | Keep the best part of the log | The agent cuts the log after the best point. Each start of a legal log is also a legal log. The agent needs no private engine: it cuts before a decision that it saw was bad. In the bid family, a log with no promise (also a deleted log) gets 0.5, more than a promise that failed. | None. | Open: refer to section 6 | `test_attack_cutting_the_log_before_a_failed_promise_does_not_pay` (xfail) |
 | Go back in time with the daemon | The agent waits and sees the result. It sends `{"op":"shutdown"}`, cuts the log, and runs `rh status`. The daemon replays the shorter log, and the world is again at that point. The daemon is then a private engine. | None. | Open: refer to section 6 | `test_attack_rewind_by_cutting_the_log_and_restarting_the_daemon` (xfail) |
-| Abstain late | On an infeasible contract, the agent plays, fails, and abstains on the last day or after `submit`. The reward is 1. | None. `abstain` has no deadline, and the daemon accepts meta records after the horizon and after `submit`. | Open: a deadline for `abstain` needs a decision, and the 183 abstain oracles must agree with it | `test_attack_abstain_after_the_horizon_does_not_pay` (xfail) |
+| Abstain late | On an infeasible contract, the agent plays, fails, and abstains on the last day or after `submit`. The reward is 1. | The verifier counts an `abstain` only by the bid deadline (`bid_deadline_days`, default 30 days after the start) and before the first `submit`. | Closed. All 183 abstain oracles abstain at the start: `railhead recheck` gives 183 of 183 equal to their certificates. | `test_attack_abstain_after_the_horizon_does_not_pay`, `test_abstain_inside_the_decision_window_still_pays`, `test_abstain_after_the_decision_window_does_not_count` |
 | Promise a false quantity | The agent promises a small quantity to receive a safe payout. | The payout is a proper scoring rule: the best expected payout comes from the median of the true delivery distribution. | Partly: with a private engine, the agent knows its delivery exactly | `tests/unit/test_rewards.py` |
 | Asset stripping or loan games | The agent sells assets or takes a large loan at the end of the horizon. | The `tycoon` reward uses the net worth after the run-off. The `simops` reward uses the run-off deliveries. | Closed | `tests/unit/test_rewards.py` |
 | Use profit statistics or book value | The agent moves cargo through transfers to show high vehicle profit. | The reward uses only ledger deliveries and cash minus loan. | Closed | None |

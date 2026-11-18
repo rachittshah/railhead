@@ -237,11 +237,9 @@ def test_attack_rewind_by_cutting_the_log_and_restarting_the_daemon(real_daemon)
     assert again.world.state()["ticks"] == seen  # the secure daemon does not go back in time
 
 
-@pytest.mark.xfail(strict=True, reason="decision: abstain has no deadline and the daemon accepts meta records "
-                   "after the horizon and after submit. On an infeasible contract the agent can try, fail, and "
-                   "abstain on the last day for reward 1. Fix: give abstain the bid deadline (or refuse meta after "
-                   "the horizon), then regenerate the 183 abstain oracles that use it.")
 def test_attack_abstain_after_the_horizon_does_not_pay(real_daemon, bid_task):
+    """Decision: an abstain counts only by the bid deadline (default 30 days) and before any submit. The 183
+    abstain oracles abstain at the start, so their rewards do not change."""
     spec = TaskSpec.load(bid_task)
     spec.secret = {"feasible": False}
     spec.save(bid_task)
@@ -306,3 +304,25 @@ def test_turn_credit_stops_at_its_deadline(bid_task, engines, tmp_path):
     spec = TaskSpec.load(bid_task)
     assert len(verify_mod.turn_credit(spec, bid_task / "start.sav", log, tmp_path, 0.5)) == 1
     assert verify_mod.turn_credit(spec, bid_task / "start.sav", log, tmp_path, 0.5, deadline=0.0) == []
+
+
+def test_abstain_inside_the_decision_window_still_pays(real_daemon, bid_task):
+    spec = TaskSpec.load(bid_task)
+    spec.secret = {"feasible": False}
+    spec.save(bid_task)
+    d = real_daemon()
+    d.handle({"op": "meta", "m": "abstain", "a": {"reason": "impossible"}})
+    d.handle({"op": "wait", "days": 100})
+    out = _verify(bid_task, d.run_dir / "actions.jsonl", d.run_dir.parent / "v", min_version=2)
+    assert out["abstained"] == 1 and out["reward"] == 1.0
+
+
+def test_abstain_after_the_decision_window_does_not_count(real_daemon, bid_task):
+    spec = TaskSpec.load(bid_task)
+    spec.secret = {"feasible": False}
+    spec.save(bid_task)
+    d = real_daemon()
+    d.handle({"op": "wait", "days": 40})  # past the 30-day decision window
+    d.handle({"op": "meta", "m": "abstain", "a": {"reason": "too late"}})
+    out = _verify(bid_task, d.run_dir / "actions.jsonl", d.run_dir.parent / "v", min_version=2)
+    assert out["abstained"] == 0
