@@ -301,8 +301,9 @@ class Coordinator:
         action; a refused build is not logged."""
         if self.regions is not None:
             try:
+                lic = self.market.licence_rects(c, self.sw.ticks) if self.market is not None else None
                 self._logged(self.regions.check_action, self.slot_of[c], self.sw.ticks, m, args,
-                             WorldProbe(self.sw, c))
+                             WorldProbe(self.sw, c), lic)
             except FranchiseError as e:
                 raise OpError(e.code, str(e)) from None
         return self._logged(self.sw.act, c, m, args)
@@ -321,7 +322,10 @@ class Coordinator:
                 if m == "view":
                     return ex.public_view(me) | {"tick": self.sw.ticks}
                 if m == "market":
-                    return ex.market(me) | {"tick": self.sw.ticks, "region": self.region_of(c), "arm": ex.arm}
+                    return ex.market(me) | {"tick": self.sw.ticks, "region": self.region_of(c), "arm": ex.arm,
+                                            "licensed": self.market.licence_rects(c, self.sw.ticks),
+                                            "obligations": [o for o in ex.obligations_of(me)
+                                                            if o["status"] == "open"]}
                 return getattr(ex, m)(me)
         if m not in COMMANDS:
             raise OpError("ERR_UNKNOWN_OP", f"unknown market operation {m!r}; queries: {', '.join(QUERIES)}; "
@@ -369,6 +373,18 @@ class Coordinator:
             inds = {int(x["id"]) for x in self._logged(sw.industries)}
             if terms["industry"] not in inds:
                 raise CommandError(f"industry {terms['industry']} does not exist (rh industries lists them)")
+        if "rect" in terms and self.regions is not None:
+            grantor = terms.get("grantor")
+            if grantor is None or int(grantor) not in self.slot_of:
+                raise CommandError("a licence needs the grantor (the company whose region the rectangle is in)")
+            from railhead.multi.regions import clip
+
+            own = self.regions.rects_at(self.slot_of[int(grantor)], sw.ticks)
+            r = terms["rect"]
+            inside = sum((x[2] - x[0] + 1) * (x[3] - x[1] + 1) for x in clip(r, own))
+            if inside != (r[2] - r[0] + 1) * (r[3] - r[1] + 1):
+                shown = "; ".join(f"{x[0]},{x[1]},{x[2]},{x[3]}" for x in own)
+                raise CommandError(f"rect {r} is not inside the region of the grantor ({shown})")
         dl = terms.get("deadline")
         if self.horizon_tick is not None and isinstance(dl, int) and dl > self.horizon_tick:
             raise CommandError(f"deadline {dl} is after the end of the game (tick {self.horizon_tick}); "

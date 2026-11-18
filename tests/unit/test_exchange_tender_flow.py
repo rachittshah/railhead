@@ -145,14 +145,29 @@ def test_tender_contracts_cannot_be_amended():
     assert code(ex.amend, 11, "b", "T1", t) == "not_amendable"
 
 
-def test_cheap_talk_tenders_move_no_money():
-    ex = opened("cheap_talk")
+@pytest.mark.parametrize("arm", ["enforced", "cheap_talk"])
+def test_tender_parity_the_winner_is_paid_in_both_arms_and_the_penalty_is_an_obligation(arm):
+    ex = opened(arm)
     ex.tender_bid(1, "b", "T1", 700)
     ex.advance(10)
-    ex.settle_due(1010, lambda *a: 0)
-    assert ex.contract_map["T1"].outcome == "broken"
-    assert ex.accounts.history == [] and ex.accounts.balance("b") == 0
+    recs = ex.settle_due(1010, lambda *a: 40)  # 40 of 100 delivered
+    assert ex.contract_map["T1"].outcome == "partial"
+    assert ex.accounts.balance(escrow_account("T1")) == 0
+    (oid,) = ex.contract_map["T1"].settlement["obligations"]
+    o = ex.obligations[oid]
+    assert (o["kind"], o["payer"], o["payee"], o["amount"], o["due"]) == ("tender_penalty", "b", "exchange", 300, 1010)
+    if arm == "enforced":  # collected at the due tick (the balance may go negative: the recorded debt)
+        assert recs[-1]["op"] == "obligation_settle" and o["status"] == "kept" and o["collected"] == 300
+        assert ex.accounts.balance("b") == 280 - 300
+    else:  # paid for the delivered share, the penalty is owed until due + grace
+        assert o["status"] == "open" and ex.accounts.balance("b") == 280
+        ex.pay(1100, "b", "exchange", 100, contract_id="T1")
+        assert code(ex.pay, 1101, "b", "exchange", 5) == "unknown_company"  # untagged: not to the exchange
+        out = ex.settle_due(1010 + 30 * 74, lambda *a: 0)
+        assert [(r["op"], r["outcome"], r["paid"]) for r in out] == [("obligation_settle", "partial", 100)]
+        assert ex.accounts.balance("b") == 180 and o["status"] == "partial" and o["collected"] == 0
     ex.check_invariants()
+    assert Exchange.replay(ex.records).state() == ex.state()
 
 
 def test_bad_tender_open_records():

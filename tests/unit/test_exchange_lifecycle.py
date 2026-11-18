@@ -62,8 +62,9 @@ def test_seller_or_buyer_may_offer_and_offerer_must_be_a_party(ex):
 def test_offer_validation_codes(ex):
     assert code(ex.offer, 0, "a", "supply", supply(quantity=0), to="b") == "bad_terms"
     assert code(ex.offer, 0, "a", "swap", {}, to="b") == "unknown_kind"
-    lic = {"grantor": "a", "grantee": "b", "tiles": [1], "term": 10, "annual_fee": 5}
-    assert code(ex.offer, 0, "a", "licence", lic, to="b") == "kind_not_enabled"
+    loan = {"lender": "a", "borrower": "b", "principal": 5, "interest_bp": 0, "due_tick": 99,
+            "collateral_share_bp": 0}
+    assert code(ex.offer, 0, "a", "loan", loan, to="b") == "kind_not_enabled"
     assert code(ex.offer, 0, "a", "supply", supply(), to="b", expires_tick=0) == "bad_terms"
     assert code(ex.offer, 2000, "a", "supply", supply(), to="b") == "deadline_passed"
     assert len(ex.records) == 1                                                  # only init
@@ -161,7 +162,7 @@ def test_settle_due_known_answers(ex, d, outcome, a_bal, b_bal):
     cid = signed(ex)
     assert ex.settle_due(999, delivered(d)) != [] and ex.contract_map[cid].status == "active"
     recs = ex.settle_due(1000, delivered(d))
-    s = recs[-1]
+    s = next(r for r in recs if r["op"] == "settle")
     assert (s["op"], s["contract_id"], s["delivered"], s["outcome"]) == ("settle", cid, d, outcome)
     assert s["parts"] == [["a", 100, 1000, d]]
     assert ex.contract_map[cid].outcome == outcome
@@ -208,7 +209,7 @@ def test_amendment_needs_both_signatures_and_adjusts_escrow(ex):
     assert ex.settle_due(1000, delivered(0)) == []         # old deadline: nothing settles
     assert {d["tick"] for d in ex.deadlines() if d["id"] == cid} == {2000}
     recs = ex.settle_due(2000, delivered(60))
-    assert recs[-1]["outcome"] == "partial"
+    assert next(r for r in recs if r["op"] == "settle")["outcome"] == "partial"
     assert ex.accounts.balance("a") == 1500 * 60 // 120 - 5 * 60
     ex.check_invariants()
 

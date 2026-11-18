@@ -218,18 +218,25 @@ class RegionMap:
     def outside(self, slot: int, tick: int, tiles: Iterable[tuple[int, int]]) -> list[tuple[int, int]]:
         return [t for t in dict.fromkeys(tiles) if not self.contains(slot, tick, *t)]
 
-    def check_action(self, slot: int, tick: int, m: str, a: dict[str, Any], probe: Probe | None = None) -> None:
+    def check_action(self, slot: int, tick: int, m: str, a: dict[str, Any], probe: Probe | None = None,
+                     licensed: list[list[int]] | None = None) -> None:
         """Raise :class:`FranchiseError` when action ``m`` of the company in ``slot`` touches a tile outside
-        its regions at ``tick``."""
+        its regions at ``tick`` and outside the ``licensed`` rectangles (its live licences at ``tick``,
+        already clipped to the grantors' regions)."""
         if not is_build(m):
             return
-        bad = self.outside(slot, tick, footprint(m, a, self.map_x, probe))
+        lic = licensed or []
+        bad = [t for t in self.outside(slot, tick, footprint(m, a, self.map_x, probe))
+               if not any(r[0] <= t[0] <= r[2] and r[1] <= t[1] <= r[3] for r in lic)]
         if bad:
             rects = self.rects_at(slot, tick)
             shown = ", ".join(f"{x},{y}" for x, y in bad[:4]) + (" ..." if len(bad) > 4 else "")
             own = "; ".join(f"{r[0]},{r[1]} to {r[2]},{r[3]}" for r in rects) or "none"
-            raise FranchiseError(f"{m}: tile(s) {shown} are outside your franchise region (your region: {own}). "
-                                 "Build only inside your region; `rh market` and `rh info` show it.")
+            held = "; ".join(f"{r[0]},{r[1]} to {r[2]},{r[3]}" for r in lic)
+            raise FranchiseError(f"{m}: tile(s) {shown} are outside your franchise region (your region: {own})"
+                                 + (f" and outside your licences ({held})" if lic else "")
+                                 + ". Build only inside your region or a licence; `rh market` and `rh info` "
+                                   "show them.")
 
 
 # ---------------------------------------------------------------------- generation
@@ -283,6 +290,16 @@ def make_region_map(map_x: int, map_y: int, n: int, industry_tiles: list[tuple[i
     rects = split_regions(map_x, map_y, n, industry_tiles)
     rot = rotation(offset, n)
     return RegionMap(map_x, map_y, {s: [rects[rot[s]]] for s in range(n)}, {s: rot[s] for s in range(n)})
+
+
+def clip(rect: list[int], rects: list[list[int]]) -> list[list[int]]:
+    """The parts of ``rect`` inside ``rects`` (each a rectangle [x0, y0, x1, y1], corners included)."""
+    out = []
+    for r in rects:
+        x0, y0, x1, y1 = max(rect[0], r[0]), max(rect[1], r[1]), min(rect[2], r[2]), min(rect[3], r[3])
+        if x0 <= x1 and y0 <= y1:
+            out.append([x0, y0, x1, y1])
+    return out
 
 
 def region_of(rm: RegionMap, x: int, y: int, tick: int = 0) -> int:

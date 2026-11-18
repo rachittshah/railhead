@@ -16,7 +16,7 @@ pytestmark = [pytest.mark.integration, pytest.mark.timeout(900)]
 
 
 def test_short_track_paired_arms_and_rotations(tmp_path):
-    specs = gen_track("short", 21, tmp_path, rotations=[1, 2], start_balances={0: 10_000})
+    specs = gen_track("short", 10, tmp_path, rotations=[1, 2], start_balances={0: 10_000})
     assert len(specs) == 4
     dirs = {s.task_id: tmp_path / s.task_id for s in specs}
     assert {file_sha256(d / "start.sav") for d in dirs.values()} == {file_sha256(next(iter(dirs.values())) /
@@ -34,6 +34,8 @@ def test_short_track_paired_arms_and_rotations(tmp_path):
         assert len(counts) == n and min(counts.values()) >= 1, counts
         needs = obj["region_needs"]  # cross-region freight: what the tenders and contracts are about
         assert needs["industries"] == sum(counts.values()) and needs["tender_candidates"] >= 1, needs
+        assert needs["cross_only"] >= TRACKS["short"].min_cross_only == obj["min_cross_only"] == 5
+        assert obj["market"]["tender"]["reach_tiles"] == 128
         maps[(obj["rotation"], obj["arm"])] = rm.to_json()
         assert "regions_json" in json.loads((d / "sealed.json").read_text())
     assert maps[(1, "enforced")] == maps[(1, "cheap_talk")] and maps[(1, "enforced")] != maps[(2, "enforced")]
@@ -48,3 +50,14 @@ def test_short_track_paired_arms_and_rotations(tmp_path):
     rm.save(d / "regions.json")
     (tmp_path / "empty.jsonl").write_text("")
     assert verify_multi(d, d / "start.sav", tmp_path / "empty.jsonl", tmp_path / "v")["tamper"] == 1
+
+
+def test_a_seed_with_too_few_cross_region_needs_is_rejected(tmp_path):
+    from railhead.multi.gen import SeedRejected, track_main
+
+    with pytest.raises(SeedRejected) as e:
+        gen_track("short", 3, tmp_path / "a", arms=("enforced",))  # seed 3: no cross-region need
+    assert e.value.needs["cross_only"] == 0 and not list((tmp_path / "a").glob("*/task.json"))
+    # the track command skips seeds 3 (0 needs) and 4 (4 needs) and takes seed 5 (5 needs)
+    assert track_main(["short", "3", "1", str(tmp_path / "b"), "--arms", "enforced"]) == 0
+    assert [p.name for p in (tmp_path / "b").iterdir()] == ["waybill-short-s0005-r0-enforced"]

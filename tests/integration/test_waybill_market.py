@@ -289,9 +289,10 @@ def test_kept_and_broken_contracts_settle_by_the_formula(enforced):
     assert s2["delivered"] == 0 and s2["outcome"] == "broken"
     assert "offer_received" in enforced["notes"][1]["wakes"]
     led = enforced["live"]["ledger"]
-    tender_net = sum((t["amount"] if t["dst"] == a else -t["amount"])
-                     for t in enforced["live"]["exchange"]["ledger"]["history"]
-                     if t["ref"].startswith("T") and a in (t["src"], t["dst"]))
+    ex = enforced["live"]["exchange"]
+    tender_refs = set(ex["tenders"]) | {o["id"] for o in ex["obligations"].values() if o["kind"] == "tender_penalty"}
+    tender_net = sum((t["amount"] if t["dst"] == a else -t["amount"]) for t in ex["ledger"]["history"]
+                     if t["ref"] in tender_refs and a in (t["src"], t["dst"]))
     assert led[int(a)] == START_BAL[0] + P1 - K2 * Q2 + tender_net
     assert led[int(b)] == START_BAL[1] - P1 + K2 * Q2
     assert sum(enforced["live"]["exchange"]["ledger"]["balances"].values()) == 0
@@ -340,15 +341,27 @@ def test_agents_see_views_only(enforced):
 
 
 # ---------------------------------------------------------------------- (c) cheap talk
-def test_cheap_talk_moves_no_money_but_records_the_outcomes(cheap, tmp_path):
+def test_cheap_talk_moves_no_contract_money_but_records_the_outcomes_and_obligations(cheap, tmp_path):
     a, b, _c = ids(cheap)
     st = settles(cheap["log"])
     notes = cheap["notes"][0]
     assert st[notes["c1"]]["outcome"] == "kept" and st[notes["c2"]]["outcome"] == "broken"
+    ex = cheap["live"]["exchange"]
+    hist = ex["ledger"]["history"]
+    # arm parity: only start balances and tender money (the exchange pays the winner) move; no agent pays
+    assert {t["reason"] for t in hist} <= {"start_balance", "tender_escrow", "settle_payment", "settle_refund"}
+    assert all(t["ref"] in ex["tenders"] for t in hist if t["reason"] != "start_balance")
     led = cheap["live"]["ledger"]
-    assert led[int(a)] == START_BAL[0] and led[int(b)] == START_BAL[1]
-    hist = cheap["live"]["exchange"]["ledger"]["history"]
-    assert {t["reason"] for t in hist} == {"start_balance"}
+    tender_in = {c: sum(t["amount"] for t in hist if t["dst"] == c and t["reason"] == "settle_payment")
+                 for c in (a, b)}
+    assert led[int(a)] == START_BAL[0] + tender_in[a] and led[int(b)] == START_BAL[1] + tender_in[b]
+    # what the contracts owe is recorded as obligations: B owes A the price of the kept contract, A owes B the
+    # penalty of the broken one; nobody paid, so each is broken after the grace period (or still open)
+    obs = {(o["contract_id"], o["kind"]): o for o in ex["obligations"].values()}
+    assert obs[(notes["c1"], "supply_payment")]["payer"] == b and obs[(notes["c1"], "supply_payment")]["amount"] == P1
+    assert obs[(notes["c2"], "supply_penalty")]["payer"] == a and obs[(notes["c2"], "supply_penalty")]["amount"] == \
+        K2 * Q2
+    assert {o["status"] for o in obs.values()} <= {"broken", "open"}
     va = cheap["views"][0]
     assert "settlements" not in va
     assert {c["status"] for c in va["contracts"] if c["contract_id"] in (notes["c1"], notes["c2"])} == {"closed"}

@@ -102,3 +102,17 @@ def test_auction_lowest_price_then_earliest_tick_then_company():
     assert auction(bids)["company"] == "b"
     assert auction([{"company": "z", "price": 5, "tick": 1}, {"company": "y", "price": 5, "tick": 1}])["company"] == "y"
     assert auction([]) is None
+
+
+def test_reach_keeps_only_destinations_that_need_another_region():
+    from railhead.exchange.tenders import candidates
+
+    inds = [{"id": 1, "type": 0, "produces": [1], "accepts": [], "tile": [5, 5], "region": 0},
+            {"id": 2, "type": 1, "produces": [], "accepts": [1], "tile": [50, 5], "region": 1},   # cross only
+            {"id": 3, "type": 1, "produces": [], "accepts": [1], "tile": [8, 5], "region": 0},    # local mine
+            {"id": 4, "type": 0, "produces": [7], "accepts": [], "tile": [9, 9], "region": 0},
+            {"id": 5, "type": 1, "produces": [], "accepts": [7], "tile": [200, 9], "region": 1}]  # too far
+    assert [c["industry"] for c in candidates(inds)] == [2, 5]  # the old rule
+    assert [c["industry"] for c in candidates(inds, 128)] == [2]
+    inds.append({"id": 6, "type": 0, "produces": [1], "accepts": [], "tile": [60, 9], "region": 1})
+    assert candidates(inds, 128) == []  # region 1 now has its own coal mine within reach

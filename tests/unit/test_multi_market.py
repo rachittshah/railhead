@@ -204,3 +204,39 @@ def test_cross_region_needs_counts_deliveries_that_need_a_partner():
     assert n["tender_candidates"] == 2 and n["industries_by_region"] == {"0": 3, "1": 2}
     near = cross_region_needs(snap, max_distance=100)
     assert (near["local"], near["cross_only"]) == (1, 1)
+
+
+def test_licence_rects_are_clipped_to_the_grantors_region_and_follow_the_window():
+    m = market(start_balances={1: 5000})
+    lic = {"grantor": "3", "grantee": "5", "rect": [10, 0, 30, 10], "window_start": START + 5,
+           "deadline": START + 50, "fee": 100}
+    cid = m.ex.offer(START, "3", "licence", lic, to="5")["contract_id"]
+    m.ex.accept(START, "5", cid)
+    assert m.licence_rects(5, START) == []  # before window_start
+    assert m.licence_rects(5, START + 5) == [[10, 0, 20, 10]]  # the part in region 0 only
+    assert m.licence_rects(3, START + 5) == [] and m.licence_rects(5, START + 50) == []
+
+
+def test_parse_command_builds_licence_terms():
+    from railhead.multi.market import CommandError, parse_command
+
+    kw = parse_command("offer", {"kind": "licence", "to": "B", "grantor": "me", "grantee": "B", "rect": "1, 2,3,4",
+                                 "window_start": "+0d", "deadline": "+90d", "fee": "500"},
+                       me="3", now=START, companies=COMPANIES)
+    assert kw["kind"] == "licence" and kw["to"] == "5"
+    assert kw["terms"] == {"grantor": "3", "grantee": "5", "rect": [1, 2, 3, 4], "window_start": START,
+                           "deadline": START + 90 * D, "fee": 500}
+    with pytest.raises(CommandError, match="x0,y0,x1,y1"):
+        parse_command("offer", {"kind": "licence", "rect": "1,2,3"}, me="3", now=START, companies=COMPANIES)
+
+
+def test_parse_pay_with_a_contract_tag_and_to_exchange():
+    from railhead.multi.market import CommandError, parse_command
+
+    kw = parse_command("pay", {"to": "A", "amount": "5", "contract": "c3"}, me="5", now=START, companies=COMPANIES)
+    assert kw == {"to": "3", "amount": 5, "memo": "", "contract_id": "C3"}
+    kw = parse_command("pay", {"to": "exchange", "amount": 9, "contract_id": "T1"}, me="5", now=START,
+                       companies=COMPANIES)
+    assert kw["to"] == "exchange" and kw["contract_id"] == "T1"
+    with pytest.raises(CommandError):  # the exchange takes tagged payments only
+        parse_command("pay", {"to": "exchange", "amount": 9}, me="5", now=START, companies=COMPANIES)

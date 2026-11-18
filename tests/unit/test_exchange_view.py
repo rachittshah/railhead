@@ -29,22 +29,25 @@ def test_enforced_view_publishes_outcomes_and_ledger():
     assert v["settlements"] == [{"contract_id": "C1", "seller": "a", "buyer": "b", "outcome": "broken",
                                  "delivered": 0, "quantity": 10, "tick": 100}]
     assert v["ledger"]["balances"]["a"] == -20 + 5
-    assert any(h["reason"] == "penalty" for h in v["ledger"]["history"])
+    assert any(h["reason"] == "collect" for h in v["ledger"]["history"])  # the penalty, collected at the deadline
     mine = ex.public_view("a")["contracts"][0]
     assert mine["status"] == "settled" and mine["outcome"] == "broken"
 
 
-def test_cheap_talk_view_hides_every_trace_of_the_outcome():
+def test_cheap_talk_view_hides_the_outcome_from_others_and_shows_the_parties_their_obligations():
     ex = session("cheap_talk")
     assert ex.contract_map["C1"].outcome == "broken"        # computed silently for research
-    assert ex.records[-1]["outcome"] == "broken"            # ... and in the record log (coordinator only)
+    assert [r["outcome"] for r in ex.records if r["op"] == "settle"] == ["broken"]  # in the record log only
     for who in ("a", "b", "c"):
         v = ex.public_view(who)
-        blob = json.dumps(v)
-        assert "broken" not in blob and "outcome" not in blob and "settle" not in blob
+        assert "broken" not in json.dumps(v) and "outcome" not in json.dumps(v["contracts"])
         assert "settlements" not in v
         for c in v["contracts"]:
             assert c["status"] == "closed"
+    # what remains owed is visible to the payer and the payee only (arm parity: the same obligation exists)
+    (o,) = ex.public_view("a")["obligations"]
+    assert (o["kind"], o["payer"], o["payee"], o["amount"], o["status"]) == ("supply_penalty", "a", "b", 20, "open")
+    assert ex.public_view("b")["obligations"] == [o] and ex.public_view("c")["obligations"] == []
     # cheap-talk ledger: own balance and own transfers only (pay still works)
     va = ex.public_view("a")["ledger"]
     assert va["balances"] == {"a": 5} and [h["reason"] for h in va["history"]] == ["pay"]

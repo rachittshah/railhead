@@ -267,8 +267,9 @@ def test_cost_falls_back_to_the_transcript(tmp_path):
 # ---------------------------------------------------------------------------------------------- results
 def _contract(cid, seller, buyer, signed=True, outcome=None, tender=None, amended=False):
     ev = [{"event": "offer"}] + ([{"event": "amend_sign"}] if amended else [])
-    return {"id": cid, "terms": {"seller": seller, "buyer": buyer}, "offerer": seller, "tender_id": tender,
-            "signed_tick": 10 if signed else None, "outcome": outcome, "events": ev}
+    return {"id": cid, "kind": "supply", "terms": {"seller": seller, "buyer": buyer}, "offerer": seller,
+            "tender_id": tender, "signed_tick": 10 if signed else None, "outcome": outcome, "events": ev,
+            "status": "settled" if outcome else ("active" if signed else "offered")}
 
 
 def test_contract_statistics():
@@ -276,15 +277,21 @@ def test_contract_statistics():
                         "C2": _contract("C2", "5", "3", outcome="broken", amended=True),
                         "C3": _contract("C3", "3", "7", signed=False),
                         "C4": _contract("C4", "7", "exchange", outcome="partial", tender="T1"),
-                        "C5": _contract("C5", "3", "5")},
+                        "C5": _contract("C5", "3", "5"),
+                        "C6": {"id": "C6", "kind": "licence", "terms": {"grantor": "7", "grantee": "3"},
+                               "offerer": "7", "tender_id": None, "signed_tick": 5, "outcome": "ended",
+                               "status": "settled", "events": []}},
           "tenders": {"T1": {"winner": "7"}, "T2": {"winner": None}}}
     s = wa.contract_stats(ex, COMPANIES)
     t = s["total"]
-    assert (t["offered"], t["signed"], t["kept"], t["partial"], t["broken"], t["amended"]) == (4, 3, 1, 1, 1, 1)
-    assert (t["tender_contracts"], t["tenders_won"], t["open_or_active"]) == (1, 1, 1)
+    # bilateral: C1, C2, C5 (supply) and C6 (licence); the tender award C4 is counted apart
+    assert (t["offered"], t["signed"], t["supply_signed"], t["licences_signed"]) == (5, 4, 3, 1)
+    assert (t["kept"], t["partial"], t["broken"], t["amended"]) == (1, 0, 1, 1)
+    assert (t["tender_contracts"], t["tender_partial"], t["tenders_won"], t["open_or_active"]) == (1, 1, 1, 1)
+    assert s["gate"] == {"bilateral_signed": 4, "breaches": 1, "renegotiations": 1}  # the tender partial: no
     a, b, c = (s["by_company"][k] for k in ("3", "5", "7"))
-    assert (a["signed"], a["kept"], a["broken"]) == (3, 1, 0) and b["broken"] == 1
-    assert (c["tenders_won"], c["partial"], c["tender_contracts"]) == (1, 1, 1)
+    assert (a["signed"], a["kept"], a["broken"], a["licences_signed"]) == (4, 1, 0, 1) and b["broken"] == 1
+    assert (c["tenders_won"], c["tender_partial"], c["tender_contracts"], c["licences_signed"]) == (1, 1, 1, 1)
 
 
 def test_result_checks_replay_against_live_and_scores_each_company(tmp_path):
@@ -475,3 +482,34 @@ def test_an_opencode_profile_denies_only_the_engine_ports():
                               home=Path("/h"), deny_ports=[5001, 5002])
     assert "localhost:*" not in prof and "localhost:4318" not in prof
     assert '(deny network-outbound (remote ip "localhost:5001"))' in prof and "localhost:5002" in prof
+
+
+def test_the_model_that_ran_comes_from_the_transcript(tmp_path):
+    claude = tmp_path / "c.log"
+    claude.write_text('{"type":"system","subtype":"init","model":"claude-sonnet-5-5","session_id":"x"}\n')
+    codex = tmp_path / "x.log"
+    codex.write_text("OpenAI Codex v0\n--------\nmodel: gpt-6.1-terra\nprovider: openai\n")
+    assert wa.model_used(wa.Seat(0, "claude", "default", "s0"), claude) == "claude-sonnet-5-5"
+    assert wa.model_used(wa.Seat(1, "codex", "default", "s1"), codex) == "gpt-6.1-terra"
+    assert wa.model_used(wa.Seat(2, "opencode", "opencode/big-pickle", "s2"), tmp_path / "none") == \
+        "opencode/big-pickle"
+    assert wa.model_used(wa.Seat(0, "claude", "default", "s0"), tmp_path / "none") is None
+
+
+def test_obligation_statistics_and_the_gate_count_agent_to_agent_only():
+    def ob(i, payer, payee, status, amount=100, paid_by_due=0, collected=0):
+        return {"id": f"O{i}", "payer": payer, "payee": payee, "status": status, "amount": amount,
+                "paid_by_due": paid_by_due, "collected": collected}
+
+    ex = {"contracts": {}, "tenders": {},
+          "obligations": {"O1": ob(1, "5", "3", "kept", paid_by_due=100), "O2": ob(2, "5", "3", "partial"),
+                          "O3": ob(3, "3", "5", "broken"), "O4": ob(4, "7", "exchange", "broken"),
+                          "O5": ob(5, "5", "3", "replaced"), "O6": ob(6, "3", "5", "kept", collected=100),
+                          "O7": ob(7, "5", "3", "open")}}
+    s = wa.contract_stats(ex, COMPANIES)
+    t = s["total"]
+    assert (t["obligations_created"], t["obligations_kept"], t["obligations_partial"], t["obligations_broken"],
+            t["obligations_open"], t["obligations_paid_on_time"], t["obligations_collected"]) == (5, 2, 1, 1, 1, 1, 1)
+    assert (t["tender_obligations_created"], t["tender_obligations_broken"]) == (1, 1)
+    assert s["gate"]["breaches"] == 2  # O2 and O3; the tender penalty O4 does not count
+    assert s["by_company"]["5"]["obligations_created"] == 3 and s["by_company"]["7"]["tender_obligations_broken"] == 1

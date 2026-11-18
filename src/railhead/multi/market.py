@@ -23,9 +23,9 @@ from railhead.exchange import Exchange, ExchangeError, TenderConfig
 from railhead.exchange.contracts import LIVE_STATUSES
 from railhead.exchange.ledger import EXCHANGE
 from railhead.multi.log import EXCHANGE_UNTIL, FORCED_REASONS, TICKS_PER_DAY
-from railhead.multi.regions import RegionMap, region_of
+from railhead.multi.regions import RegionMap, clip, region_of
 
-WAKE_ORDER = ("deadline", "tender", "offer_received", "message_received")
+WAKE_ORDER = ("deadline", "obligation_due", "tender", "offer_received", "message_received")
 COMMANDS = ("offer", "counter", "accept", "amend", "withdraw", "tender_bid", "msg", "pay")
 QUERIES = ("market", "contracts", "inbox", "ledger", "view")
 
@@ -187,6 +187,19 @@ class Market:
             return now + 1
         return self.next_forced(now)
 
+    # ------------------------------------------------------------------ licences
+    def licence_rects(self, company: int, tick: int) -> list[list[int]]:
+        """The rectangles where ``company`` may build at ``tick`` under its live licences, each clipped to
+        the grantor's region at ``tick`` (a licence cannot grant what the grantor does not hold)."""
+        if self.regions is None:
+            return []
+        out = []
+        for lc in self.ex.licences_held(ex_id(company), tick):
+            grantor = int(lc["grantor"])
+            if grantor in self.slot_of:
+                out += clip(lc["rect"], self.regions.rects_at(self.slot_of[grantor], tick))
+        return out
+
     # ------------------------------------------------------------------ scores
     def balance(self, company: int) -> int:
         assert self.ex.accounts is not None
@@ -215,14 +228,18 @@ def cross_region_needs(snapshot: list[dict], max_distance: int | None = None) ->
     ``max_distance`` tiles, Manhattan, when given): ``local`` if a producer is in the destination's own
     region, else ``cross_only``. A company can build stations only in its own region, so a cross-only
     delivery needs a station in the other company's region: a partner (a supply contract or a tender
-    subcontract). ``tender_candidates`` is the pool the quarterly tenders are drawn from (all cross-region)."""
+    subcontract). ``tender_candidates`` is the pool the quarterly tenders are drawn from (all cross-region).
+    Only industries inside a company's region count (region >= 0): a cross-only need can then always be met
+    with a licence from the producer's or the destination's region owner."""
     from railhead.exchange.tenders import candidates
 
     local = cross = 0
     by_region: dict[str, dict[str, int]] = {}
     for dest in snapshot:
+        if dest["region"] < 0:
+            continue
         for cargo in dest["accepts"]:
-            prods = [p for p in snapshot if cargo in p["produces"] and p["id"] != dest["id"]]
+            prods = [p for p in snapshot if cargo in p["produces"] and p["id"] != dest["id"] and p["region"] >= 0]
             if max_distance is not None:
                 prods = [p for p in prods if abs(p["tile"][0] - dest["tile"][0])
                          + abs(p["tile"][1] - dest["tile"][1]) <= max_distance]
@@ -239,7 +256,9 @@ def cross_region_needs(snapshot: list[dict], max_distance: int | None = None) ->
     for i in snapshot:
         counts[str(i["region"])] = counts.get(str(i["region"]), 0) + 1
     return {"industries": len(snapshot), "industries_by_region": counts, "local": local, "cross_only": cross,
-            "by_region": by_region, "tender_candidates": len(candidates(snapshot)), "max_distance": max_distance}
+            "by_region": by_region, "tender_candidates": len(candidates(snapshot)),
+            "tender_candidates_cross_only": len(candidates(snapshot, max_distance or 0)) if max_distance else None,
+            "max_distance": max_distance}
 
 
 def _addressed_to(ex: Exchange, r: dict, me: str) -> bool:
@@ -261,7 +280,8 @@ def exchange_wakes(ex: Exchange, waiters: dict[int, tuple[list[str], int]], tick
     ``company -> (until, exchange record count when the wait started)``.
 
     * forced: ``deadline`` when a contract of the company reaches its deadline at ``tick``; ``tender``
-      for everyone when a quarter's tenders open at ``tick``;
+      for everyone when a quarter's tenders open at ``tick``; ``obligation_due`` for the payer of an
+      obligation that falls due at ``tick``;
     * ``until=deadline``: any exchange deadline at ``tick`` that names the company (offer expiry, window
       start, bid close);
     * ``until=offer_received``: an offer, counter or amendment for the company since the wait started;
@@ -274,6 +294,8 @@ def exchange_wakes(ex: Exchange, waiters: dict[int, tuple[list[str], int]], tick
         rs: set[str] = set()
         if any(d["kind"] == "deadline" and me in d["companies"] for d in dl):
             rs.add("deadline")
+        if any(d["kind"] == "obligation_due" and me in d["companies"] for d in dl):
+            rs.add("obligation_due")  # forced, both arms: a payment of the company falls due
         if "deadline" in kinds and any(me in d["companies"] for d in dl):
             rs.add("deadline")
         if at_quarter:
@@ -333,16 +355,19 @@ __all__ = [
 # ---------------------------------------------------------------------- agent commands
 SUPPLY_FIELDS = ("seller", "buyer", "cargo", "industry", "quantity", "window_start", "deadline", "price",
                  "penalty_per_unit", "bond")
+LICENCE_FIELDS = ("grantor", "grantee", "rect", "window_start", "deadline", "fee")
+TERM_FIELDS = tuple(dict.fromkeys((*SUPPLY_FIELDS, *LICENCE_FIELDS)))
+PARTY_ARGS = frozenset({"seller", "buyer", "grantor", "grantee"})
 TICK_FIELDS = frozenset({"window_start", "deadline", "expires_tick"})
 COMMAND_ARGS: dict[str, tuple[str, ...]] = {
-    "offer": ("kind", "to", "expires_tick", "terms", *SUPPLY_FIELDS),
-    "counter": ("contract_id", "expires_tick", "terms", *SUPPLY_FIELDS),
+    "offer": ("kind", "to", "expires_tick", "terms", *TERM_FIELDS),
+    "counter": ("contract_id", "expires_tick", "terms", *TERM_FIELDS),
     "accept": ("contract_id",),
-    "amend": ("contract_id", "terms", *SUPPLY_FIELDS),
+    "amend": ("contract_id", "terms", *TERM_FIELDS),
     "withdraw": ("contract_id",),
     "tender_bid": ("tender_id", "price"),
     "msg": ("to", "text"),
-    "pay": ("to", "amount", "memo"),
+    "pay": ("to", "amount", "memo", "contract_id", "contract"),
 }
 
 
@@ -387,6 +412,18 @@ def resolve_tick(v: Any, now: int, what: str) -> int:
                        f"got {v!r}")
 
 
+def resolve_rect(v: Any) -> list[int]:
+    """A rectangle "x0,y0,x1,y1" (or a list of 4 ints): both corners are included."""
+    parts = v.replace(" ", "").split(",") if isinstance(v, str) else v
+    try:
+        rect = [int(x) for x in parts]
+    except (TypeError, ValueError):
+        rect = []
+    if len(rect) != 4:
+        raise CommandError(f"rect must be x0,y0,x1,y1 (the two corners of a rectangle), got {v!r}")
+    return rect
+
+
 def _int_arg(a: dict, k: str) -> int:
     v = a[k]
     if isinstance(v, str) and v.strip().lstrip("-").isdigit():
@@ -412,19 +449,22 @@ def parse_command(m: str, a: dict, *, me: str, now: int, companies: list[dict],
         given = dict(a.get("terms") or {})
         if not isinstance(given, dict):
             raise CommandError("terms must be an object")
-        given.update({k: a[k] for k in SUPPLY_FIELDS if k in a})
+        given.update({k: a[k] for k in TERM_FIELDS if k in a})
         for k, v in given.items():
-            if k in ("seller", "buyer"):
+            if k in PARTY_ARGS:
                 terms[k] = resolve_company(v, me, companies, allow_open=m == "offer")
             elif k in TICK_FIELDS:
                 terms[k] = resolve_tick(v, now, k)
-            elif k in SUPPLY_FIELDS:
+            elif k == "rect":
+                terms[k] = resolve_rect(v)
+            elif k in TERM_FIELDS:
                 terms[k] = _int_arg(given, k)
             else:
                 terms[k] = v
         if m == "offer" and not given:
             raise CommandError("offer needs terms: seller, buyer, cargo, industry, quantity, window_start, deadline, "
-                               "price, penalty_per_unit [bond]")
+                               "price, penalty_per_unit [bond]; or kind=licence grantor, grantee, rect, "
+                               "window_start, deadline, fee")
         out["terms"] = terms
     if m == "offer":
         out["kind"] = a.get("kind", "supply")
@@ -432,7 +472,7 @@ def parse_command(m: str, a: dict, *, me: str, now: int, companies: list[dict],
     if m in ("offer", "counter") and a.get("expires_tick") is not None:
         out["expires_tick"] = resolve_tick(a["expires_tick"], now, "expires_tick")
     for k in ("contract_id", "tender_id"):
-        if k in COMMAND_ARGS[m]:
+        if k in COMMAND_ARGS[m] and m != "pay":  # pay: an optional tag
             if not isinstance(a.get(k), str) or not a[k]:
                 raise CommandError(f"{m} needs {k} (for example {'C1' if k == 'contract_id' else 'T1'})")
             out[k] = a[k].strip().upper()
@@ -440,8 +480,17 @@ def parse_command(m: str, a: dict, *, me: str, now: int, companies: list[dict],
         if "price" not in a:
             raise CommandError("tender bid needs price (your total price for the whole quantity)")
         out["price"] = _int_arg(a, "price")
-    if m in ("msg", "pay"):
+    if m == "msg":
         out["to"] = resolve_company(a.get("to"), me, companies)
+    if m == "pay":
+        tag = a.get("contract_id", a.get("contract"))
+        if tag is not None:
+            if not isinstance(tag, str) or not tag.strip():
+                raise CommandError("contract must be a contract id (for example C3 or T2)")
+            out["contract_id"] = tag.strip().upper()
+        to = a.get("to")
+        out["to"] = "exchange" if isinstance(to, str) and to.strip().lower() == "exchange" and tag is not None \
+            else resolve_company(to, me, companies)
     if m == "msg":
         if not isinstance(a.get("text"), str):
             raise CommandError("msg needs text=\"...\"")

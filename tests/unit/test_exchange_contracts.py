@@ -1,4 +1,4 @@
-"""Contract schemas (supply full, licence and loan stubbed) and the lifecycle transition table."""
+"""Contract schemas (supply and licence enabled, loan stubbed) and the lifecycle transition table."""
 
 import json
 
@@ -25,7 +25,7 @@ def supply(**kw):
 def test_schemas_are_json_documents_for_every_kind():
     assert set(SCHEMAS) == {"supply", "licence", "loan"}
     assert json.loads(json.dumps(SCHEMAS)) == SCHEMAS
-    assert ENABLED_KINDS == {"supply"}
+    assert ENABLED_KINDS == {"supply", "licence"}
 
 
 def test_valid_supply_normalises_bond_and_copies():
@@ -76,12 +76,16 @@ def test_unknown_kind():
 
 
 def test_licence_and_loan_schemas_validate():
-    lic = {"grantor": "a", "grantee": "b", "tiles": [1, 2], "term": 365, "annual_fee": 10}
+    lic = {"grantor": "a", "grantee": "b", "rect": [10, 10, 20, 15], "window_start": 0, "deadline": 900, "fee": 10}
     assert validate_terms("licence", lic) == lic
-    with pytest.raises(ExchangeError, match="unique"):
-        validate_terms("licence", {**lic, "tiles": [1, 1]})
-    with pytest.raises(ExchangeError, match="fewer than 1"):
-        validate_terms("licence", {**lic, "tiles": []})
+    with pytest.raises(ExchangeError, match="x0 <= x1"):
+        validate_terms("licence", {**lic, "rect": [20, 10, 10, 15]})
+    with pytest.raises(ExchangeError, match="fewer than 4"):
+        validate_terms("licence", {**lic, "rect": [1, 2, 3]})
+    with pytest.raises(ExchangeError, match="more than 4"):
+        validate_terms("licence", {**lic, "rect": [1, 2, 3, 4, 5]})
+    with pytest.raises(ExchangeError, match="after window_start"):
+        validate_terms("licence", {**lic, "deadline": 0})
     loan = {"lender": "a", "borrower": "b", "principal": 500, "interest_bp": 300, "due_tick": 900,
             "collateral_share_bp": 2500}
     assert validate_terms("loan", loan) == loan
@@ -90,9 +94,9 @@ def test_licence_and_loan_schemas_validate():
 
 
 def test_schema_errors_reports_nested_paths():
-    schema = {"type": "object", "properties": {"tiles": SCHEMAS["licence"]["properties"]["tiles"]}}
-    errs = schema_errors({"tiles": [1, "x"]}, schema)
-    assert errs == ["terms.tiles[1]: expected integer, got str"]
+    schema = {"type": "object", "properties": {"rect": SCHEMAS["licence"]["properties"]["rect"]}}
+    errs = schema_errors({"rect": [1, "x", 3, 4]}, schema)
+    assert errs == ["terms.rect[1]: expected integer, got str"]
 
 
 def _contract():

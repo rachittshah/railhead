@@ -245,7 +245,7 @@ The command writes `<out_dir>/scores.json`.
 | `tests/unit/test_multi_regions.py` | The footprint of every action in the whitelist, the region check, the regions in force at a tick, the split, and the rotation |
 | `tests/unit/test_multi_market.py` | The monitor book, the tick records, the forced stops, the market wake reasons, the `ex` rules, and the command parsing |
 | `tests/unit/test_multi_tracks.py` | The track sizes, the paired arms, and the rotation of region types across seeds |
-| `tests/integration/test_waybill_market.py` | Regions and the market on the engine, both arms: a refused and a forged out-of-region build; a kept and a broken contract with real deliveries; the replay gives the same exchange state and scores; a forged delivery count is rejected; cheap talk moves no money; a tender opens, is bid, awarded and settled |
+| `tests/integration/test_waybill_market.py` | Regions and the market on the engine, both arms: a refused and a forged out-of-region build; a kept and a broken contract with real deliveries; the replay gives the same exchange state and scores; a forged delivery count is rejected; cheap talk moves no contract money and records the obligations; a tender opens, is bid, awarded and settled |
 | `tests/integration/test_waybill_tracks.py` | The short track from one seed: paired arms and two rotations share one `start.sav`; a changed `regions.json` is tamper |
 | `tests/unit/test_waybill_arena.py` | The arena runner: the brief, the harness commands, the environment, the sandbox, the cost per game year, the contract statistics, `result.json`, and a full run with stub agents on the fake engine (a provider error, a nudge, a slot without a player, the run budget) |
 | `tests/integration/test_waybill_arena.py` | The arena runner on the engine: three stub agents play the short track (60 days) in both arms. The enforced run is killed and resumed. Both runs verify, and the replay is equal to the live world. |
@@ -263,9 +263,9 @@ The command writes `<out_dir>/scores.json`.
 - A dock, a lock, and a tunnel get their extent from read-only `tile` queries at the same tick in the live world and in the replay. The tunnel end is the first tile uphill with the same base height, as `GSTunnel.GetOtherTunnelEnd` finds it.
 - Vehicles, orders, and loans have no region check. Vehicles can use the roads and stations of other companies where the engine permits it. The action whitelist has no industry funding and no land purchase.
 - A market wake (`offer_received`, `message_received`) occurs at the next step. When a waiter's condition is already true, that step is one tick long.
-- In `cheap_talk`, tender awards and their settlement move no money (the exchange rules). Only `pay` and the start balances move money.
+- In `cheap_talk`, the exchange collects no obligation; only `pay`, the start balances and tender payouts move money (arm parity, WAYBILL-EXCHANGE.md "Arms").
 - An amendment that changes the cargo or the industry gets a new monitor from its signing tick. Deliveries before that tick do not count.
-- Licence and loan contracts are not tradable yet (`kind_not_enabled`).
+- Loan contracts are not tradable yet (`kind_not_enabled`). A licence has a one-off fee, no periodic fee, and cannot be revoked.
 
 ## 8. Franchise regions
 
@@ -290,10 +290,10 @@ Each task can have a `regions.json` file. It gives each company slot a list of r
 
 ### 8.2 The check
 
-A company can build or change infrastructure only on tiles in its own region.
+A company can build or change infrastructure only on tiles in its own region, or in the rectangle of a live licence that it holds (section 10.1).
 The coordinator calculates the footprint of each action at the current tick, before the engine gets the action.
-If a tile of the footprint is outside the region of the company, the coordinator refuses the action with `ERR_FRANCHISE`. The log does not get the action.
-The replay calculates the footprint of each logged action again, with the regions in force at the tick of the action. A logged action outside the region rejects the log (`LogRejected`). The verifier then gives `rejected = 1`.
+If a tile of the footprint is outside the region of the company and outside its licences, the coordinator refuses the action with `ERR_FRANCHISE`. The log does not get the action.
+The replay calculates the footprint of each logged action again, with the regions and the licences in force at the tick of the action (the replay's exchange has the same licences at that point of the log). A logged action outside the region rejects the log (`LogRejected`). The verifier then gives `rejected = 1`.
 
 | Actions | Footprint |
 |---|---|
@@ -363,6 +363,7 @@ The world stops at each exchange deadline (offer expiry, window start, bid close
 | Reason | When |
 |---|---|
 | `deadline` (forced) | A contract of the company reaches its deadline at this tick |
+| `obligation_due` (forced) | An obligation of the company (a payment it owes) falls due at this tick, in both arms |
 | `tender` (forced) | The tenders of a quarter open at this tick (all waiting companies) |
 | `deadline` (`until=deadline`) | Any exchange deadline at this tick names the company (offer expiry, window start, bid close) |
 | `offer_received` (`until=offer_received`) | Since the wait started: an offer to the company, or a counter or amendment from the other party of its contract |
@@ -392,14 +393,14 @@ The agent socket has the operation `ex` with `m` (the operation) and `a` (the ar
 | `rh contracts` | `contracts` | No | Your contracts and the offers you can answer (`your_turn`) |
 | `rh inbox` | `inbox` | No | The messages to you |
 | `rh ledger` | `ledger` | No | `enforced`: all balances and transfers. `cheap_talk`: your own. |
-| `rh offer ...` | `offer` | Yes | A supply offer. `to` is the other party, or no `to` for a public offer. |
+| `rh offer ...` | `offer` | Yes | A supply offer, or with `kind=licence` a licence offer. `to` is the other party, or no `to` for a public offer. |
 | `rh counter contract_id=C ...` | `counter` | Yes | New terms. Fields that you do not give keep their value. |
 | `rh accept contract_id=C` | `accept` | Yes | Sign the contract |
 | `rh amend contract_id=C ...` | `amend` | Yes | Propose new terms for a signed contract |
 | `rh withdraw contract_id=C` | `withdraw` | Yes | Withdraw an open offer |
 | `rh tender bid tender_id=T price=N` | `tender_bid` | Yes | A sealed bid |
 | `rh msg to=B text="..."` | `msg` | Yes | A private message |
-| `rh pay to=B amount=N [memo="..."]` | `pay` | Yes | A ledger transfer |
+| `rh pay to=B amount=N [memo="..."] [contract=C]` | `pay` | Yes | A ledger transfer. With `contract`, it counts toward what you owe B under C (`to=exchange` for a tender penalty). |
 
 A company is an id (`3`), a name (`Company B`), a letter (`B`), or `me`.
 A tick field (`window_start`, `deadline`, `expires_tick`) is an absolute tick, or relative to now: `+30d` (days) or `+500t` (ticks).
@@ -407,12 +408,25 @@ The coordinator also examines that the cargo and the industry exist and that the
 An exchange error comes back as `ERR_<CODE>`, for example `ERR_NOT_YOUR_TURN` or `ERR_INSUFFICIENT_FUNDS`. Refer to WAYBILL-EXCHANGE.md for the codes.
 `rh help market` gives the commands and the settlement rule.
 
+### 10.1 Licences
+
+```
+rh offer kind=licence to=B grantor=me grantee=B rect=10,20,30,40 window_start=+0d deadline=+365d fee=50000
+```
+
+Either party can make the offer; the other party accepts or counters it, as for a supply contract.
+The coordinator refuses a rectangle that is not inside the grantor's region.
+From `window_start` until `deadline`, the grantee can build in the rectangle, clipped to the grantor's region at the tick of the build.
+`rh market` gives the rectangles of your live licences in `licensed`.
+At the deadline the licence ends (outcome `ended`). What the grantee built stays and keeps working; new builds in the rectangle are refused.
+The fee is paid in quarterly instalments (obligations). The fee and the arms: refer to WAYBILL-EXCHANGE.md, "Licences" and "Obligations". In `cheap_talk` the build right is the same and the instalments are paid voluntarily (`rh pay ... contract=C`).
+
 ## 11. Task tracks
 
-| Track | Companies | Map | Horizon | Run-off |
-|---|---|---|---|---|
-| `short` | 4 | 256 x 256 | 730 days (2 game years) | 0 |
-| `decade` | 8 | 512 x 512 | 3650 days (10 game years) | 365 days |
+| Track | Companies | Map | Horizon | Run-off | Minimum cross-region needs |
+|---|---|---|---|---|---|
+| `short` | 4 | 256 x 256 | 730 days (2 game years) | 365 days | 5 |
+| `decade` | 8 | 512 x 512 | 3650 days (10 game years) | 365 days | 0 (not measured) |
 
 ```
 python -m railhead.multi.gen track <short|decade> <first_seed> <count> <out_dir> [--rotations cycle|all] [--arms enforced,cheap_talk] [--start-balances SLOT=POUNDS,...]
@@ -422,7 +436,10 @@ python -m railhead.multi.gen track <short|decade> <first_seed> <count> <out_dir>
 - The rotation changes only `regions.json`: slot s plays region type `(s + rotation) mod N`. The arm changes only `objective.market.arm`.
 - `--rotations cycle` (the default) gives the seed number i of the list the rotation `i mod N`. Thus N consecutive seeds give each slot, and each model of a fixed roster, each region type one time. `--rotations all` gives each seed all N rotations.
 - The arms are paired: for each seed and rotation there is one `enforced` task and one `cheap_talk` task.
-- The task id is `waybill-<track>-s<seed>-r<rotation>-<arm>`. `objective` also has `track`, `seed`, `rotation`, `arm`, and `region_types`.
+- The task id is `waybill-<track>-s<seed>-r<rotation>-<arm>`. `objective` also has `track`, `seed`, `rotation`, `arm`, `region_types`, `region_needs`, and `min_cross_only`.
+- A seed whose `region_needs.cross_only` (within 128 tiles) is less than the minimum of the track is rejected (`SeedRejected`), and `gen track` takes the next seed. `--rotations cycle` counts the accepted seeds.
+- The tenders of a track task use `reach_tiles` 128: a tender opens only where the destination's region has no producer of the cargo within 128 tiles (WAYBILL-EXCHANGE.md, "Tenders").
+- `python -m railhead.multi.gen survey <track> <first_seed> <count>` prints the cross-region needs of each seed.
 
 ## 12. The arena runner
 
