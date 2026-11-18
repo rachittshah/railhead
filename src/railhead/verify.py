@@ -90,7 +90,14 @@ def score(spec: TaskSpec, world, log: Path, start_date: int, start_ticks: int = 
     after_runoff = sum(_monitor_total(world, m) for m in mids)
     out["runoff_delivered"] = after_runoff - at_horizon
     out["net_worth"] = _net_worth(world)
-    abstained = bool(meta("abstain"))
+    # An abstain counts only inside the decision window (by the bid deadline, default 30 days after the
+    # start) and before any submit: abstaining after a failed attempt on the last day, or after submit,
+    # does not pay (docs/VERIFICATION.md 5). All 183 abstain oracles abstain at the start.
+    abstain_by = start_ticks + int(obj.get("bid_deadline_days", 30)) * TICKS_PER_DAY
+    submits = meta("submit")
+    first_submit = min((int(m.get("seq", 0)) for m in submits), default=None)
+    abstained = any(int(m.get("ticks", 0)) <= abstain_by
+                    and (first_submit is None or int(m.get("seq", 0)) < first_submit) for m in meta("abstain"))
     out["abstained"] = int(abstained)
     out["submitted"] = int(bool(meta("submit")))
 
@@ -122,6 +129,12 @@ def score(spec: TaskSpec, world, log: Path, start_date: int, start_ticks: int = 
     return out
 
 
+# A log above this size is rejected before replay (docs/VERIFICATION.md 5): the largest honest log is 186 KB
+# (Arena 2) and the largest oracle 10 KB, so 8 MiB leaves a margin of 40x while a replay of it stays far inside
+# the Harbor verifier time-out.
+MAX_LOG_BYTES = 8 * 1024 * 1024
+
+
 def verify(task_dir: Path, start_sav: Path, log: Path, workdir: Path, credit: bool = False,
            min_version: int = 1) -> dict:
     task_dir, workdir = Path(task_dir), Path(workdir)
@@ -133,6 +146,8 @@ def verify(task_dir: Path, start_sav: Path, log: Path, workdir: Path, credit: bo
     workdir.mkdir(parents=True, exist_ok=True)
     if not Path(log).is_file():  # a directory, device or FIFO in place of the log: log fault, not infra
         return base | {"rejected": 1}
+    if Path(log).stat().st_size > MAX_LOG_BYTES:  # before any copy or replay
+        return base | {"rejected": 1, "oversized": 1}
     snap = workdir / "actions.jsonl"
     shutil.copyfile(log, snap)
     log = snap

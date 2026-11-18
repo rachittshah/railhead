@@ -60,7 +60,7 @@ def verify_multi(task_dir: Path, start_sav: Path, log: Path, workdir: Path) -> d
     def run(sub: str, keep_open: bool, max_ticks: int | None = None):
         return replay_multi(start_sav, snap, workdir / sub, allowed=default_whitelist() or set(),
                             keep_open=keep_open, max_ticks=max_ticks, horizon_days=spec.horizon_days,
-                            regions=regions, market_cfg=market_cfg)
+                            regions=regions, market_cfg=market_cfg, require_seal=True)
 
     # The task, not the log, says which company is which slot: a header that relabels them is false.
     try:
@@ -107,7 +107,7 @@ def verify_multi(task_dir: Path, start_sav: Path, log: Path, workdir: Path) -> d
         return base | extra | {"companies": comps, "acts": res.acts, "failed_acts": res.failed_acts, "steps": res.steps,
                        "divergences": len(res.divergences), "valid": 0 if res.divergences else 1,
                        "ticks_log_end": res.end_ticks, "checksum_log_end": res.final_checksum,
-                       "end_ticks": sw.ticks}
+                       "end_ticks": sw.ticks, "sealed": int(res.sealed)}
     finally:
         sw.close()
 

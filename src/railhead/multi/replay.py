@@ -23,7 +23,7 @@ from pathlib import Path
 from railhead.actionlog import read_log
 from railhead.bridge import BridgeError
 from railhead.exchange import ExchangeError
-from railhead.multi.log import FORCED_REASONS, TICKS_PER_DAY, LogRejected, LogState, meta_digest_v3
+from railhead.multi.log import FORCED_REASONS, TICKS_PER_DAY, LogRejected, LogState, digests_v3
 from railhead.multi.market import Market, MarketConfig, check_system_record
 from railhead.multi.regions import FranchiseError, RegionMap
 from railhead.multi.world import SharedWorld, WorldProbe
@@ -50,6 +50,7 @@ class MultiReplayResult:
     world: SharedWorld | None = None
     market: Market | None = None
     pending_sys: list[dict] = field(default_factory=list)  # driver records not yet in the log (a torn end)
+    sealed: bool = False  # the log ends with the coordinator's seal record
 
 
 def horizon_tick(start_ticks: int, horizon_days: int | None) -> int | None:
@@ -98,9 +99,19 @@ def _market_after_step(market: Market, sw: SharedWorld, r: dict, waiting: dict[i
 def replay_multi(start_save: Path, log_path: Path, workdir: Path, allowed: set[str] | None = None,
                  keep_open: bool = False, max_ticks: int | None = None,
                  horizon_days: int | None = None, regions: RegionMap | None = None,
-                 market_cfg: MarketConfig | None = None) -> MultiReplayResult:
+                 market_cfg: MarketConfig | None = None, require_seal: bool = False) -> MultiReplayResult:
+    """``require_seal`` (the verifier, exchange rules 2): a log that does not end with a ``seal`` record is
+    scored as if it ended at its last ``step`` (and the system records of that tick); its later records are
+    not bound by any checksum, so they do not count."""
     allowed = default_whitelist() if allowed is None else allowed
     records = [r.raw for r in read_log(log_path)]  # read once: the checks and the replay see the same bytes
+    wide = market_cfg is not None and market_cfg.rules >= 2
+    sealed = any(r.get("kind") == "seal" for r in records)  # a record after a seal is then rejected (LogState)
+    if require_seal and wide and not sealed:
+        last = max((i for i, r in enumerate(records) if r.get("kind") == "step"), default=0)
+        while last + 1 < len(records) and records[last + 1].get("kind") == "ex" and records[last + 1].get("company") is None:
+            last += 1
+        records = records[:last + 1]
     if not records:
         raise ReplayRejected("empty log")
     metas = _meta_names()
@@ -152,7 +163,8 @@ def replay_multi(start_save: Path, log_path: Path, workdir: Path, allowed: set[s
                     market.ex.apply(r["x"])
                 except ExchangeError as e:
                     raise LogRejected(f"ex seq={seq}: the exchange refuses the record: {e}") from None
-                world.call_args("note", {"d": meta_digest_v3(r["company"], "ex", r["x"])})
+                for d in digests_v3(r["company"], "ex", r["x"], wide):
+                    world.call_args("note", {"d": d})
                 market.book.ensure(market.ex, sw.ticks, sw.monitor_add)
             elif kind == "wait_req" and market is not None:
                 state.waiting[r["company"]]["ex_seq"] = len(market.ex.records)
@@ -187,8 +199,16 @@ def replay_multi(start_save: Path, log_path: Path, workdir: Path, allowed: set[s
                 problem = meta_args_problem(m, a, require_confirm=False)
                 if problem:
                     raise ReplayRejected(f"meta seq={seq}: {problem}")
-                world.call_args("note", {"d": meta_digest_v3(r["company"], m, a)})
+                for d in digests_v3(r["company"], m, a, wide):
+                    world.call_args("note", {"d": d})
                 res.metas.append(dict(r, a=dict(a)))
+            elif kind == "seal":  # the world as the coordinator left it: binds the records after the last step
+                got = world.call("checksum")
+                res.checkpoints.append(("seal", seq, got.get("h")))
+                if got.get("h") != r["checksum"].get("h"):
+                    res.divergences.append({"seq": seq, "what": "seal checksum", "live": r["checksum"],
+                                            "replay": got, "key": ("seal", seq), "stop": sw.ticks + 1})
+                res.sealed = True
             elif kind == "step":
                 end = r["end_ticks"]
                 if market is not None:

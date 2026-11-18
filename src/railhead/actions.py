@@ -244,7 +244,11 @@ META_SCHEMAS: dict[str, dict[str, tuple[type, bool]]] = {
                  "by_day": (int, False)},
     "abstain": {"reason": (str, True), "max_possible": (int, False)},
     "flag": {"note": (str, True)},
+    # written by the daemon itself (never accepted from an agent): the fork budget after each change, so a
+    # restart rebuilds it from the log even when run/forks.json is deleted (docs/VERIFICATION.md 5)
+    "fork_budget": {"used": (int, True), "created": (int, True)},
 }
+INTERNAL_METAS = frozenset({"fork_budget"})
 
 META_INT_LIMIT = 2 ** 53  # every meta int must be exact as a float (the verifier computes in floats)
 

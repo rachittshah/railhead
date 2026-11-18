@@ -154,3 +154,25 @@ def test_terraform_footprints_include_the_shared_corners():
     assert len(footprint("land_raise", {"tile": idx(5, 5), "corner": "n"}, MX)) == 9
     lv = footprint("land_level", {"from_tile": idx(5, 5), "to_tile": idx(6, 7)}, MX)
     assert (4, 4) in lv and (7, 8) in lv and len(lv) == 4 * 5
+
+
+def test_demolishing_one_tile_of_a_station_counts_every_tile_of_that_station():
+    from railhead.multi.regions import RegionMap, demolish_footprint
+
+    W = 64
+    airport = {(x, y) for x in range(18, 24) for y in range(5, 10)}  # 6 x 5, across x = 20 / 21
+
+    class Probe:
+        def tile(self, index):
+            x, y = index % W, index // W
+            return {"station": 7 if (x, y) in airport else -1}
+
+        def town(self, town_id):
+            return None
+
+    fp = demolish_footprint(5 * W + 19, W, Probe())
+    assert set(fp) == airport
+    assert demolish_footprint(40 * W + 40, W, Probe()) == [(40, 40)]  # not a station tile
+    rm = RegionMap(W, W, {0: [[0, 0, 20, 63]], 1: [[21, 0, 63, 63]]})
+    with pytest.raises(Exception, match="outside your franchise region"):
+        rm.check_action(0, 0, "land_demolish", {"tile": 5 * W + 19}, Probe())  # the airport reaches x = 23

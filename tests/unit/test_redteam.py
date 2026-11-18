@@ -189,21 +189,27 @@ def test_attack_symlinked_lock_cannot_make_railhead_down_truncate_a_file(tmp_pat
     assert victim.read_text() == "print('trusted code')\n"
 
 
-@pytest.mark.xfail(strict=True, reason="decision: the fork budget is a run-dir file, not part of the log. "
-                   "Deleting run/forks.json and sending {'op':'shutdown'} on the socket (no kill needed) resets "
-                   "it. Fix: log fork use as meta records (digested in v2) and rebuild the budget from the log.")
 def test_attack_deleting_the_fork_budget_file_does_not_reset_it(real_daemon):
+    """Decision: the daemon logs the fork budget as a ``fork_budget`` meta record (digested in v2) after each
+    change and rebuilds it from the log on boot; an agent cannot send that meta itself."""
     d = real_daemon()
     d.fork_days_used = 30  # what fork_wait charges (test_attack_restart_does_not_reset_the_fork_budget)
     d._save_budget()
+    with pytest.raises(daemon_mod.OpError):
+        d.handle({"op": "meta", "m": "fork_budget", "a": {"used": 0, "created": 0}})
     d.close()
     (d.run_dir / "forks.json").unlink()
     again = real_daemon()
     assert again.fork_days_used == 30
+    again.close()
+    out = _verify(again.tdir, again.run_dir / "actions.jsonl", again.run_dir.parent / "v", min_version=2)
+    assert out["rejected"] == 0 and out["valid"] == 1  # the verifier accepts the daemon's own meta record
 
 
 # ------------------------------------------------------------------ R4: hindsight without a private engine
-@pytest.mark.xfail(strict=True, reason="decision: nothing outside the container binds the log length. The "
+@pytest.mark.xfail(strict=True, reason="decision (Phase 6, docs/VERIFICATION.md 6): not closable inside the "
+                   "container; needs a head hash committed outside it (an owner decision). "
+                   "Nothing outside the container binds the log length. The "
                    "agent cuts its log (here: to the header, or test.sh's fallback when the log is deleted) after "
                    "it saw a bad result. Bid family: no promise pays 0.5, more than a failed promise. Fix: commit "
                    "the log head outside the container, or query the live daemon for its head hash in test.sh "
@@ -216,7 +222,9 @@ def test_attack_cutting_the_log_before_a_failed_promise_does_not_pay(bid_task, e
     assert _verify(bid_task, cut, tmp_path / "c")["reward"] <= honest["reward"]
 
 
-@pytest.mark.xfail(strict=True, reason="decision: the daemon recovers by replay of whatever run/actions.jsonl "
+@pytest.mark.xfail(strict=True, reason="decision (Phase 6, docs/VERIFICATION.md 6): not closable inside the "
+                   "container; needs a head hash kept outside it or a separate user. "
+                   "The daemon recovers by replay of whatever run/actions.jsonl "
                    "holds. The agent waits, sees the result, shuts the daemon down through the socket, cuts the "
                    "log and runs `rh status`: the world is back at the cut. This is the private-engine attack of "
                    "section 6 with the task's own daemon. Fix: a head hash kept where the agent cannot write "
@@ -233,11 +241,9 @@ def test_attack_rewind_by_cutting_the_log_and_restarting_the_daemon(real_daemon)
     assert again.world.state()["ticks"] == seen  # the secure daemon does not go back in time
 
 
-@pytest.mark.xfail(strict=True, reason="decision: abstain has no deadline and the daemon accepts meta records "
-                   "after the horizon and after submit. On an infeasible contract the agent can try, fail, and "
-                   "abstain on the last day for reward 1. Fix: give abstain the bid deadline (or refuse meta after "
-                   "the horizon), then regenerate the 183 abstain oracles that use it.")
 def test_attack_abstain_after_the_horizon_does_not_pay(real_daemon, bid_task):
+    """Decision: an abstain counts only by the bid deadline (default 30 days) and before any submit. The 183
+    abstain oracles abstain at the start, so their rewards do not change."""
     spec = TaskSpec.load(bid_task)
     spec.secret = {"feasible": False}
     spec.save(bid_task)
@@ -253,10 +259,8 @@ def test_attack_abstain_after_the_horizon_does_not_pay(real_daemon, bid_task):
 
 
 # ------------------------------------------------------------------ R5: verifier cost
-@pytest.mark.xfail(strict=True, reason="decision: no size bound on the log. A Harbor verifier time-out writes no "
-                   "reward file (a dropout). Honest logs reach 186 KB (11 Arena 2 games); a cap of a few MB, or a "
-                   "time budget that ends in rejected=1, needs an owner decision.")
 def test_attack_oversized_log_is_rejected_before_replay(bid_task, engines, tmp_path):
+    """Decision: a log above MAX_LOG_BYTES (8 MiB; honest logs reach 186 KB) is rejected before replay."""
     log = honest_log(tmp_path / "a.jsonl")
     recs = _records(log)
     tick = recs[-1]["end_ticks"]
@@ -264,7 +268,7 @@ def test_attack_oversized_log_is_rejected_before_replay(bid_task, engines, tmp_p
              for i in range(120_000)]  # about 17 MB
     _write(log, recs + extra)
     out = _verify(bid_task, log, tmp_path)
-    assert out["rejected"] == 1 and len(engines.list[0].sent) < 1000
+    assert out["rejected"] == 1 and (not engines.list or len(engines.list[0].sent) < 1000)  # no engine started
 
 
 def test_attack_credit_failure_does_not_drop_the_reward(bid_task, engines, tmp_path, monkeypatch):
@@ -304,3 +308,25 @@ def test_turn_credit_stops_at_its_deadline(bid_task, engines, tmp_path):
     spec = TaskSpec.load(bid_task)
     assert len(verify_mod.turn_credit(spec, bid_task / "start.sav", log, tmp_path, 0.5)) == 1
     assert verify_mod.turn_credit(spec, bid_task / "start.sav", log, tmp_path, 0.5, deadline=0.0) == []
+
+
+def test_abstain_inside_the_decision_window_still_pays(real_daemon, bid_task):
+    spec = TaskSpec.load(bid_task)
+    spec.secret = {"feasible": False}
+    spec.save(bid_task)
+    d = real_daemon()
+    d.handle({"op": "meta", "m": "abstain", "a": {"reason": "impossible"}})
+    d.handle({"op": "wait", "days": 100})
+    out = _verify(bid_task, d.run_dir / "actions.jsonl", d.run_dir.parent / "v", min_version=2)
+    assert out["abstained"] == 1 and out["reward"] == 1.0
+
+
+def test_abstain_after_the_decision_window_does_not_count(real_daemon, bid_task):
+    spec = TaskSpec.load(bid_task)
+    spec.secret = {"feasible": False}
+    spec.save(bid_task)
+    d = real_daemon()
+    d.handle({"op": "wait", "days": 40})  # past the 30-day decision window
+    d.handle({"op": "meta", "m": "abstain", "a": {"reason": "too late"}})
+    out = _verify(bid_task, d.run_dir / "actions.jsonl", d.run_dir.parent / "v", min_version=2)
+    assert out["abstained"] == 0

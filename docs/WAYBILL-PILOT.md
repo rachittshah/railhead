@@ -501,8 +501,26 @@ Claude total: $11.11 + $17.57 = $28.68 ($3.59 per Claude seat per game year).
 
 ### 11.7 What pilot v3 does not show
 
-- **The 6 breaches are lateness, not refusal.** Every broken obligation was paid in full later, outside the 30-day grace period: s0 paid its three missed instalments (O23, O25, O29) as untagged payments with a memo, and s2 paid O18 to O20 in one payment just before the end. The agents wait in chunks of 60 to 120 days, so a 30-day grace period is shorter than one turn of waiting. The breach count therefore depends on the grace period.
-- **The allocation rule hides one late payment.** s0's first late payment was tagged to C7 after O23 had closed, so it counted toward O24 (marked on time) and O23 stayed broken. The paid-on-time rate (77%) includes this.
+- **The 6 breaches are late payment by the payers, not a scheduling artefact.** `obligation_due` is a forced wake in both arms; it fired 12 times in the `cheap_talk` run, and **each of the 6 broken instalments (O18 to O20 of s2; O23, O25 and O29 of s0) woke its payer with the logged reason `obligation_due` at its due tick**. The payers had a turn at each due tick and did not pay within the 30-day grace period. All 6 were paid later, outside the grace period, as untagged payments with a memo that names them (days late from the due tick: O23 127, O25 37, O29 106, O18 240, O19 150, O20 60). On the other due ticks, the logged reason of s3 was `deadline` (its `until=deadline` matches the due tick); s3 paid all its instalments on time. The `rh wait` reply now lists every reason of the tick, so a coinciding reason cannot hide `obligation_due` (WAYBILL.md 9.4).
+- **The allocation rule hid one late payment.** s0's first late payment was tagged to C7 after O23 had closed, so (rules 1) it counted toward O24 (marked on time) and O23 stayed broken. Rules 2 allocate FIFO (below).
 - **One seed, one game per arm.** No claim about enforcement follows. The arms differ in many compounding early choices (13 offers in each arm, but 8 against 6 signed, and different fees).
 - **No supply contract was offered** in either arm, again. All agent-to-agent commitments are licence fees.
 - **Obligations near the horizon never settle** (3 in `cheap_talk`): an obligation whose settle tick is after the horizon stays open.
+
+### 11.8 Corrected v3 numbers (measurement fixes)
+
+The fixes (exchange rules 2: FIFO allocation of tagged payments, late payments, no instalment due after the horizon minus the grace period; the payment-timing outcome; the pre-registered metrics) change how obligations are scored. The v3 logs were written under rules 1 and still verify unchanged (replay clean in both arms). Two readings:
+
+**(a) The v3 obligations as they were, with the new metrics** (`contract_stats` on the verified exchange state; only tagged payments count):
+
+| Metric | `enforced` | `cheap_talk` |
+|---|---|---|
+| Obligations (agent to agent) | 8 | 30 |
+| on_time / late / partial / unpaid | 8 / 0 / 0 / 0 (collected) | 24 / 0 / 0 / 6 |
+| On-time rate (secondary) | 100% | 80% |
+| Amount-weighted repayment rate (primary) | 100% | 73.9% (27,324 of 37,000) |
+| Including the 4 untagged payments that name the 6 missed instalments (9,676) | 100% | 100%, of which 6 obligations late by 37 to 240 days |
+
+**(b) A counterfactual rescore under rules 2** (`railhead waybill-run rescore <run_dir>`, `Exchange.rescore`): the same company records, applied again under rules 2. `enforced`: 7 obligations (the two instalments of C13 fold into one), all on time, repayment 100%. `cheap_talk`: 27 obligations: 16 on time, 6 late (days late 44 to 240), 2 partial, 3 unpaid; on-time rate 59%; repayment 73.9%; 10 broken and 1 partial at the settle tick. This reading is **not** what the agents would have done under rules 2: under rules 1, s1 told s0 that a late tagged payment had gone to the next instalment and asked for a separate untagged payment, and s0 did that. Under FIFO, each later payment of s0 moves to an older instalment and the lateness cascades. A rerun is needed for v3 numbers under rules 2.
+
+The gate under the consistent rule does not change: (a) 14 signed, 6 breaches, 1 renegotiation.

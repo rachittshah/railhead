@@ -41,7 +41,8 @@ MAX_MEMO_CHARS = 200
 
 BASE_FIELDS = frozenset({"op", "seq", "tick", "company"})
 RECORD_FIELDS: dict[str, frozenset[str]] = {
-    "init": frozenset({"arm", "companies", "seed", "credit_limit", "tender_config", "start_balances"}),
+    "init": frozenset({"arm", "companies", "seed", "credit_limit", "tender_config", "start_balances", "rules",
+                       "horizon_tick"}),
     "offer": frozenset({"contract_id", "kind", "terms", "to", "expires_tick"}),
     "counter": frozenset({"contract_id", "terms", "expires_tick"}),
     "accept": frozenset({"contract_id"}),
@@ -57,7 +58,7 @@ RECORD_FIELDS: dict[str, frozenset[str]] = {
     "pay": frozenset({"to", "amount", "memo", "contract_id"}),
     "obligation_settle": frozenset({"obligation_id", "collected", "paid", "outcome"}),
 }
-OPTIONAL_FIELDS = {"pay": frozenset({"contract_id"})}  # records written before the field existed stay valid
+OPTIONAL_FIELDS = {"pay": frozenset({"contract_id"}), "init": frozenset({"rules", "horizon_tick"})}  # records written before the field existed stay valid
 SYSTEM_OPS = frozenset({"init", "expire", "activate", "settle", "tender_open", "tender_award", "obligation_settle"})
 TENDER_FIELDS = frozenset({"tender_id", "quarter", "industry", "cargo", "distance", "source_industry", "region",
                            "quantity", "max_price", "penalty_per_unit", "open_tick", "bid_close", "window_start",
@@ -70,14 +71,21 @@ DeliveriesFn = Callable[[str, int, int, int, int], int]
 class Exchange:
     def __init__(self, companies: Iterable[str], *, arm: str = "enforced", seed: int = 0,
                  credit_limit: int | None = None, tender_config: TenderConfig | None = None,
-                 start_balances: dict[str, int] | None = None, tick: int = 0):
+                 start_balances: dict[str, int] | None = None, tick: int = 0, rules: int = 1,
+                 horizon_tick: int | None = None):
         """``start_balances``: money each company gets from the ``exchange`` account at init (unequal
-        starts). ``tick``: the tick of the init record (the coordinator uses the start tick)."""
+        starts). ``tick``: the tick of the init record (the coordinator uses the start tick).
+
+        ``rules``: 1 (pilot v3 and before) or 2: a tagged payment goes to the oldest unpaid obligation of the
+        contract (FIFO), also after its settlement (a late payment); no licence instalment falls due after
+        ``horizon_tick`` minus the grace period (the rest folds into the last one in time). A rules-1 init
+        record has neither field, so old logs keep their exact records."""
         self._reset()
         cfg = tender_config or TenderConfig()
+        extra = {} if rules == 1 else {"rules": rules, "horizon_tick": horizon_tick}
         self.apply({"op": "init", "seq": 0, "tick": tick, "company": None, "arm": arm, "companies": list(companies),
                     "seed": seed, "credit_limit": credit_limit, "tender_config": asdict(cfg),
-                    "start_balances": dict(sorted((start_balances or {}).items()))})
+                    "start_balances": dict(sorted((start_balances or {}).items())), **extra})
 
     @classmethod
     def replay(cls, records: Iterable[dict[str, Any]]) -> Exchange:
@@ -85,6 +93,36 @@ class Exchange:
         ex._reset()
         for r in records:
             ex.apply(r)
+        return ex
+
+    @classmethod
+    def rescore(cls, records: Iterable[dict[str, Any]], horizon_tick: int, end_tick: int | None = None) -> Exchange:
+        """An analysis of an existing log under rules 2 (FIFO allocation, late payments, clipped instalments):
+        the company records and the contract system records are applied again in order; the logged
+        ``obligation_settle`` records are dropped and made again by the rules-2 driver, at the same place in
+        the tick (after the contract records of the tick, before the company records). This is not a
+        verification: it answers what the obligation outcomes are under the corrected rules."""
+        ex = cls.__new__(cls)
+        ex._reset()
+
+        def settle_upto(tick: int, inclusive: bool) -> None:
+            for o in sorted(ex.obligations.values(), key=lambda o: (o["settle_tick"], _obl_key(o))):
+                if o["status"] == "open" and (o["settle_tick"] < tick or (inclusive and o["settle_tick"] == tick)):
+                    collected, outcome = ex._obligation_result(o)
+                    ex._record("obligation_settle", max(ex.tick, o["settle_tick"]), None, obligation_id=o["id"],
+                               collected=collected, paid=o["paid"], outcome=outcome)
+
+        for r in records:
+            if r["op"] == "obligation_settle":
+                continue
+            r = copy.deepcopy(r)
+            if r["op"] == "init":
+                r.update(rules=2, horizon_tick=horizon_tick)
+            else:
+                settle_upto(r["tick"], inclusive=r["company"] is not None)
+            r["seq"] = len(ex.records)
+            ex.apply(r)
+        settle_upto(end_tick if end_tick is not None else horizon_tick, inclusive=True)
         return ex
 
     def _reset(self) -> None:
@@ -102,6 +140,8 @@ class Exchange:
         self.next_tender = 1
         self.obligations: dict[str, dict[str, Any]] = {}
         self.next_obligation = 1
+        self.rules = 1
+        self.horizon_tick: int | None = None
 
     # ================================================================================== record application
     def apply(self, record: dict[str, Any]) -> dict[str, Any]:
@@ -110,8 +150,10 @@ class Exchange:
             raise ExchangeError("bad_record", f"unknown op in {record!r}")
         op = record["op"]
         want = BASE_FIELDS | RECORD_FIELDS[op]
+        filled: set[str] = set()
         if set(record) != want and set(record) | OPTIONAL_FIELDS.get(op, frozenset()) == want:
-            record = {**record, **{k: None for k in want - set(record)}}
+            filled = want - set(record)
+            record = {**record, **{k: None for k in filled}}
         if set(record) != want:
             raise ExchangeError("bad_record", f"{op}: fields {sorted(record)} != {sorted(want)}")
         if record["seq"] != len(self.records):
@@ -131,6 +173,8 @@ class Exchange:
             self._company(company)
         rec = copy.deepcopy(record)
         getattr(self, f"_op_{op}")(rec)
+        for k in filled:  # a record without an optional field is kept without it (old logs stay byte-equal)
+            rec.pop(k, None)
         self.records.append(rec)
         self.tick = tick
         return copy.deepcopy(rec)
@@ -215,8 +259,12 @@ class Exchange:
         for k in sorted(sb):
             if sb[k]:
                 ledger.transfer(EXCHANGE, k, sb[k], reason="start_balance", ref="init", tick=r["tick"])
+        rules, horizon = r["rules"] or 1, r["horizon_tick"]
+        if rules not in (1, 2) or (horizon is not None and not is_int(horizon)):
+            raise ExchangeError("bad_config", f"rules must be 1 or 2 and horizon_tick an int: {rules!r}, {horizon!r}")
         self.arm, self.seed, self.tender_config, self.accounts = r["arm"], r["seed"], cfg, ledger
         self.companies = ledger.companies
+        self.rules, self.horizon_tick = rules, horizon
 
     def _op_offer(self, r: dict[str, Any]) -> None:
         tick, company, kind, to = r["tick"], r["company"], r["kind"], r["to"]
@@ -288,7 +336,8 @@ class Exchange:
         c.terms, c.signed_tick, c.responder = terms, tick, None
         c.terms_history = [{"from_tick": tick, "terms": copy.deepcopy(terms)}]
         if licence:  # both arms: the fee falls due in quarterly instalments after the right starts
-            for due, amount in instalments(terms["fee"], terms["window_start"], terms["deadline"]):
+            for due, amount in instalments(terms["fee"], terms["window_start"], terms["deadline"],
+                                           self._last_due()):
                 self._oblige(c.id, "licence_instalment", terms["grantee"], terms["grantor"], amount, due, tick)
         elif self.arm == "enforced":
             self._move(terms["buyer"], escrow_account(c.id), terms["price"], "escrow", c.id, tick)
@@ -344,11 +393,12 @@ class Exchange:
             for o in self._contract_obligations(c.id):
                 if o["status"] == "open" and o["due"] > tick:
                     o["status"] = "replaced"
+                    fixed += o["paid"]  # money already paid toward a replaced instalment counts (not charged twice)
                 elif o["status"] != "replaced":
                     fixed += o["amount"]
             rest = max(0, new["fee"] - fixed)
             dues = [d for d in due_ticks(new["window_start"], new["deadline"]) if d > tick]
-            for due, amount in split(rest, dues):
+            for due, amount in clip_schedule(split(rest, dues), self._last_due(), max(tick + 1, new["window_start"])):
                 self._oblige(c.id, "licence_instalment", new["grantee"], new["grantor"], amount, due, tick)
             c.terms, c.pending_amendment = new, None
             c.terms_history.append({"from_tick": tick, "terms": copy.deepcopy(new)})
@@ -429,7 +479,15 @@ class Exchange:
                                  "amount": amount, "due": due, "settle_tick": settle, "created_tick": tick,
                                  "paid": 0, "paid_by_due": 0, "payments": [], "collected": 0, "status": "open",
                                  "settled_tick": None}
+        if self.rules >= 2:
+            self.obligations[oid].update(paid_by_settle=0, completed_tick=None)
         return oid
+
+    def _last_due(self) -> int | None:
+        """Rules 2: the last tick at which an instalment may fall due (the horizon minus the grace period)."""
+        if self.rules < 2 or self.horizon_tick is None:
+            return None
+        return self.horizon_tick - GRACE_TICKS
 
     def _contract_obligations(self, cid: str) -> list[dict[str, Any]]:
         return sorted((o for o in self.obligations.values() if o["contract_id"] == cid), key=_obl_key)
@@ -444,7 +502,8 @@ class Exchange:
 
     def _op_obligation_settle(self, r: dict[str, Any]) -> None:
         o = self.obligations.get(r["obligation_id"]) if isinstance(r["obligation_id"], str) else None
-        if o is None or o["status"] != "open" or r["tick"] < o["settle_tick"]:
+        end = self.rules >= 2 and self.horizon_tick is not None and r["tick"] >= self.horizon_tick
+        if o is None or o["status"] != "open" or (r["tick"] < o["settle_tick"] and not end):
             raise ExchangeError("bad_state", f"obligation {r['obligation_id']!r} cannot settle at tick {r['tick']}")
         collected, outcome = self._obligation_result(o)
         if (r["collected"], r["paid"], r["outcome"]) != (collected, o["paid"], outcome):
@@ -455,6 +514,8 @@ class Exchange:
             self.accounts.transfer(o["payer"], o["payee"], collected, reason="collect", ref=o["id"], tick=r["tick"],
                                    force=True)
         o.update(collected=collected, status=outcome, settled_tick=r["tick"])
+        if self.rules >= 2 and collected and o["completed_tick"] is None:
+            o["completed_tick"] = r["tick"]
 
     def _op_tender_open(self, r: dict[str, Any]) -> None:
         if not is_int(r["quarter"]) or not isinstance(r["tenders"], list):
@@ -533,8 +594,12 @@ class Exchange:
         if cid is not None:
             if not isinstance(cid, str):
                 raise ExchangeError("bad_tag", f"contract_id must be a string: {cid!r}")
-            open_obl = [o for o in self._contract_obligations(cid) if o["status"] == "open" and o["payer"] == company
-                        and o["payee"] == to and tick < o["settle_tick"]]
+            mine = [o for o in self._contract_obligations(cid) if o["payer"] == company and o["payee"] == to]
+            if self.rules >= 2:  # FIFO over everything not yet paid in full, also after its settlement (late)
+                open_obl = [o for o in mine if o["status"] != "replaced" and o["paid"] < o["amount"]
+                            and not o["collected"]]
+            else:
+                open_obl = [o for o in mine if o["status"] == "open" and tick < o["settle_tick"]]
             if not open_obl:
                 raise ExchangeError("bad_tag", f"{company} owes {to} nothing open under {cid}")
         if to != EXCHANGE:
@@ -558,6 +623,11 @@ class Exchange:
             o["paid"] += part
             if tick <= o["due"]:
                 o["paid_by_due"] += part
+            if self.rules >= 2:
+                if tick < o["settle_tick"]:
+                    o["paid_by_settle"] += part
+                if o["completed_tick"] is None and o["paid"] >= o["amount"]:
+                    o["completed_tick"] = tick
             o["payments"].append([tick, part])
             left -= part
             if left == 0:
@@ -657,8 +727,9 @@ class Exchange:
             outcome = compute_supply_settlement(c.terms, delivered)["outcome"]
             out.append(self._record("settle", tick, None, contract_id=c.id, delivered=delivered, parts=parts,
                                     outcome=outcome))
+        end = self.rules >= 2 and self.horizon_tick is not None and tick >= self.horizon_tick
         for o in sorted(self.obligations.values(), key=lambda o: (o["settle_tick"], _obl_key(o))):
-            if o["status"] == "open" and o["settle_tick"] <= tick:
+            if o["status"] == "open" and (o["settle_tick"] <= tick or end):  # rules 2: all settle at the end
                 collected, outcome = self._obligation_result(o)
                 out.append(self._record("obligation_settle", tick, None, obligation_id=o["id"], collected=collected,
                                         paid=o["paid"], outcome=outcome))
@@ -823,10 +894,25 @@ class Exchange:
         }
 
 
-def instalments(fee: int, window_start: int, deadline: int) -> list[tuple[int, int]]:
+def instalments(fee: int, window_start: int, deadline: int, last_due: int | None = None) -> list[tuple[int, int]]:
     """The (due tick, amount) of a licence fee: one instalment each quarter after ``window_start`` (in
-    arrears) and the last at ``deadline``; equal amounts, the remainder on the last. A fee of 0: none."""
-    return split(fee, due_ticks(window_start, deadline))
+    arrears) and the last at ``deadline``; equal amounts, the remainder on the last. A fee of 0: none.
+    ``last_due`` (rules 2): no instalment after it; see :func:`clip_schedule`."""
+    return clip_schedule(split(fee, due_ticks(window_start, deadline)), last_due, window_start)
+
+
+def clip_schedule(schedule: list[tuple[int, int]], last_due: int | None, floor: int) -> list[tuple[int, int]]:
+    """The instalments due at or before ``last_due``, with the amounts of the later ones folded into the last
+    of them. If none is in time: the whole amount at ``last_due`` (not before ``floor``)."""
+    if last_due is None or not schedule:
+        return schedule
+    kept = [(d, a) for d, a in schedule if d <= last_due]
+    late = sum(a for d, a in schedule if d > last_due)
+    if not kept:
+        return [(max(floor, last_due), late)]
+    if late:
+        kept[-1] = (kept[-1][0], kept[-1][1] + late)
+    return kept
 
 
 def due_ticks(window_start: int, deadline: int) -> list[int]:
@@ -842,6 +928,32 @@ def split(total: int, dues: list[int]) -> list[tuple[int, int]]:
     each = total // len(dues)
     parts = [(d, each) for d in dues[:-1]] + [(dues[-1], total - each * (len(dues) - 1))]
     return [(d, a) for d, a in parts if a > 0]
+
+
+def payment_timing(o: dict[str, Any]) -> tuple[str, float | None]:
+    """The payment-timing outcome of an obligation at the end of play, and the days late:
+
+    - ``on_time``: paid (or collected) in full before its settle tick (cheap talk: by the due tick plus the
+      30-day grace period; enforced: collected at the due tick);
+    - ``late``: paid in full after that, by the end of play (days late = from the due tick to the payment
+      that completed it);
+    - ``partial``: some paid by the end of play; ``unpaid``: nothing.
+    Rules-1 obligations have no completion tick: their payments are read from ``payments``."""
+    amount = o["amount"]
+    total = o["paid"] + o["collected"]
+    if total >= amount:
+        done = o.get("completed_tick")
+        if done is None:  # rules 1: replay the payments
+            acc, done = o["collected"], o.get("settled_tick") if o["collected"] else None
+            for t, a in o["payments"]:
+                acc += a
+                if acc >= amount:
+                    done = t if done is None else min(done, t)
+                    break
+        if done is not None and (done < o["settle_tick"] or (o["collected"] and done == o["settle_tick"])):
+            return "on_time", None
+        return "late", round(max(0, (done if done is not None else o["settle_tick"]) - o["due"]) / TICKS_PER_DAY, 1)
+    return ("partial" if total > 0 else "unpaid"), None
 
 
 def _obl_key(o: dict[str, Any]) -> tuple[int, int]:

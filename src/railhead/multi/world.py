@@ -16,7 +16,7 @@ from typing import Any
 from railhead.actionlog import ActionLog
 from railhead.bridge import BridgeError
 from railhead.multi.barrier import Observation
-from railhead.multi.log import LOG_V3, meta_digest_v3
+from railhead.multi.log import LOG_V3, digests_v3
 from railhead.world import World, WorldFault
 
 
@@ -27,6 +27,7 @@ def _month(ymd: str) -> int:
 class SharedWorld:
     def __init__(self, world: World, companies: list[dict]) -> None:
         self.world = world
+        self.wide_digests = False  # exchange rules 2: four notes per company record (digests_v3)
         self.companies = [dict(c) for c in companies]
         self.ids = [int(c["id"]) for c in companies]
         self.log: ActionLog | None = None
@@ -87,7 +88,8 @@ class SharedWorld:
     def note(self, company: int, method: str, args: dict[str, Any]) -> None:
         """A meta decision of ``company``: its digest goes to the GameScript, then the record to the log."""
         try:
-            self.world.call_args("note", {"d": meta_digest_v3(company, method, args)})
+            for d in digests_v3(company, method, args, self.wide_digests):
+                self.world.call_args("note", {"d": d})
             self._write({"kind": "meta", "ticks": self.ticks, "company": company, "m": method, "a": args})
         except Exception as e:
             raise WorldFault(f"note {method}: {type(e).__name__}: {e}") from e
@@ -107,7 +109,8 @@ class SharedWorld:
         does), so a company record that is added, moved or changed changes every later step checksum."""
         try:
             if company is not None:
-                self.world.call_args("note", {"d": meta_digest_v3(company, "ex", x)})
+                for d in digests_v3(company, "ex", x, self.wide_digests):
+                    self.world.call_args("note", {"d": d})
             return self._write({"kind": "ex", "ticks": self.ticks, "company": company, "x": x})
         except Exception as e:
             raise WorldFault(f"ex {x.get('op')}: {type(e).__name__}: {e}") from e
@@ -154,6 +157,14 @@ class SharedWorld:
         self._rows = {int(r["id"]): r for r in rows}
         return t0, Observation(month=self.month, cash={c: int(r["money"]) for c, r in self._rows.items()},
                                events=events)
+
+    def seal(self) -> dict:
+        """The closing checkpoint (exchange rules 2): the checksum of the world as the log leaves it, so the
+        records after the last step are bound too."""
+        try:
+            return self._write({"kind": "seal", "ticks": self.ticks, "checksum": self.world.call("checksum")})
+        except Exception as e:
+            raise WorldFault(f"seal record: {type(e).__name__}: {e}") from e
 
     def log_step(self, t0: int, wakers: list[tuple[int, str]]) -> dict:
         try:

@@ -137,3 +137,26 @@ def test_cheap_talk_run_through_the_runner(tasks, tmp_path):
     players = scripts(tmp_path, run)
     res = wa.Runner.create(tasks["cheap_talk"], run, players, turn_s=120, poll_s=0.3, grace_s=10).run()
     check(run, res, "cheap_talk")
+    # exchange rules 2: the coordinator seals the log when it closes; the seal binds the records after the
+    # last step, and without it those records do not count
+    from railhead.multi.verify import verify_multi
+
+    task = tasks["cheap_talk"]
+    log = run / "coord/run/actions.jsonl"
+    recs = [json.loads(x) for x in log.read_text().splitlines()]
+    assert recs[-1]["kind"] == "seal"
+    honest = json.loads((run / "verify/scores.json").read_text())
+    assert honest["sealed"] == 1 and honest["valid"] == 1 and honest["rejected"] == 0
+
+    def write(path, rs):
+        path.write_text("".join(json.dumps(r, separators=(",", ":"), sort_keys=True) + "\n" for r in rs))
+        return path
+
+    after = dict(recs[-2], seq=recs[-1]["seq"] + 1)  # any record after the seal
+    out = verify_multi(task, task / "start.sav", write(tmp_path / "a.jsonl", [*recs, after]), tmp_path / "va")
+    assert out["rejected"] == 1
+    mine = next(r for r in recs if r["kind"] == "ex" and r["company"] is not None)  # a company record
+    tail = dict(mine, seq=recs[-1]["seq"], ticks=recs[-1]["ticks"])  # in place of the seal: nothing binds it
+    out = verify_multi(task, task / "start.sav", write(tmp_path / "b.jsonl", [*recs[:-1], tail]), tmp_path / "vb")
+    assert out["sealed"] == 0 and out["rejected"] == 0
+    assert [c["score"] for c in out["companies"]] == [c["score"] for c in honest["companies"]]

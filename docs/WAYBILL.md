@@ -89,6 +89,14 @@ The live world and the replay send the digest of each `meta` record to the GameS
 The v3 digest includes the company: `sha256({"c": company, "m": m, "a": a})`, first 31 bits.
 Thus a `submit` that moves to a different company changes all later step checksums.
 
+With exchange rules 2 (`market.rules = 2`), each company `meta` and `ex` record sends four notes: four 31-bit parts of the SHA-256 (124 bits). With one 31-bit note, a record could be replaced by another record with the same note (a 2026-11 review found two `pay` amounts with the same digest); with 124 bits that is not possible.
+
+### 2.5 Seal and exchange clock
+
+- With exchange rules 2, the coordinator writes a `seal` record when it closes: `{kind: "seal", seq, ticks, checksum}`. The checksum binds the records after the last `step`. No record may follow a seal. When the coordinator starts again, it removes a trailing seal and writes a new one at the next close.
+- The verifier (rules 2): if the log has no seal, it scores the log as if it ended at its last `step` (and the system records of that tick), because nothing binds the later records; `scores.json` gives `sealed` 0 or 1.
+- Every `ex` record must have the exchange `tick` equal to the world tick of the record (`LogState`), in all logs.
+
 ## 3. Start state
 
 `railhead.multi.gen` makes the start state of a Waybill task:
@@ -265,6 +273,7 @@ The command writes `<out_dir>/scores.json`.
 - A market wake (`offer_received`, `message_received`) occurs at the next step. When a waiter's condition is already true, that step is one tick long.
 - In `cheap_talk`, the exchange collects no obligation; only `pay`, the start balances and tender payouts move money (arm parity, WAYBILL-EXCHANGE.md "Arms").
 - An amendment that changes the cargo or the industry gets a new monitor from its signing tick. Deliveries before that tick do not count.
+- A Waybill log verifies with the exchange rules of the code that wrote it. Pilot v1 logs (before `reach_tiles`) and pilot v2 logs (before obligations and instalments) do not verify with later commits; pilot v3 logs verify (rules 1). New track tasks record `market.rules`, so a later rules change can keep them verifiable.
 - Loan contracts are not tradable yet (`kind_not_enabled`). A licence has a one-off fee, no periodic fee, and cannot be revoked.
 
 ## 8. Franchise regions
@@ -307,6 +316,7 @@ The replay calculates the footprint of each logged action again, with the region
 | `water_lock` | The middle tile and its two neighbours along the slope |
 | `bridge_tunnel` | The tiles from the start to the other end of the tunnel |
 | `land_raise`, `land_lower` | The tile and its 8 neighbours (the corners are shared) |
+| `land_demolish` of a station tile | Every tile of that station that touches it (a flood over `tile` queries, at most 160 tiles): demolishing one airport tile removes the whole airport |
 | `land_level` | The rectangle and a border of one tile |
 | `town_action` | The centre tile of the town (all town actions: advertising, road rebuild, statue, fund buildings, exclusive rights, bribe) |
 | `rail_set_type`, `road_set_type`, `vehicle_*`, `order_*`, `company_loan`, `company_rename` | No check |
@@ -354,7 +364,7 @@ The recovery of the coordinator takes the exchange from the replay.
 
 When a contract is signed (an accept, a tender award, or an amendment), the coordinator adds one engine cargo monitor for each (seller, cargo, industry) that the contract needs, if it does not have one. A subcontract seller of a tender is included.
 The replay adds the monitors at the same records. The monitors are not in the checksum.
-After each step, the coordinator reads the monitor totals. The deliveries in `[start, end]` are `total(end) - total(max(start, creation tick))`. A monitor counts nothing before it exists.
+After each step, the coordinator reads the monitor totals. The deliveries counted for `[start, end]` are `total(end) - total(max(start, creation tick))`: the totals are samples at step ends, so a delivery that the step ending at `start` contains counts as before `start`. In other words, the interval is `(start, end]` at the resolution of the steps. Live and replay use the same rule.
 
 ### 9.4 Forced stops and wakes
 
@@ -364,6 +374,8 @@ The world stops at each exchange deadline (offer expiry, window start, bid close
 |---|---|
 | `deadline` (forced) | A contract of the company reaches its deadline at this tick |
 | `obligation_due` (forced) | An obligation of the company (a payment it owes) falls due at this tick, in both arms |
+
+The `step` record keeps one reason for each waker. The reply to the agent's `wait` also has `reasons`: every reason of that tick for that company, so that a deadline or the end of the wait does not hide an `obligation_due` (`rh wait` prints all of them).
 | `tender` (forced) | The tenders of a quarter open at this tick (all waiting companies) |
 | `deadline` (`until=deadline`) | Any exchange deadline at this tick names the company (offer expiry, window start, bid close) |
 | `offer_received` (`until=offer_received`) | Since the wait started: an offer to the company, or a counter or amendment from the other party of its contract |

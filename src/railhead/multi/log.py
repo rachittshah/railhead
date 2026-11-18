@@ -47,6 +47,17 @@ def meta_digest_v3(company: int, m: str, a: dict[str, Any]) -> int:
     return int.from_bytes(hashlib.sha256(blob).digest()[:4], "little") & 0x7FFFFFFF or 1
 
 
+def digests_v3(company: int, m: str, a: dict[str, Any], wide: bool = False) -> list[int]:
+    """The notes that bind one company record into the GameScript state. Narrow (rules 1): one 31-bit digest.
+    Wide (exchange rules 2): four 31-bit parts of the SHA-256, so that no record can be replaced by another
+    with the same notes (a 31-bit collision is found in seconds; 124 bits are not)."""
+    if not wide:
+        return [meta_digest_v3(company, m, a)]
+    blob = json.dumps({"c": company, "m": m, "a": a}, separators=(",", ":"), sort_keys=True).encode()
+    h = hashlib.sha256(blob).digest()
+    return [int.from_bytes(h[i:i + 4], "little") & 0x7FFFFFFF or 1 for i in (0, 4, 8, 12)]
+
+
 def _int(v: object, what: str) -> int:
     if isinstance(v, bool) or not isinstance(v, int):
         raise LogRejected(f"{what} must be an integer, got {v!r}")
@@ -141,6 +152,7 @@ class LogState:
         self.waiting: dict[int, dict] = {}  # company -> {"target", "until", "ticks", "auto"}
         self.submitted: set[int] = set()
         self.expect_seq = 1
+        self.sealed = False
 
     @property
     def live(self) -> set[int]:
@@ -167,6 +179,8 @@ class LogState:
             raise LogRejected(f"record seq={seq!r} is out of sequence (expected {self.expect_seq})")
         if kind == "header":
             raise LogRejected(f"second header at seq={seq}")
+        if self.sealed:
+            raise LogRejected(f"record seq={seq} after the seal")
         if _int(r.get("ticks"), f"ticks of seq={seq}") != self.now:
             raise LogRejected(f"record seq={seq} at tick {r.get('ticks')}, the clock is at {self.now}")
         if kind == "act":
@@ -198,6 +212,11 @@ class LogState:
             self._ex(r, seq)
         elif kind == "step":
             self._step(r, seq)
+        elif kind == "seal":  # the coordinator's checkpoint when it closes: nothing may follow it
+            ck = r.get("checksum")
+            if not isinstance(ck, dict) or "h" not in ck:
+                raise LogRejected(f"seal seq={seq} has no checksum")
+            self.sealed = True
         else:
             raise LogRejected(f"unknown record kind {kind!r}")
         self.expect_seq = seq + 1
@@ -206,6 +225,8 @@ class LogState:
         x = r.get("x")
         if not isinstance(x, dict) or not isinstance(x.get("op"), str):
             raise LogRejected(f"ex seq={seq}: no exchange record")
+        if x.get("tick") != self.now:  # the exchange clock is the world clock
+            raise LogRejected(f"ex seq={seq}: exchange tick {x.get('tick')!r} != world tick {self.now}")
         c = r.get("company")
         if c is None:
             if x.get("company") is not None:

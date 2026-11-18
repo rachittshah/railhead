@@ -146,3 +146,122 @@ def test_an_amendment_replaces_the_instalments_not_yet_due():
 def test_a_free_licence_has_no_obligations():
     ex, _cid = signed(fee=0)
     assert ex.obligations == {} and ex.licences_held("b", 100)
+
+
+# ---------------------------------------------------------------------------------------------- rules 2
+def signed2(arm="cheap_talk", horizon=None, **kw):
+    ex = Exchange(CO, arm=arm, seed=1, start_balances={"b": 5000}, rules=2, horizon_tick=horizon)
+    cid = ex.offer(0, "a", "licence", lic(**kw), to="b")["contract_id"]
+    ex.accept(10, "b", cid)
+    return ex, cid
+
+
+def test_rules2_a_late_tagged_payment_goes_to_the_oldest_unpaid_instalment():
+    from railhead.exchange.exchange import payment_timing
+
+    ex, cid = signed2()
+    o1, o2 = ex.obligations["O1"], ex.obligations["O2"]
+    run_to(ex, o1["settle_tick"])  # O1 unpaid: broken at its settle tick
+    assert o1["status"] == "broken"
+    ex.pay(o1["settle_tick"] + 10, "b", "a", 250, contract_id=cid)  # late: goes to O1 (FIFO), not to O2
+    assert (o1["paid"], o2["paid"]) == (250, 0) and o1["status"] == "broken"  # the settle-time outcome stays
+    assert payment_timing(o1) == ("late", round((o1["settle_tick"] + 10 - o1["due"]) / 74, 1))
+    ex.pay(o2["due"] - 1, "b", "a", 250, contract_id=cid)
+    assert payment_timing(o2) == ("on_time", None) and payment_timing(ex.obligations["O3"]) == ("unpaid", None)
+    ex.pay(o2["due"], "b", "a", 100, contract_id=cid)
+    assert payment_timing(ex.obligations["O3"]) == ("partial", None)
+    ex.check_invariants()
+    assert Exchange.replay(ex.records).state() == ex.state()
+
+
+def test_rules1_keeps_the_old_allocation_for_old_logs():
+    ex, cid = signed("cheap_talk")
+    o1 = ex.obligations["O1"]
+    run_to(ex, o1["settle_tick"])
+    ex.pay(o1["settle_tick"] + 10, "b", "a", 250, contract_id=cid)  # O1 is closed: the payment goes to O2
+    assert (o1["paid"], ex.obligations["O2"]["paid"]) == (0, 250)
+
+
+def test_rules2_no_instalment_falls_due_after_the_horizon_minus_the_grace_period():
+    horizon = 100 + 3 * Q
+    ex, _cid = signed2(horizon=horizon, deadline=horizon)
+    obs = sorted(ex.obligations.values(), key=lambda o: o["due"])
+    last = horizon - GRACE_TICKS
+    assert [(o["due"], o["amount"]) for o in obs] == [(100 + Q, 333), (100 + 2 * Q, 333 + 334)]  # Q3 folded in
+    assert all(o["due"] <= last and o["settle_tick"] <= horizon for o in obs)
+    late, _ = signed2(horizon=horizon, window_start=horizon - 100, deadline=horizon)  # starts after the limit
+    (only,) = late.obligations.values()
+    assert (only["due"], only["amount"]) == (horizon - 100, 1000)
+    from railhead.exchange.exchange import clip_schedule
+
+    assert clip_schedule([(10, 5), (20, 5), (30, 6)], 25, 0) == [(10, 5), (20, 11)]
+    assert clip_schedule([(10, 5)], None, 0) == [(10, 5)]
+
+
+def test_payment_timing_in_enforced_is_on_time_when_collected():
+    from railhead.exchange.exchange import payment_timing
+
+    ex, _cid = signed2("enforced")
+    run_to(ex, ex.obligations["O1"]["due"])
+    assert payment_timing(ex.obligations["O1"]) == ("on_time", None)
+
+
+def test_rescore_reallocates_old_payments_under_rules2():
+    ex, cid = signed("cheap_talk")  # rules 1
+    o1 = ex.obligations["O1"]
+    run_to(ex, o1["settle_tick"])
+    ex.pay(o1["settle_tick"] + 10, "b", "a", 250, contract_id=cid)  # rules 1: counts toward O2
+    end = ex.obligations["O4"]["settle_tick"]
+    run_to(ex, end)
+    again = Exchange.rescore(ex.records, horizon_tick=end + 10 * 74 * 30)
+    assert again.rules == 2 and again.obligations["O1"]["paid"] == 250 and again.obligations["O2"]["paid"] == 0
+    assert again.obligations["O2"]["status"] == "broken"
+    again.check_invariants()
+
+
+def test_a_record_without_an_optional_field_is_stored_without_it():
+    ex = Exchange(CO, arm="cheap_talk", seed=1)  # rules 1: the init record has no rules/horizon_tick
+    assert "rules" not in ex.records[0] and "horizon_tick" not in ex.records[0]
+    assert Exchange.replay(ex.records).records == ex.records
+    two = Exchange(CO, arm="cheap_talk", seed=1, rules=2, horizon_tick=999)
+    assert (two.records[0]["rules"], two.records[0]["horizon_tick"]) == (2, 999)
+
+
+def test_an_amendment_does_not_charge_an_instalment_that_was_paid_in_advance_again():
+    ex, cid = signed("enforced")
+    first = ex.obligations["O1"]
+    ex.pay(20, "b", "a", 250, contract_id=cid)  # O1 paid before it is due
+    ex.amend(30, "a", cid, lic())  # the same terms again: the open instalments are replaced
+    ex.amend(31, "b", cid, lic())
+    assert first["status"] == "replaced"
+    new = [o for o in ex.obligations.values() if o["status"] == "open"]
+    assert sum(o["amount"] for o in new) == 1000 - 250  # the advance payment counts
+    run_to(ex, 100 + 3 * Q + 50)
+    assert ex.accounts.balances()["a"] == 1000 and ex.accounts.balances()["b"] == 4000  # charged once
+    ex.check_invariants()
+
+
+def test_rules2_every_open_obligation_settles_at_the_horizon():
+    horizon = 100 + 3 * Q
+    ex = Exchange(CO, arm="cheap_talk", seed=1, start_balances={"b": 5000}, rules=2, horizon_tick=horizon)
+    cid = ex.offer(0, "a", "licence", lic(window_start=horizon - 10 * 74, deadline=horizon, fee=100),
+                   to="b")["contract_id"]
+    ex.accept(10, "b", cid)
+    (o,) = ex.obligations.values()
+    assert o["settle_tick"] > horizon  # a licence that starts after the cut-off: due at its start
+    recs = ex.settle_due(horizon, nothing)
+    assert [(r["op"], r["outcome"]) for r in recs if r["op"] == "obligation_settle"] == [("obligation_settle", "broken")]
+    assert Exchange.replay(ex.records).state() == ex.state()
+
+
+def test_wide_digests_separate_records_that_collide_in_31_bits():
+    from railhead.multi.log import digests_v3
+
+    def rec(amount):
+        return {"seq": 2, "tick": 100, "company": "0", "op": "pay", "to": "1", "memo": "", "contract_id": None,
+                "amount": amount}
+
+    narrow = [digests_v3(0, "ex", rec(a)) for a in (40306, 56270)]
+    wide = [digests_v3(0, "ex", rec(a), wide=True) for a in (40306, 56270)]
+    assert narrow[0] == narrow[1]  # the collision the review found
+    assert wide[0] != wide[1] and len(wide[0]) == 4

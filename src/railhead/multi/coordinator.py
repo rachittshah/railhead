@@ -119,6 +119,8 @@ class Coordinator:
         wdir = self.state / "world"
         shutil.rmtree(wdir, ignore_errors=True)
         _drop_torn_tail(self.log_path)
+        _drop_seal(self.log_path)  # a restart continues the log: the seal is written again at the next close
+        wide = self.market_cfg is not None and self.market_cfg.rules >= 2
         if self.log_path.exists() and self.log_path.stat().st_size > 0:
             res = replay_multi(start, self.log_path, wdir, allowed=self.whitelist, keep_open=True,
                                horizon_days=self.spec.horizon_days, regions=self.regions,
@@ -129,11 +131,13 @@ class Coordinator:
                 res.world.close()
                 raise RuntimeError(f"the log does not replay: {res.divergences[0]}")
             res.world.attach_log(ActionLog(self.log_path), header=False)
+            res.world.wide_digests = wide
             self.market = res.market
             for x in res.pending_sys:  # system records that the driver made but the log did not get
                 res.world.ex_record(None, x)
             return res.world, res.state
         sw = SharedWorld(World.load(wdir, start), self.companies)
+        sw.wide_digests = wide
         self._start_ticks, self._start_date = sw.ticks, sw.date
         sw.attach_log(ActionLog(self.log_path))
         self._start_market(sw)
@@ -496,7 +500,8 @@ class Coordinator:
             if self.market.book.active:
                 self.market.book.sample(sw.ticks, self._logged(sw.monitor_rows))
             with self.cv:
-                obs.market = {c: pick_reason(r) for c, r in self.market.wakes(sw.ticks, self._ex_waiters()).items()}
+                all_market = self.market.wakes(sw.ticks, self._ex_waiters())
+                obs.market = {c: pick_reason(r) for c, r in all_market.items()}
         out = {"ymd": sw.ymd, "date": sw.date, "ticks": sw.ticks, "paused": True}
         # One section (cv is reentrant): a waiter must never see itself awake without its result, and a
         # failed step record rebuilds the barrier from the log before any waiter sees the wake.
@@ -507,7 +512,11 @@ class Coordinator:
             if self.market is not None:
                 self._logged(self._market_tick, sw)
             for c, reason in wakers:
-                self.results[c] = out | {"reason": reason, "days": (sw.ticks - starts[c]) // TICKS_PER_DAY}
+                # the log keeps one reason; the agent gets every reason of this tick (a deadline or the end of
+                # the wait must not hide that one of its payments falls due)
+                every = sorted({reason} | (all_market.get(c, set()) if self.market is not None else set()))
+                self.results[c] = out | {"reason": reason, "reasons": every,
+                                         "days": (sw.ticks - starts[c]) // TICKS_PER_DAY}
             self.cv.notify_all()
 
     def _ex_waiters(self) -> dict[int, tuple[list[str], int]]:
@@ -610,10 +619,22 @@ class Coordinator:
         for t in self._threads:
             t.join(timeout=10)
         with self.world_lock:
+            if self.market_cfg is not None and self.market_cfg.rules >= 2:
+                with contextlib.suppress(Exception):  # the log stays valid without it (scored to the last step)
+                    self.sw.seal()
             self.sw.close()
         for slot in self.by_slot:
             agent_socket_path(self.state, slot).unlink(missing_ok=True)
         control_socket_path(self.state).unlink(missing_ok=True)
+
+
+def _drop_seal(log_path: Path) -> None:
+    """Remove a trailing seal record (written by an earlier close) so that the log can continue."""
+    if not log_path.exists() or log_path.stat().st_size == 0:
+        return
+    lines = log_path.read_bytes().splitlines(keepends=True)
+    if lines and b'"kind":"seal"' in lines[-1].replace(b" ", b""):
+        log_path.write_bytes(b"".join(lines[:-1]))
 
 
 def serve(task_dir: Path, state: Path, turn_budget_s: float | None = None) -> None:

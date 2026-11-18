@@ -154,6 +154,7 @@ TRACKS = {
     "decade": Track("decade", agents=8, map_log2=9, horizon_days=3650, runoff_days=365),
 }
 ARMS = ("enforced", "cheap_talk")
+EXCHANGE_RULES = 2  # new track tasks: FIFO payment allocation, late payments, instalments clipped to the end
 REACH_TILES = 128  # "within reach": the Manhattan distance of a delivery that cross-region needs and tenders count
 
 
@@ -235,7 +236,7 @@ def gen_track(track: str, seed: int, out: Path, rotations: list[int] | None = No
                 shutil.copyfile(work / "start.sav", tdir / "start.sav")
                 tcfg = {"reach_tiles": REACH_TILES, **(tender or {})}  # tenders need another company's region
                 market = MarketConfig(arm=arm, seed=seed, start_balances=dict(start_balances or {}),
-                                      quarter_days=t.quarter_days, tender=tcfg)
+                                      quarter_days=t.quarter_days, tender=tcfg, rules=EXCHANGE_RULES)
                 rm = region_maps[r]
                 extra = {"track": track, "seed": seed, "rotation": r, "arm": arm,
                          "region_types": {str(k): v for k, v in rm.types.items()},

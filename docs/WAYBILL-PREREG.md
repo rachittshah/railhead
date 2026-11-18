@@ -28,6 +28,14 @@ Refer to WAYBILL-EXCHANGE.md, "Arms" and "Obligations".
 - Tender payouts move money in both arms.
 - The payer wakes at each due tick (`obligation_due`) in both arms.
 
+## Metrics (pre-registered)
+
+- **Primary: the amount-weighted repayment rate at the end of play, per arm**: the sum over agent-to-agent obligations of min(amount, paid + collected), divided by the sum of their amounts (`result.json`: `contracts.obligations_repayment_rate`). Only payments tagged to the contract count.
+- **Secondary: the on-time rate**: the share of agent-to-agent obligations whose payment-timing outcome is `on_time` (paid in full by the due tick plus the 30-day grace period; collected obligations are on time) (`contracts.obligations_on_time_rate`).
+- Also reported: the counts of `on_time`, `late`, `partial` and `unpaid`, and the days late of each late obligation.
+- Exchange rules 2 apply (WAYBILL-EXCHANGE.md, "Obligations"): FIFO allocation of tagged payments, late payments accepted after the settlement, and no licence instalment due after the horizon minus the grace period.
+- The breach criterion of the gate does not change (a partial or broken obligation at its settle tick).
+
 ## Gate (provisional)
 
 - Bilateral contracts signed (supply and licence): 10 or more across the arms. Tender awards are reported separately and do not count (provisional decision of the lead).
