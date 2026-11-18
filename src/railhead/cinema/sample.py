@@ -86,8 +86,12 @@ class Sampler:
     """The ``observe`` hook: reads every company's network and money at each stop. A company's vehicle
     orders are read again only when it acted since the last sample or its vehicle set changed."""
 
-    def __init__(self, companies: list[dict], act_ticks: dict[int, list[int]]) -> None:
+    def __init__(self, companies: list[dict], act_ticks: dict[int, list[int]], save_at: dict[str, int] | None = None,
+                 save_dir: Path | None = None) -> None:
         self.companies = companies
+        self.save_at = dict(save_at or {})  # label -> tick: savegames for the engine close-ups (shots.py)
+        self.save_dir = save_dir
+        self.saves: dict[str, int] = {}
         self.act_ticks = act_ticks
         self.samples: list[dict] = []
         self.phase = "play"
@@ -143,8 +147,16 @@ class Sampler:
                 self._n_tenders = len(st["tenders"])
         self.samples.append(s)
         self._last_t = now
+        for label, tick in sorted(self.save_at.items(), key=lambda kv: kv[1]):
+            if now >= tick and label not in self.saves and self.save_dir is not None:
+                self.save(sw, label)
         self.seconds += time.monotonic() - t0
         return s
+
+    def save(self, sw, label: str) -> None:
+        """A savegame of the paused world (read-only: ``save`` over the admin port, World.save)."""
+        sw.world.save(Path(self.save_dir) / f"{label}.sav")
+        self.saves[label] = sw.ticks
 
 
 def act_ticks_of(records: list[dict]) -> dict[int, list[int]]:
@@ -205,7 +217,7 @@ def probe_base(task_dir: Path, out: Path) -> dict:
 
 
 def sample_run(run_dir: Path, out: Path, task_dir: Path | None = None, grid_days: int = GRID_DAYS,
-               keep_work: bool = False) -> dict:
+               keep_work: bool = False, saves: bool = True) -> dict:
     """Replay one run with sampling; write ``<out>/samples/<arm>.json`` and return it. Raises
     :class:`CinemaMismatch` if the replay differs from ``result.json`` in any number they share."""
     from railhead.multi.market import MarketConfig
@@ -225,7 +237,11 @@ def sample_run(run_dir: Path, out: Path, task_dir: Path | None = None, grid_days
     arm = result.get("arm") or run.get("arm") or "run"
     comps = companies_meta(spec.objective, result)
     records = [json.loads(line) for line in info["log"].read_text().splitlines() if line.strip()]
-    sampler = Sampler(comps, act_ticks_of(records))
+    from railhead.cinema.shots import save_plan
+
+    save_dir = out / "saves" / arm
+    shutil.rmtree(save_dir, ignore_errors=True)
+    sampler = Sampler(comps, act_ticks_of(records), save_plan(records) if saves else None, save_dir)
     grid = int(grid_days) * TICKS_PER_DAY
     work = out / f"work-{arm}"
     shutil.rmtree(work, ignore_errors=True)
@@ -255,6 +271,8 @@ def sample_run(run_dir: Path, out: Path, task_dir: Path | None = None, grid_days
                 mk.tick_records(sw.ticks, sw.industries)
                 mk.book.ensure(mk.ex, sw.ticks, sw.monitor_add)
             sampler.take(sw, mk, "stop")
+        if saves:
+            sampler.save(sw, "horizon")
         at_horizon = sw.net_worth()
         horizon_ticks = sw.ticks
         ledger = {c["id"]: mk.balance(c["id"]) for c in comps} if mk is not None else {}
@@ -287,6 +305,7 @@ def sample_run(run_dir: Path, out: Path, task_dir: Path | None = None, grid_days
         "end_ticks": end_ticks, "horizon_days": spec.horizon_days, "runoff_days": spec.runoff_days,
         "companies": comps, "regions": regions.to_json() if regions is not None else None,
         "industries": {str(k): v for k, v in sorted(sampler.industries.items())},
+        "saves": sampler.saves,
         "exchange": ex_state,
         "check": {"ok": not mismatches, "mismatches": mismatches, "replay": got},
         "cost": {"seconds": round(time.monotonic() - t_start, 1), "query_seconds": round(sampler.seconds, 1),

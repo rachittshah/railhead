@@ -116,6 +116,7 @@ class Arm:
         self.events = story.events_of(ex)
         self.lics = story.licences_of(ex, self.region_rects)
         self.industries = {int(k): v for k, v in (doc.get("industries") or {}).items()}
+        self.shots: list[dict] = []  # engine close-ups (shots.py), each with "img" once loaded
 
     def region_rects(self, cid: str, tick: float) -> list[list[int]]:
         if self.regions is None or cid not in self.slot:
@@ -157,7 +158,41 @@ def load_arms(out: Path, arms: list[str]) -> list[Arm]:
         docs.append(d)
     order = {"enforced": 0, "cheap_talk": 1}
     docs.sort(key=lambda d: order.get(d["arm"], 9))
-    return [Arm(d) for d in docs]
+    out_arms = [Arm(d) for d in docs]
+    for a in out_arms:
+        a.shots = load_shots_with_images(out, a.arm)
+    return out_arms
+
+
+def load_shots_with_images(out: Path, arm: str) -> list[dict]:
+    import matplotlib.image as mpimg
+
+    from railhead.cinema.shots import load_shots
+
+    shots = []
+    for s in load_shots(out, arm):
+        f = Path(out) / "shots" / arm / s["file"]
+        if f.exists():
+            shots.append(s | {"img": mpimg.imread(f)[..., :3]})
+    return shots
+
+
+def inset_for(shots: list[dict], caption_kind: str) -> dict | None:
+    """The close-up shown with a caption: the licence site for the first licence, the site of the broken
+    promise, a site at the horizon for the end of decisions."""
+    want = {"licence_signed": "licence_signed", "broken": "broken", "partial": "broken",
+            "horizon": "horizon"}.get(caption_kind)
+    return next((s for s in shots if s["kind"] == want), None) if want else None
+
+
+def ken_burns(img, k: float, start: float = 0.62, end: float = 0.5):
+    """A window of ``img`` for progress ``k`` (0..1): a slow push-in to the centre, from ``start`` to ``end``
+    of the image size (so the engine's pixel art shows at about its own scale in the insert)."""
+    h, w = img.shape[:2]
+    f = start + (end - start) * min(1.0, max(0.0, k))
+    cw, ch = max(2, round(w * f)), max(2, round(h * f))
+    x0, y0 = (w - cw) // 2, (h - ch) // 2
+    return img[y0:y0 + ch, x0:x0 + cw]
 
 
 # ============================================================================================ layout
@@ -250,7 +285,7 @@ class Scene:
             for s in ax.spines.values():
                 s.set_color(t["rule"])
                 s.set_linewidth(1.0)
-            self.panels.append({"ax": ax})
+            self.panels.append({"ax": ax, "inset": self._inset_axes(P["map"])})
         self._static_hud()
 
     # ------------------------------------------------------------------------------------ helpers
@@ -424,6 +459,7 @@ class Scene:
             self._bars(k, a, now)
             self._counters(k, a, now)
             self._caption(k, a, f)
+            self._inset(k, a, f)
         canvas = self.fig.canvas
         canvas.draw()
         return canvas.buffer_rgba()
@@ -738,6 +774,55 @@ class Scene:
             self.live_text(b.x + 14, y0 + pad + h_t + 6 + h_b + 6, qtxt, fontsize=fs_q, style="italic",
                            va="top", color=t["ink2"], alpha=alpha, linespacing=1.3, zorder=7)
 
+    def _inset_box(self, m: Box) -> Box:
+        w = {"square": 240, "main": 460}.get(self.kind, 440)
+        return Box(m.x + m.w - w - 12, m.y + 12, w, w * 9 / 16)
+
+    def _inset_axes(self, m: Box):
+        b = self._inset_box(m)
+        ax = self.fig.add_axes(b.frac(self.W, self.H), zorder=30)
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.set_visible(False)
+        return {"ax": ax, "im": None, "box": b}
+
+    def _inset(self, k: int, a: Arm, f: int) -> None:
+        """A real OpenTTD close-up (engine screenshot, OpenGFX) over the map's corner while a caption about
+        that site shows, with a slow push-in."""
+        ins = self.panels[k]["inset"]
+        ins["ax"].set_visible(False)
+        got = story.caption_at(self.caps[k], f)
+        if got is None or not a.shots:
+            return
+        c, alpha = got
+        shot = inset_for(a.shots, c.kind)
+        if shot is None:
+            return
+        ax, b, t = ins["ax"], ins["box"], self.t
+        sub = ken_burns(shot["img"], (f - c.frame) / max(1, c.frames))
+        if ins["im"] is None:
+            ins["im"] = ax.imshow(sub, interpolation="lanczos", aspect="auto")
+        else:
+            ins["im"].set_data(sub)
+            ins["im"].set_extent((-0.5, sub.shape[1] - 0.5, sub.shape[0] - 0.5, -0.5))
+        ax.set_xlim(-0.5, sub.shape[1] - 0.5)
+        ax.set_ylim(sub.shape[0] - 0.5, -0.5)
+        ins["im"].set_alpha(alpha)
+        col = self.col.get(shot["grantee"], t["ink"])
+        for sp in ax.spines.values():
+            sp.set_color(col)
+            sp.set_linewidth(2)
+            sp.set_alpha(alpha)
+        ax.set_visible(True)
+        d = display_date(shot["tick"], a.doc["start_ticks"], a.base["start_ymd"])
+        label = (f"OpenTTD, {d:%b %Y}: {a.letter.get(shot['grantee'], '?')}'s site on "
+                 f"{a.letter.get(shot['grantor'], '?')}'s land ({shot['contract']})")
+        fs = 10.5 if self.kind != "square" else 7.5
+        strip = Box(b.x, b.y + b.h, b.w, _px(fs) * 1.7)
+        self.rect(strip, t["caption_bg"], alpha=0.9 * alpha, live=True, z=29)
+        self.live_text(b.x + 8, strip.y + strip.h / 2, label, fontsize=fs, va="center", color=t["ink"],
+                       alpha=alpha, zorder=31)
+
     def _cap_col(self, c: story.Caption) -> str:
         t = self.t
         return {"broken": t["broken"], "partial": t["broken"], "late": t["late"], "plain_late": t["late"],
@@ -844,20 +929,17 @@ def captions_for(arms: list[Arm], sched: list[float], quotes: bool, hold_s: floa
 def still_frames(arms: list[Arm], sched: list[float], caps: list[list[story.Caption]]) -> dict[int, str]:
     """Key moments: the opening (after the title), the first licence, the first broken promise, a frame
     with the most licences in force, the horizon and the end."""
-    from railhead.timelapse import frame_of
 
     out: dict[int, str] = {}
     n = len(sched)
     out[round(1.7 * FPS)] = "open"
     for cs in caps:
         for c in cs:
-            if c.kind in ("licence_signed", "broken", "collected", "paid", "amended"):
+            if c.kind in ("licence_signed", "broken", "collected", "paid", "amended", "horizon"):
                 out.setdefault(min(n - 1, c.frame + round(1.2 * FPS)), c.kind)
-    a0 = arms[0]
     busiest = max(range(n), key=lambda f: sum(sum(1 for lc in a.lics if lc.start <= sched[f] < lc.end)
                                                for a in arms) + f / n)
     out.setdefault(busiest, "busiest")
-    out.setdefault(frame_of(a0.doc["horizon_ticks"] - 30 * story.TICKS_PER_DAY, sched), "horizon")
     out[n - 1] = "end"
     return dict(sorted(out.items()))
 

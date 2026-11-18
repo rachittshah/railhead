@@ -3,7 +3,7 @@
     railhead waybill-cinema <run_dir> [<run_dir_2>] --out DIR [--task DIR [--task2 DIR]]
                             [--sample-only | --render-only] [--resample] [--grid-days 2]
                             [--theme dark,light] [--seconds 60] [--cuts main,split,social,square,stills]
-                            [--4k] [--no-quotes] [--still-only DATE]
+                            [--4k] [--no-quotes] [--still-only DATE] [--engine-shots]
 
 Two stages, like ``railhead timelapse``:
 
@@ -11,7 +11,9 @@ Two stages, like ``railhead timelapse``:
    sealed start with the Waybill replay itself and read on a fine tick grid; every number that
    ``result.json`` also has must agree, else nothing is rendered.
 2. **Render** (matplotlib + ffmpeg, no engine; :mod:`railhead.cinema.scene`). With two runs of the same
-   seed (two arms), the main cut is the split screen, synchronised by game date.
+   seed (two arms), the main cut is the split screen, synchronised by game date. ``--engine-shots`` first
+   takes real OpenTTD close-ups of key sites (:mod:`railhead.cinema.shots`, needs the GUI build and a
+   display) and shows them as inserts with the captions.
 """
 
 from __future__ import annotations
@@ -69,6 +71,11 @@ def main(argv: list[str]) -> int:
         from railhead.cinema.sample import arm_of
 
         arms = [arm_of(Path(r)) for r in runs]
+    if "--engine-shots" in argv:  # real OpenTTD close-ups from the sample stage's saves (needs the GUI build)
+        from railhead.cinema.shots import make_shots
+
+        for arm in arms:
+            print(json.dumps({"arm": arm, "shots": [x["name"] for x in make_shots(out, arm)]}), flush=True)
     if "--sample-only" not in argv:
         from railhead.cinema.scene import render_all
 

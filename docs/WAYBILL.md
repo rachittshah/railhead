@@ -656,7 +656,7 @@ Projection: 35 minutes for 90 game days with 8 agents is about 2.4 h per game ye
 railhead waybill-cinema <run_dir> [<run_dir_2>] --out DIR [--task DIR [--task2 DIR]]
                         [--sample-only | --render-only] [--resample] [--grid-days 2]
                         [--theme dark,light] [--seconds 60] [--cuts main,split,social,square,stills]
-                        [--4k] [--no-quotes] [--still-only YYYY-MM-DD]
+                        [--4k] [--no-quotes] [--still-only YYYY-MM-DD] [--engine-shots]
 ```
 
 Example (the two arms of one seed; the split screen needs two runs of the same `start.sav`):
@@ -675,6 +675,8 @@ railhead waybill-cinema runs/s2-enforced runs/s2-cheap --out out/cinema --render
 5. At each stop the sampler records, for each company: cash, loan, net worth, ledger balance, stations, routes (consecutive stops of the vehicle orders, by mode) and vehicles by mode. It also records the exchange counters (the arena `contract_stats` and the licences in force). The industry tiles, the regions, and the exchange state at the horizon go into the sample file one time.
 6. The sampler compares each number that `result.json` also has: the net worth at the horizon and after the run-off, the ledger balance, and the score of each company; the acts, failed acts, steps, log-end tick and end tick; and the contract totals. If one number is different, the command stops with exit code 1 (`CinemaMismatch`), and the render stage refuses the sample file.
 
+7. At three ticks the sampler also saves the world (`World.save`, a synchronous `save` over the admin port) for the close-ups of section 13.3: 60 days after the first licence is accepted, at the first broken obligation, and at the horizon. The saves go to `<out>/saves/<arm>/`. A save does not change the world: the integration test replays one log with and without the hook and the saves, and compares all checksums, the net worth and the exchange state.
+
 The file is `<out>/samples/<arm>.json`. A second run uses it again if the log hash is the same (`--resample` makes it again). Pilot v3 (2 arms, 4 companies, 1095 game days) samples in about 25 seconds for each arm.
 
 ### 13.2 Render (no engine)
@@ -692,6 +694,8 @@ What the frame shows:
 - **Base:** the engine minimap of the start state (land, water, towns in three tones), the region borders and letters in the company colours. The colour of a company comes from its slot. Amber and red are only for late and broken payments.
 - **Networks:** the routes and the stations of each company, as in the timelapse. A route or a station shows from the first sample that has it.
 - **Contracts:** a signed licence is a rectangle in the grantor's region in the licensee's colour, with a dashed arc from the licensee's region. A payment on time (or a collection by the exchange in `enforced`) moves a pulse along the arc. A late payment pulses amber. A broken obligation flashes red and leaves a mark on the arc. When a licence ends, a faint dotted arc stays, with its marks. A tender win is a diamond at the destination industry, with the outcome after settlement. Messages and offers are small sparks between regions. All contract events are at their exact ticks from the replay's exchange state.
+- **Score bars:** diverging from a marked zero (£0): a loss is an outlined bar to the left with its value at its end, a profit a solid bar to the right. Both panels of the split screen use the same scale.
+- **Labels on the map:** on a plate with a halo, on a short leader line away from the routes.
 - **HUD:** the date, the phase (agents in charge or run-off), the arm (`ENFORCED` or `CHEAP TALK`), the score race (net worth plus ledger, one money scale for both arms), the model of each company (`model_used`), and the counters (contracts signed, licences in force, instalments collected or paid on time, promises broken, tenders won, messages).
 - **Captions:** the first licence, the first payment or collection, the first renegotiation, the first late payment, the first broken promise, the first tender win, and the horizon. A caption can quote an agent message. The quote is the first sentence, not more than 96 characters. A message with a path, a link, an address, a key, code or an unusual character is not quoted. `--no-quotes` removes all quotes.
 - **Time:** game time is uniform, slower near key moments and faster in the run-off. Pulses and flashes are timed in video frames.
@@ -700,7 +704,22 @@ The render checks that each station is in its owner's region or in a licence tha
 
 Fonts: the system fonts Avenir and DIN Alternate (macOS), else DejaVu Sans (bundled with matplotlib).
 
-### 13.3 Limitations
+### 13.3 Engine close-ups (`--engine-shots`)
+
+`--engine-shots` adds real OpenTTD pictures (the engine's own graphics, OpenGFX) as inserts: the first licensed site, the site of the first broken promise, and licensed sites at the horizon. Each insert shows while the caption about that site shows, with a slow push-in and a label (date, licensee, grantor, contract).
+
+The dedicated server cannot make them. It runs with the null blitter (screen depth 0): `screenshot normal`, `big` and `giant` over the admin port write nothing and log `Screenshot failed!`. Only `minimap` works, because it draws its own 32-bit buffer. The null video driver also cannot make them: it forces the null blitter, and it does not run the queue in which the screenshot requests of the console wait.
+
+Thus `railhead.cinema.shots` uses the GUI build of the engine (`$RAILHEAD_OPENTTD_GUI`, else `.cache/openttd-src/build-gui/openttd`) with a real video driver (cocoa on macOS):
+
+1. For each save, the GUI engine loads it in a private instance directory (`-x -X`). `scripts/game_start.scr` contains `screenshot giant`, which draws the whole map at the default zoom (about 16000 x 8000 pixels for 256 x 256 tiles, 4 seconds). A small window opens and closes when the PNG is complete. The save is not written back.
+2. Each close-up is a 960 x 540 crop of that image around the licensee's stations on the site (`iso_px` maps a tile to the image). The giant image is then deleted. The crops are in `<out>/shots/<arm>/`, with `shots.json`.
+
+`scrollto` followed by `screenshot normal` would avoid the giant image, but the loaded game resets the view after `game_start.scr` runs, so each such shot showed the saved view.
+
+This step needs a display. It cannot run in CI.
+
+### 13.4 Limitations
 
 - The base map is the minimap of the start state. Towns that grow and terrain changes do not show.
 - Air routes are drawn as arcs between the stations; other routes as straight lines between consecutive stops, not along the track or the road.

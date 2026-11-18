@@ -98,7 +98,7 @@ def test_cinema_samples_a_verified_run_and_renders_frames(tmp_path):
 
 def test_observer_hook_does_not_change_the_replay_and_the_verifier_never_uses_it(tmp_path, monkeypatch):
     """The same merged log replayed twice, with the sampling hook on a fine grid (37 ticks, so most steps
-    run in several pieces) and without it: every checkpoint, the final checksum, the net worth and the
+    run in several pieces, and a savegame every third step) and without it: every checkpoint, the final checksum, the net worth and the
     exchange state are equal. ``verify_multi`` never passes the hook."""
     from railhead.multi import verify as mv
     from railhead.multi.market import MarketConfig
@@ -122,6 +122,8 @@ def test_observer_hook_does_not_change_the_replay_and_the_verifier_never_uses_it
         for c in sw.ids:  # read like the sampler does
             sw.query(c, "stations")
             sw.query(c, "vehicles")
+        if why == "step" and calls["step"] % 3 == 1:  # and save the world, as the sampler does for close-ups
+            sw.world.save(tmp_path / "saves" / f"s{calls['step']}.sav")
 
     def replay(sub, **kw):
         return replay_multi(task / "start.sav", log, tmp_path / sub, allowed=default_whitelist() or set(),
@@ -131,6 +133,7 @@ def test_observer_hook_does_not_change_the_replay_and_the_verifier_never_uses_it
     plain = replay("plain")
     hooked = replay("hooked", observe=observe, grid_ticks=37)
     assert calls["grid"] > calls["step"] > 0
+    assert len(list((tmp_path / "saves").glob("*.sav"))) >= 2
     assert plain.valid and hooked.valid and not hooked.divergences
     assert hooked.checkpoints == plain.checkpoints  # every step and seal checksum, every act outcome
     assert hooked.final_checksum == plain.final_checksum and hooked.end_ticks == plain.end_ticks

@@ -318,3 +318,51 @@ def test_one_frame_renders_from_synthetic_samples(tmp_path):
         finally:
             scene.close()
     json.dumps(_doc("x", 1))  # the sample doc shape is plain JSON
+
+
+# ============================================================================================ engine shots
+def test_save_plan_finds_the_first_licence_and_the_first_break():
+    from railhead.cinema.shots import save_plan
+
+    recs = [{"kind": "ex", "ticks": 100, "x": {"op": "offer", "contract_id": "C1", "kind": "supply"}},
+            {"kind": "ex", "ticks": 110, "x": {"op": "accept", "contract_id": "C1"}},
+            {"kind": "ex", "ticks": 200, "x": {"op": "offer", "contract_id": "C2", "kind": "licence"}},
+            {"kind": "ex", "ticks": 210, "x": {"op": "accept", "contract_id": "C2"}},
+            {"kind": "ex", "ticks": 900, "x": {"op": "obligation_settle", "outcome": "kept"}},
+            {"kind": "ex", "ticks": 950, "x": {"op": "obligation_settle", "outcome": "broken"}},
+            {"kind": "ex", "ticks": 990, "x": {"op": "obligation_settle", "outcome": "broken"}}]
+    assert save_plan(recs) == {"licence": 210 + 60 * D, "broken": 950}
+    assert save_plan([]) == {}
+
+
+def test_iso_px_maps_tiles_onto_the_giant_screenshot():
+    from railhead.cinema.shots import crop_at, iso_px
+
+    w, h = 16257, 8255  # the engine's giant screenshot of a 256 x 256 map
+    left, top = iso_px(255, 0, w, h, 256, 256), iso_px(0, 0, w, h, 256, 256)
+    right, bottom = iso_px(0, 255, w, h, 256, 256), iso_px(255, 255, w, h, 256, 256)
+    assert abs(left[0]) < 64 and abs(right[0] - w) < 64  # west and east corners at the edges
+    assert abs(top[0] - w / 2) < 64 and 0 <= top[1] < 200  # north at the top centre
+    assert abs(bottom[1] - h) < 64
+    np = pytest.importorskip("numpy")
+    img = np.zeros((300, 400, 3))
+    assert crop_at(img, 0, 0, 8, 8, 100, 50).shape == (50, 100, 3)  # clamped inside the image
+
+
+def test_sites_pick_the_licensee_stations_and_inserts_follow_the_captions():
+    from railhead.cinema.scene import inset_for, ken_burns
+    from railhead.cinema.shots import sites
+
+    doc = _doc("cheap_talk", 1)
+    doc["saves"] = {"licence": 500, "broken": 3500, "horizon": 4500}
+    doc["samples"][2]["co"]["0"]["st"] = [[9, 12, 14], [10, 14, 16]]  # A's stations on its site in B's land
+    out = sites(doc)
+    assert [s["name"] for s in out] == ["licence-C1", "broken-C1", "horizon-C1"]
+    assert out[0]["tile"] == 15 * 64 + 13 and (out[0]["grantee"], out[0]["grantor"]) == ("0", "1")
+    assert out[2]["tile"] == 15 * 64 + 20  # no station on the site then: the centre of the (amended) site
+    shots = [s | {"img": None} for s in out]
+    assert inset_for(shots, "licence_signed")["name"] == "licence-C1"
+    assert inset_for(shots, "partial")["name"] == "broken-C1" and inset_for(shots, "paid") is None
+    np = pytest.importorskip("numpy")
+    img = np.zeros((540, 960, 3))
+    assert ken_burns(img, 0).shape[:2] == (335, 595) and ken_burns(img, 1).shape[:2] == (270, 480)
