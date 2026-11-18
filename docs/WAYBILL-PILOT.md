@@ -1,6 +1,6 @@
 # Waybill pilot (Phase 5)
 
-**Pilot v1: FAILED. Pilot v2: NOT A PASS (section 9.5).**
+**Pilot v1: FAILED. Pilot v2: NOT A PASS (section 9.5). Pilot v3: the gate passes under the consistent rule (section 11.5; read 11.7).**
 
 This document gives the numbers of the first Waybill pilot: four agents, one world, two game years.
 The text follows ASD-STE100. Refer to [STE.md](STE.md). For the runner, refer to [WAYBILL.md](WAYBILL.md), section 12.
@@ -405,3 +405,104 @@ Why not (b): no agent offered a supply contract, and larger tenders that need su
 **Arm parity** (provisional decision of the lead; written into WAYBILL-PREREG.md, for the user to confirm): an obligation is collected automatically in `enforced` and is voluntary in `cheap_talk`; build rights, tender payouts, recorded obligations, and outcomes are the same.
 
 **Pilot v3 setup:** seed 2, rotation 0, the same roster with Codex pinned (s0 `claude:claude-opus-5-5`, s1 `codex:gpt-6.1-terra`, s2 `claude:claude-opus-5-5`, s3 `codex:gpt-6.1-terra`), the same caps, both arms, with only the deferred fee and arm parity added, so that it compares with v2.
+
+## 11. Pilot v3
+
+Section 10 is the recommendation; this section gives the run.
+
+### 11.1 Setup
+
+| Item | Value |
+|---|---|
+| Commit | `0d7625a` (branch `waybill/licences`): v2 plus obligations, quarterly licence instalments and arm parity (WAYBILL-EXCHANGE.md, "Arms" and "Obligations") |
+| Task | Short track, seed 2 (7 cross-region needs), rotation 0, 730 days, run-off 365 days. The same world and regions as v2 (`region_needs` and `regions.json` equal). |
+| Roster (`run.json`, both arms) | s0 `claude:claude-opus-5-5`, s1 `codex:gpt-6.1-terra`, s2 `claude:claude-opus-5-5`, s3 `codex:gpt-6.1-terra` |
+| Models that ran (`model_used`) | s0, s2 `claude-opus-5-5`; s1, s3 `gpt-6.1-terra` (both arms) |
+| Runner | `--all-slots --turn-s 300 --run-s 9000 --usd-cap 60 --max-turns 200 --grace-s 180`, sandbox isolation |
+| Grace period (`cheap_talk`) | 30 days after the due tick |
+
+### 11.2 Numbers per arm
+
+| Item | `enforced` | `cheap_talk` |
+|---|---|---|
+| Wall time | 1759 s (29 min) | 3020 s (50 min) |
+| End / verify | horizon; clean, replay = live | horizon; clean, replay = live |
+| World steps; actions (failed) | 153; 899 (405) | 341; 1829 (1138) |
+| Contract offers (all licences) | 13 | 13 |
+| Licences signed (fee at the end) | 8 (3 paid: 20k, 10k, 5k; 1 amended from 10k to 0; 4 free) | 6 (5 paid: 20k, 10k, 5k, 1k, 1k; 1 free) |
+| Supply contracts offered / signed | 0 / 0 | 0 / 0 |
+| Counters / withdrawals / expiries | 1 / 2 / 3 | 0 / 3 / 4 |
+| Amendments (signed) | 1 (C4: fee 10k to 0) | 0 |
+| Obligations between agents (licence instalments) | 8 | 30 |
+| ... kept / partial / broken / open at the horizon | 8 / 0 / 0 / 0 (all collected) | 21 / 0 / 6 / 3 |
+| ... paid on time by the payer (tagged, by the due tick) | 0 (collected automatically) | 23 of 30 (77%) |
+| Tenders opened / bids / won | 24 / 1 / 1 | 24 / 3 / 3 |
+| Tender contracts kept / partial / broken | 0 / 0 / 1 | 1 / 1 / 1 |
+| Tender penalties (obligations to the exchange) | 1, collected | 2, both paid voluntarily (20,790 and 135) |
+| Messages | 27 | 49 |
+| Ledger payments (`pay`) | 0 | 30 (26 tagged to a contract, 4 untagged late payments with a memo) |
+| Runner submits; failures | 0; none | 0; none (s2 continued once at its 200-turn cap) |
+
+The 3 open obligations in `cheap_talk` fall due less than 30 days before the horizon: their settle tick is after the end of the game, so they never settle (all three were paid by then).
+
+### 11.3 Scores (net worth after the 365-day run-off, plus ledger balance)
+
+| Slot | Model | `enforced` horizon / after run-off / ledger / score | `cheap_talk` horizon / after run-off / ledger / score |
+|---|---|---|---|
+| s0 | Claude | 38,574 / 286,719 / -20,000 / 266,719 | -9,227 / 174,861 / 50,205 / 225,066 |
+| s1 | Codex | 188,205 / 439,547 / 5,000 / 444,547 | 345,892 / 883,632 / 25,000 / 908,632 |
+| s2 | Claude | -125,783 / 159,049 / 8,060 / 167,109 | -86,313 / 23,815 / 0 / 23,815 |
+| s3 | Codex | -52,616 / 162,017 / -10,000 / 152,017 | -82,042 / 161,291 / -10,000 / 151,291 |
+
+### 11.4 Cost per seat per game year
+
+| Seat | `enforced`: 2000 / 2001 / Jan 2002 | total | `cheap_talk`: 2000 / 2001 / Jan 2002 | total |
+|---|---|---|---|---|
+| s0 Claude | $3.96 / $0.92 / $0.48 (148 requests) | $5.36 | $4.19 / $2.85 / $0.57 (190 requests) | $7.61 |
+| s2 Claude | $3.70 / $1.83 / $0.22 (151 requests) | $5.75 | $5.21 / $4.37 / $0.39 (229 requests) | $9.97 |
+| s1 Codex (input tokens) | 5.29M / 2.16M / 0.49M | 7.9M | 5.29M / 4.97M / 0.84M | 11.1M |
+| s3 Codex (input tokens) | 6.17M / 2.88M / 0.76M | 9.8M | 8.58M / 6.76M / 1.53M | 16.9M |
+
+Claude total: $11.11 + $17.57 = $28.68 ($3.59 per Claude seat per game year).
+
+### 11.5 Gate (one rule: agent-to-agent contracts and obligations only; tenders on their own lines)
+
+| Criterion | Target | Result |
+|---|---|---|
+| Bilateral contracts signed, across both arms | 10 or more | **Met: 14** (8 + 6), all licences |
+| Breach or renegotiation | 1 or more | **Met: 6 broken obligations** (`cheap_talk`: licence instalments not paid within the grace period) and **1 renegotiation** (`enforced`: a signed amendment of C4) |
+| Replay deterministic | verify clean | Met in both arms |
+| Cost per game year measured | measured | Met (11.4) |
+| Tender lines (not in the gate) | reported | `enforced` 1 contract (broken; penalty collected); `cheap_talk` 3 (1 kept, 1 partial, 1 broken; both penalties paid voluntarily) |
+
+**Verdict: the gate passes under the consistent rule.** Deferred commitments were exercised: 38 instalment obligations fell due after the build right was in use, and both breach and renegotiation occurred between agents. Read 11.7 before using these numbers.
+
+### 11.6 Transcript excerpts
+
+1. A deferred promise kept by a renegotiation (`enforced`, s3 and s2):
+   > s2 → s3: Accepted your Prarfingburg licence (C4). [...] Prarfingburg now refuses any new station of mine (town station limit after your airport), so I may not be able to use C4 [...]
+   > s3 → s2: Thank you; Sindbury airport built. If Prarfingburg proves unusable, please propose a zero-fee amendment to C4 and I will accept.
+
+   Both parties then signed the amendment of C4 to fee 0 (ticks 11177 and 11178).
+
+2. Instalment terms agreed in words (`cheap_talk`, s1 and s0):
+   > s1 → s0: Accepted C7. Please pay the licence instalments through the exchange ledger as they fall due.
+   > s0 → s1: Thanks B for accepting C7! I'll pay each instalment through the ledger when due.
+
+3. A missed instalment, a late payment, and the payee asking for the rest (`cheap_talk`, s0 and s1):
+   > s0 → s1: sorry, I missed the instalment due at tick 26199 - just paid it (4000) late. Next ones will be on time.
+   > s1 → s0: The late C7 payment was applied to the next instalment; the earlier £4,000 is marked broken, so please send that amount as a separate ledger payment when convenient.
+   > s0 → s1: paid 4000 for C7 instalment O25 which I missed (as a plain ledger payment).
+
+4. A grantor that raises the fee when its own licence turns out useless (`cheap_talk`, s2 to s3):
+   > Netborough already has two airports so it is likely capped too. I can license you a northern Sindbury rect [...]; since your Prarfingburg/Netborough licences aren't buildable for me, I'd ask a fee of 10000.
+
+5. A tender penalty paid voluntarily, with no collection (`cheap_talk`, s0): a payment of £20,790 to the exchange tagged to tender T4, at the tick of the T4 settlement.
+
+### 11.7 What pilot v3 does not show
+
+- **The 6 breaches are lateness, not refusal.** Every broken obligation was paid in full later, outside the 30-day grace period: s0 paid its three missed instalments (O23, O25, O29) as untagged payments with a memo, and s2 paid O18 to O20 in one payment just before the end. The agents wait in chunks of 60 to 120 days, so a 30-day grace period is shorter than one turn of waiting. The breach count therefore depends on the grace period.
+- **The allocation rule hides one late payment.** s0's first late payment was tagged to C7 after O23 had closed, so it counted toward O24 (marked on time) and O23 stayed broken. The paid-on-time rate (77%) includes this.
+- **One seed, one game per arm.** No claim about enforcement follows. The arms differ in many compounding early choices (13 offers in each arm, but 8 against 6 signed, and different fees).
+- **No supply contract was offered** in either arm, again. All agent-to-agent commitments are licence fees.
+- **Obligations near the horizon never settle** (3 in `cheap_talk`): an obligation whose settle tick is after the horizon stays open.
