@@ -295,6 +295,7 @@ class Scene:
         ax.imshow(img, extent=(-0.5, a.size_x - 0.5, a.size_y - 0.5, -0.5), interpolation="bilinear", zorder=2)
 
     def _regions(self, ax, a: Arm) -> None:
+        from matplotlib import patheffects
         from matplotlib.patches import Rectangle
 
         for cid in a.ids:
@@ -309,8 +310,9 @@ class Scene:
             if rects:
                 big = max(rects, key=lambda r: (r[2] - r[0]) * (r[3] - r[1]))
                 left, top, w, h = rect_px(big, a.size_x)
-                ax.text(left + 3, top + 2.5, a.letter[cid], color=c, alpha=0.75, fontsize=19 if self.kind != "square"
-                        else 13, fontweight="bold", va="top", ha="left", zorder=4, parse_math=False)
+                ax.text(left + 3, top + 2.5, a.letter[cid], color=c, alpha=0.85, fontsize=19 if self.kind != "square"
+                        else 13, fontweight="bold", va="top", ha="left", zorder=4, parse_math=False,
+                        path_effects=[patheffects.withStroke(linewidth=3, foreground=self.t["bg"])])
 
     # ------------------------------------------------------------------------------------ static HUD
     def _static_hud(self) -> None:
@@ -576,9 +578,13 @@ class Scene:
                                         linewidth=2 * lw_k, zorder=12)))
             if outcome:
                 oc = {"kept": t["paid"], "partial": t["late"], "broken": t["broken"]}.get(outcome, t["ink2"])
-                add(ax.text(x + 3.5, y - 2 + row * (9 if not sq else 12) / zoom, f"{e.ref} {outcome}", color=oc,
-                            fontsize=8.5 if not sq else 6.5, fontweight="bold", va="center", zorder=13,
-                            parse_math=False))
+                # off the lines: a plate to the left of the marker, on a short leader line
+                lx, ly = x + 14 / zoom, y - 10 / zoom + row * (11 if not sq else 15) / zoom
+                add(ax.plot([x, lx], [y, ly], color=oc, linewidth=0.8, alpha=0.8, zorder=13)[0])
+                add(ax.text(lx, ly, f"{e.ref} {outcome}", color=oc, fontsize=8.5 if not sq else 6.5,
+                            fontweight="bold", va="center", ha="left", zorder=14, parse_math=False,
+                            bbox={"boxstyle": "round,pad=0.25", "fc": t["caption_bg"], "ec": oc, "lw": 0.7,
+                                  "alpha": 0.92}))
 
     @staticmethod
     def _payer_is_grantee(a: Arm, p: story.Pulse) -> bool:
@@ -613,8 +619,9 @@ class Scene:
         val_w = 96 if not sq else 70
         lo, hi = self.money_lim
         span = hi - lo or 1
-        bar_x0 = b.x + name_w
-        bar_w = b.w - name_w - val_w
+        neg_w = (84 if not sq else 62) if lo < 0 else 0  # room for a negative value left of its bar
+        bar_x0 = b.x + name_w + neg_w
+        bar_w = b.w - name_w - neg_w - val_w
         zero = bar_x0 + bar_w * (0 - lo) / span
         s = a.sample_at(now)
         for cid in a.ids:
@@ -639,10 +646,19 @@ class Scene:
             x1 = bar_x0 + bar_w * (v - lo) / span
             bh = min(row_h * 0.52, 26 if not sq else 14)
             left, w = (zero, x1 - zero) if v >= 0 else (x1, zero - x1)
-            self.rect(Box(left, y + row_h * 0.5 - bh / 2, max(w, 1.5), bh), col, alpha=0.9, live=True)
-            self.live_text(max(x1, zero) + 8, y + row_h * 0.5, money(v), fontsize=fs, va="center", color=t["ink"],
-                           family=FONT_NUM)
-        self.rect(Box(zero - 0.5, b.y + title_h, 1, b.h - title_h), t["ink3"], alpha=0.6, live=True)
+            if v >= 0:
+                self.rect(Box(left, y + row_h * 0.5 - bh / 2, max(w, 1.5), bh), col, alpha=0.9, live=True)
+                self.live_text(x1 + 8, y + row_h * 0.5, money(v), fontsize=fs, va="center", color=t["ink"],
+                               family=FONT_NUM)
+            else:  # a loss: outlined, to the left of zero, its value at its far end
+                bar = Box(left, y + row_h * 0.5 - bh / 2, max(w, 1.5), bh)
+                self.rect(bar, col, alpha=0.25, live=True)
+                self.rect(bar, "none", alpha=0.95, live=True, ec=col, linewidth=1.2)
+                self.live_text(x1 - 8, y + row_h * 0.5, money(v), fontsize=fs, ha="right", va="center",
+                               color=t["ink2"], family=FONT_NUM)
+        self.rect(Box(zero - 1, b.y + title_h - 6, 2, b.h - title_h + 6), t["ink"], alpha=0.85, live=True)
+        self.live_text(zero, b.y + title_h - 8, "£0", fontsize=fs * 0.8, ha="center", va="bottom",
+                       color=t["ink"], family=FONT_NUM)
 
     # ------------------------------------------------------------------------------------ counters
     def _counters(self, k: int, a: Arm, now: float) -> None:
