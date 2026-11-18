@@ -364,6 +364,8 @@ The world stops at each exchange deadline (offer expiry, window start, bid close
 |---|---|
 | `deadline` (forced) | A contract of the company reaches its deadline at this tick |
 | `obligation_due` (forced) | An obligation of the company (a payment it owes) falls due at this tick, in both arms |
+
+The `step` record keeps one reason for each waker. The reply to the agent's `wait` also has `reasons`: every reason of that tick for that company, so that a deadline or the end of the wait does not hide an `obligation_due` (`rh wait` prints all of them).
 | `tender` (forced) | The tenders of a quarter open at this tick (all waiting companies) |
 | `deadline` (`until=deadline`) | Any exchange deadline at this tick names the company (offer expiry, window start, bid close) |
 | `offer_received` (`until=offer_received`) | Since the wait started: an offer to the company, or a counter or amendment from the other party of its contract |
