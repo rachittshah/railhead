@@ -175,18 +175,31 @@ def probe(task_dir: Path, out: Path) -> dict:
 
 def minimap_shot(w, dest: Path, name: str = "railhead_timelapse_base") -> Path:
     """The engine's own minimap of a loaded world (``screenshot minimap`` over the admin port), copied to
-    ``dest``."""
-    shot = w.server.workdir / "screenshot" / f"{name}.png"
-    shot.unlink(missing_ok=True)
+    ``dest`` as PNG. An engine built without libpng (the CI build) writes BMP; that file is converted."""
+    shots = [w.server.workdir / "screenshot" / f"{name}.{ext}" for ext in ("png", "bmp")]
+    for s in shots:
+        s.unlink(missing_ok=True)
     w.admin.rcon(f"screenshot minimap {name}")
     deadline = time.monotonic() + 30
-    while not shot.exists() and time.monotonic() < deadline:
+    while not any(s.exists() for s in shots) and time.monotonic() < deadline:
         time.sleep(0.1)
-    if not shot.exists():
-        raise RuntimeError(f"the engine did not write {shot}")
-    time.sleep(0.5)  # let the PNG writer finish
-    shutil.copy(shot, dest)
+    found = [s for s in shots if s.exists()]
+    if not found:
+        raise RuntimeError(f"the engine did not write {shots[0]} (or .bmp)")
+    time.sleep(0.5)  # let the image writer finish
+    copy_as_png(found[0], Path(dest))
     return Path(dest)
+
+
+def copy_as_png(src: Path, dest: Path) -> None:
+    """Copy an engine screenshot to ``dest``; a BMP is converted to PNG (Pillow, a matplotlib dependency)."""
+    if src.suffix.lower() == ".png":
+        shutil.copy(src, dest)
+        return
+    from PIL import Image
+
+    with Image.open(src) as im:
+        im.convert("RGB").save(dest, format="PNG")
 
 
 def expected_results(arena_dir: Path, player: str, expected_doc: dict | None) -> dict:
