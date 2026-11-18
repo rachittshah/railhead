@@ -23,7 +23,7 @@ From the design document ("Hypotheses"), adapted to the mechanics as built. The 
 
 Note on H1: in `enforced` the exchange collects every obligation, so its repayment rate is 1 by construction. A test "`enforced` > `cheap_talk`" on repayment would hold whenever one cheap-talk instalment is short, so it is not a hypothesis test: H1a is reported as an estimate with its interval. H1b is the comparative test. It can be sparse: in pilots v2 and v3 no agent offered a bilateral supply contract, and only tender contracts settled (1 in `enforced` and 3 in `cheap_talk` in v3).
 
-Measures that the merged log cannot give (section 6 of WAYBILL-ANALYSIS.md): H2 uses a proxy for "the seller had a route" (a `partial` outcome, that is delivered > 0); the cargo measure of H3 and the market-share measure of H4 need a replay-based delivery extraction and are not in the first analysis release. The confirmatory H3 test uses the sum of scores.
+Measures that the merged log cannot give (section 6 of WAYBILL-ANALYSIS.md): H2 uses a proxy for "the seller had a route" (a `partial` outcome, that is delivered > 0); the cargo measure of H3 and the market-share measure of H4 come from a replay-based delivery extraction (`railhead waybill-deliveries`, cargo monitors on every company and cross-region need), reported for two windows (to the horizon, and to the end of the run-off). The confirmatory H3 test uses the sum of scores.
 
 ## 3. Arms (to be confirmed by the user)
 

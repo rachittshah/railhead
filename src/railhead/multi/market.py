@@ -224,6 +224,26 @@ def industry_snapshot(industries: list[dict], regions: RegionMap | None, tick: i
     return out
 
 
+def _needs(snapshot: list[dict], max_distance: int | None):
+    """(destination row, cargo, local?) for each need of :func:`cross_region_needs`, in snapshot order."""
+    for dest in snapshot:
+        if dest["region"] < 0:
+            continue
+        for cargo in dest["accepts"]:
+            prods = [p for p in snapshot if cargo in p["produces"] and p["id"] != dest["id"] and p["region"] >= 0]
+            if max_distance is not None:
+                prods = [p for p in prods if abs(p["tile"][0] - dest["tile"][0])
+                         + abs(p["tile"][1] - dest["tile"][1]) <= max_distance]
+            if prods:
+                yield dest, cargo, any(p["region"] == dest["region"] for p in prods)
+
+
+def cross_region_need_list(snapshot: list[dict], max_distance: int | None = None) -> list[tuple[int, int]]:
+    """The cross-only needs of :func:`cross_region_needs` as sorted (destination industry, cargo) pairs: the
+    cargo markets of the Waybill H3 and H4 delivery measures (``railhead.multi.deliveries``)."""
+    return sorted({(int(d["id"]), int(c)) for d, c, is_local in _needs(snapshot, max_distance) if not is_local})
+
+
 def cross_region_needs(snapshot: list[dict], max_distance: int | None = None) -> dict:
     """How much of the world's freight crosses franchise regions, from an industry snapshot.
 
@@ -238,23 +258,14 @@ def cross_region_needs(snapshot: list[dict], max_distance: int | None = None) ->
 
     local = cross = 0
     by_region: dict[str, dict[str, int]] = {}
-    for dest in snapshot:
-        if dest["region"] < 0:
-            continue
-        for cargo in dest["accepts"]:
-            prods = [p for p in snapshot if cargo in p["produces"] and p["id"] != dest["id"] and p["region"] >= 0]
-            if max_distance is not None:
-                prods = [p for p in prods if abs(p["tile"][0] - dest["tile"][0])
-                         + abs(p["tile"][1] - dest["tile"][1]) <= max_distance]
-            if not prods:
-                continue
-            row = by_region.setdefault(str(dest["region"]), {"local": 0, "cross_only": 0})
-            if any(p["region"] == dest["region"] for p in prods):
-                local += 1
-                row["local"] += 1
-            else:
-                cross += 1
-                row["cross_only"] += 1
+    for dest, _cargo, is_local in _needs(snapshot, max_distance):
+        row = by_region.setdefault(str(dest["region"]), {"local": 0, "cross_only": 0})
+        if is_local:
+            local += 1
+            row["local"] += 1
+        else:
+            cross += 1
+            row["cross_only"] += 1
     counts: dict[str, int] = {}
     for i in snapshot:
         counts[str(i["region"])] = counts.get(str(i["region"]), 0) + 1

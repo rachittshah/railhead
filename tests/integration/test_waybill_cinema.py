@@ -140,6 +140,15 @@ def test_observer_hook_does_not_change_the_replay_and_the_verifier_never_uses_it
     assert hooked.net_worth == plain.net_worth
     assert hooked.market.state() == plain.market.state()
 
+    # the delivery extraction on the same run: it agrees with result.json and the verifier's market state
+    from railhead.multi.deliveries import extract_run, usable
+
+    doc = extract_run(run, task)
+    assert doc["check"]["ok"] and usable(run)[0] == json.loads((run / "deliveries.json").read_text())
+    assert len(doc["needs"]) == spec.objective["region_needs"]["cross_only"]
+    assert doc["monitors"]["extraction"] == len(doc["needs"]) * len(spec.objective["companies"])
+    assert doc["ticks"]["end"] == doc["ticks"]["horizon"] + spec.runoff_days * 74
+
     seen = []
 
     def spy(*a, **kw):
@@ -149,4 +158,4 @@ def test_observer_hook_does_not_change_the_replay_and_the_verifier_never_uses_it
     monkeypatch.setattr(mv, "replay_multi", spy)
     out = mv.verify_multi(task, task / "start.sav", log, tmp_path / "verify")
     assert out["rejected"] == 1 and seen
-    assert all("observe" not in kw and "grid_ticks" not in kw for kw in seen)
+    assert all("observe" not in kw and "grid_ticks" not in kw and "on_start" not in kw for kw in seen)
