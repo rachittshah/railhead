@@ -9,6 +9,7 @@
     railhead arena-run <task> <dir> claude:<model> codex:<model> ...   launch an arena (headless, traced)
     railhead arena-run --supervise|--resume <task> <dir> <players...>   resume after provider errors | after a crash or reboot
     railhead waybill-run run|resume|result ...   one Waybill game: a coordinator and N agents (docs/WAYBILL.md 12)
+    railhead waybill-analyze <run_dir>... --out DIR   pre-registered metrics of verified Waybill runs (docs/WAYBILL-ANALYSIS.md)
     railhead arena <dir> [--json]  scoreboard of several players on one task (growth curves)
     railhead ab plan|run|status|collect|report <plan.json>   A/B experiment between checkouts (docs/AB.md)
     railhead stats <export.json|map_dir>... [--tasks DIR] [--finished-only] [--out FILE]   paired differences across maps, with intervals (docs/SEEDGAMES.md)
@@ -135,6 +136,10 @@ def main(argv: list[str] | None = None) -> int:
             from railhead.arena_run import main as arena_run_main
 
             return arena_run_main(argv[1:])
+        if cmd == "waybill-analyze":
+            from railhead.multi.analysis import main as analyze_main
+
+            return analyze_main(argv[1:])
         if cmd == "waybill-run":
             from railhead.multi.arena import main as waybill_run_main
 
