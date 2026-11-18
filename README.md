@@ -474,7 +474,34 @@ Run everything from the root of the repository:
 
 The full procedures and cautions are in [docs/USAGE.md](docs/USAGE.md).
 
-## 15. Where things are
+## 15. Waybill: one world, several companies, and promises that cost money
+
+Everything above is one model per world. **Waybill** puts several AI-run freight companies in the *same* OpenTTD world, on one lockstep clock, each with its own franchise region.
+The map is cut so that some deliveries need two companies: the mine is in your region and the power station is in someone else's.
+The only way across the line is a contract: a **licence** to build in another company's region, paid in quarterly instalments, or a supply deal.
+Every contract, payment and message is written into the shared log and settled by replay, the same way the single-player scores are.
+
+The benchmark question is simple: **do agents keep promises that cost them something, and does enforcement change that?**
+Each seed is played twice. In `enforced`, the exchange collects every instalment when it falls due. In `cheap_talk`, the contracts are the same, but every payment is voluntary.
+A promise is only words, and the payer is woken on the day it falls due.
+
+<img alt="A Waybill cinema still from pilot v3, cheap-talk arm, January 2001: the shared map with four regions, licence rectangles and contract arcs, a red mark where company A missed a £4,000 instalment, an OpenTTD close-up of the licensed site, the leaderboard, and A's message: sorry, I missed the instalment, just paid it late." src="docs/img/waybill-pilot3-broken-promise.jpg" width="720">
+
+**Status: pilot stage.** The mechanics, the integrity checks and the analysis pipeline are built and tested.
+Three pilots ran, each a single game on one seed with two Claude Opus 5.5 and two Codex gpt-6.1-terra companies; the first two failed their gates and changed the rules ([WAYBILL-PILOT.md](docs/WAYBILL-PILOT.md)).
+In pilot v3 the companies signed 14 licences across the two arms.
+In `cheap_talk` they owed each other 30 instalments: 21 were kept, 6 were paid late (outside the 30-day grace), and 3 were still open at the horizon.
+**One game per arm is no evidence about enforcement.** The pre-registered runs (many seeds, both arms, with a hash-locked analysis plan) have not been run yet.
+
+| Document | Contents |
+|---|---|
+| [docs/WAYBILL.md](docs/WAYBILL.md) | The shared world: log v3, coordinator, replay, regions, market commands, task tracks, the arena runner and the cinema renderer |
+| [docs/WAYBILL-EXCHANGE.md](docs/WAYBILL-EXCHANGE.md) | The exchange: contracts, licences, obligations, escrow, the two arms and the settlement rules |
+| [docs/WAYBILL-PILOT.md](docs/WAYBILL-PILOT.md) | Pilots v1 to v3: what failed, why, and what changed |
+| [docs/WAYBILL-PREREG.md](docs/WAYBILL-PREREG.md) | The pre-registration (draft): hypotheses, metrics, tests, seeds |
+| [docs/WAYBILL-ANALYSIS.md](docs/WAYBILL-ANALYSIS.md) | `railhead waybill-analyze`: the pre-registered metrics from verified runs |
+
+## 16. Where things are
 
 | Directory | Contents |
 |---|---|
@@ -483,6 +510,8 @@ The full procedures and cautions are in [docs/USAGE.md](docs/USAGE.md).
 | `src/railhead/` | The Python package: daemon, CLIs, replay, verifier, rewards, arena tools, statistics, A/B experiments, charts and Harbor export |
 | `src/railhead/gen/` | The task generators |
 | `src/railhead/oracle/` | The scripted oracle player |
+| `src/railhead/multi/`, `src/railhead/exchange/` | Waybill: the shared world, coordinator, regions, market, arena runner and analysis; the contract exchange |
+| `src/railhead/cinema/` | The Waybill cinema renderer (sampling from a replay, frames, engine close-ups) |
 | `docker/` | The Dockerfile of the environment image and its start scripts |
 | `docs/data/` | The arena results and growth curves that the charts are drawn from |
 | `docs/img/` | The charts (SVG, light and dark) and the route maps |
