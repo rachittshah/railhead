@@ -1,0 +1,807 @@
+{
+ "track": "short",
+ "seeds": 30,
+ "roster": [
+  "claude:claude-opus-5-5",
+  "codex:gpt-6.1-terra",
+  "claude:claude-opus-5-5",
+  "codex:gpt-6.1-terra"
+ ],
+ "games": [
+  {
+   "seed": 2,
+   "rotation": 0,
+   "seats": [
+    {
+     "seat": 0,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 0
+    },
+    {
+     "seat": 1,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 1
+    },
+    {
+     "seat": 2,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 2
+    },
+    {
+     "seat": 3,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 3
+    }
+   ]
+  },
+  {
+   "seed": 5,
+   "rotation": 1,
+   "seats": [
+    {
+     "seat": 0,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 1
+    },
+    {
+     "seat": 1,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 2
+    },
+    {
+     "seat": 2,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 3
+    },
+    {
+     "seat": 3,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 0
+    }
+   ]
+  },
+  {
+   "seed": 6,
+   "rotation": 2,
+   "seats": [
+    {
+     "seat": 0,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 2
+    },
+    {
+     "seat": 1,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 3
+    },
+    {
+     "seat": 2,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 0
+    },
+    {
+     "seat": 3,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 1
+    }
+   ]
+  },
+  {
+   "seed": 7,
+   "rotation": 3,
+   "seats": [
+    {
+     "seat": 0,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 3
+    },
+    {
+     "seat": 1,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 0
+    },
+    {
+     "seat": 2,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 1
+    },
+    {
+     "seat": 3,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 2
+    }
+   ]
+  },
+  {
+   "seed": 10,
+   "rotation": 0,
+   "seats": [
+    {
+     "seat": 0,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 0
+    },
+    {
+     "seat": 1,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 1
+    },
+    {
+     "seat": 2,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 2
+    },
+    {
+     "seat": 3,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 3
+    }
+   ]
+  },
+  {
+   "seed": 12,
+   "rotation": 1,
+   "seats": [
+    {
+     "seat": 0,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 1
+    },
+    {
+     "seat": 1,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 2
+    },
+    {
+     "seat": 2,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 3
+    },
+    {
+     "seat": 3,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 0
+    }
+   ]
+  },
+  {
+   "seed": 14,
+   "rotation": 2,
+   "seats": [
+    {
+     "seat": 0,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 2
+    },
+    {
+     "seat": 1,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 3
+    },
+    {
+     "seat": 2,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 0
+    },
+    {
+     "seat": 3,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 1
+    }
+   ]
+  },
+  {
+   "seed": 15,
+   "rotation": 3,
+   "seats": [
+    {
+     "seat": 0,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 3
+    },
+    {
+     "seat": 1,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 0
+    },
+    {
+     "seat": 2,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 1
+    },
+    {
+     "seat": 3,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 2
+    }
+   ]
+  },
+  {
+   "seed": 18,
+   "rotation": 0,
+   "seats": [
+    {
+     "seat": 0,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 0
+    },
+    {
+     "seat": 1,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 1
+    },
+    {
+     "seat": 2,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 2
+    },
+    {
+     "seat": 3,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 3
+    }
+   ]
+  },
+  {
+   "seed": 22,
+   "rotation": 1,
+   "seats": [
+    {
+     "seat": 0,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 1
+    },
+    {
+     "seat": 1,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 2
+    },
+    {
+     "seat": 2,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 3
+    },
+    {
+     "seat": 3,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 0
+    }
+   ]
+  },
+  {
+   "seed": 26,
+   "rotation": 2,
+   "seats": [
+    {
+     "seat": 0,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 2
+    },
+    {
+     "seat": 1,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 3
+    },
+    {
+     "seat": 2,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 0
+    },
+    {
+     "seat": 3,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 1
+    }
+   ]
+  },
+  {
+   "seed": 27,
+   "rotation": 3,
+   "seats": [
+    {
+     "seat": 0,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 3
+    },
+    {
+     "seat": 1,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 0
+    },
+    {
+     "seat": 2,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 1
+    },
+    {
+     "seat": 3,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 2
+    }
+   ]
+  },
+  {
+   "seed": 29,
+   "rotation": 0,
+   "seats": [
+    {
+     "seat": 0,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 0
+    },
+    {
+     "seat": 1,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 1
+    },
+    {
+     "seat": 2,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 2
+    },
+    {
+     "seat": 3,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 3
+    }
+   ]
+  },
+  {
+   "seed": 30,
+   "rotation": 1,
+   "seats": [
+    {
+     "seat": 0,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 1
+    },
+    {
+     "seat": 1,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 2
+    },
+    {
+     "seat": 2,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 3
+    },
+    {
+     "seat": 3,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 0
+    }
+   ]
+  },
+  {
+   "seed": 31,
+   "rotation": 2,
+   "seats": [
+    {
+     "seat": 0,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 2
+    },
+    {
+     "seat": 1,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 3
+    },
+    {
+     "seat": 2,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 0
+    },
+    {
+     "seat": 3,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 1
+    }
+   ]
+  },
+  {
+   "seed": 33,
+   "rotation": 3,
+   "seats": [
+    {
+     "seat": 0,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 3
+    },
+    {
+     "seat": 1,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 0
+    },
+    {
+     "seat": 2,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 1
+    },
+    {
+     "seat": 3,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 2
+    }
+   ]
+  },
+  {
+   "seed": 34,
+   "rotation": 0,
+   "seats": [
+    {
+     "seat": 0,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 0
+    },
+    {
+     "seat": 1,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 1
+    },
+    {
+     "seat": 2,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 2
+    },
+    {
+     "seat": 3,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 3
+    }
+   ]
+  },
+  {
+   "seed": 35,
+   "rotation": 1,
+   "seats": [
+    {
+     "seat": 0,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 1
+    },
+    {
+     "seat": 1,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 2
+    },
+    {
+     "seat": 2,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 3
+    },
+    {
+     "seat": 3,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 0
+    }
+   ]
+  },
+  {
+   "seed": 36,
+   "rotation": 2,
+   "seats": [
+    {
+     "seat": 0,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 2
+    },
+    {
+     "seat": 1,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 3
+    },
+    {
+     "seat": 2,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 0
+    },
+    {
+     "seat": 3,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 1
+    }
+   ]
+  },
+  {
+   "seed": 39,
+   "rotation": 3,
+   "seats": [
+    {
+     "seat": 0,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 3
+    },
+    {
+     "seat": 1,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 0
+    },
+    {
+     "seat": 2,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 1
+    },
+    {
+     "seat": 3,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 2
+    }
+   ]
+  },
+  {
+   "seed": 41,
+   "rotation": 0,
+   "seats": [
+    {
+     "seat": 0,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 0
+    },
+    {
+     "seat": 1,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 1
+    },
+    {
+     "seat": 2,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 2
+    },
+    {
+     "seat": 3,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 3
+    }
+   ]
+  },
+  {
+   "seed": 47,
+   "rotation": 1,
+   "seats": [
+    {
+     "seat": 0,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 1
+    },
+    {
+     "seat": 1,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 2
+    },
+    {
+     "seat": 2,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 3
+    },
+    {
+     "seat": 3,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 0
+    }
+   ]
+  },
+  {
+   "seed": 50,
+   "rotation": 2,
+   "seats": [
+    {
+     "seat": 0,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 2
+    },
+    {
+     "seat": 1,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 3
+    },
+    {
+     "seat": 2,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 0
+    },
+    {
+     "seat": 3,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 1
+    }
+   ]
+  },
+  {
+   "seed": 54,
+   "rotation": 3,
+   "seats": [
+    {
+     "seat": 0,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 3
+    },
+    {
+     "seat": 1,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 0
+    },
+    {
+     "seat": 2,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 1
+    },
+    {
+     "seat": 3,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 2
+    }
+   ]
+  },
+  {
+   "seed": 56,
+   "rotation": 0,
+   "seats": [
+    {
+     "seat": 0,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 0
+    },
+    {
+     "seat": 1,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 1
+    },
+    {
+     "seat": 2,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 2
+    },
+    {
+     "seat": 3,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 3
+    }
+   ]
+  },
+  {
+   "seed": 57,
+   "rotation": 1,
+   "seats": [
+    {
+     "seat": 0,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 1
+    },
+    {
+     "seat": 1,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 2
+    },
+    {
+     "seat": 2,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 3
+    },
+    {
+     "seat": 3,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 0
+    }
+   ]
+  },
+  {
+   "seed": 59,
+   "rotation": 2,
+   "seats": [
+    {
+     "seat": 0,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 2
+    },
+    {
+     "seat": 1,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 3
+    },
+    {
+     "seat": 2,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 0
+    },
+    {
+     "seat": 3,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 1
+    }
+   ]
+  },
+  {
+   "seed": 61,
+   "rotation": 3,
+   "seats": [
+    {
+     "seat": 0,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 3
+    },
+    {
+     "seat": 1,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 0
+    },
+    {
+     "seat": 2,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 1
+    },
+    {
+     "seat": 3,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 2
+    }
+   ]
+  },
+  {
+   "seed": 63,
+   "rotation": 0,
+   "seats": [
+    {
+     "seat": 0,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 0
+    },
+    {
+     "seat": 1,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 1
+    },
+    {
+     "seat": 2,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 2
+    },
+    {
+     "seat": 3,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 3
+    }
+   ]
+  },
+  {
+   "seed": 68,
+   "rotation": 1,
+   "seats": [
+    {
+     "seat": 0,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 1
+    },
+    {
+     "seat": 1,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 2
+    },
+    {
+     "seat": 2,
+     "player": "claude:claude-opus-5-5",
+     "region_type": 3
+    },
+    {
+     "seat": 3,
+     "player": "codex:gpt-6.1-terra",
+     "region_type": 0
+    }
+   ]
+  }
+ ],
+ "balance": {
+  "claude:claude-opus-5-5": {
+   "0": 15,
+   "1": 15,
+   "2": 15,
+   "3": 15
+  },
+  "codex:gpt-6.1-terra": {
+   "0": 15,
+   "1": 15,
+   "2": 15,
+   "3": 15
+  }
+ },
+ "balanced": true
+}
