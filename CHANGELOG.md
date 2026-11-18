@@ -20,12 +20,23 @@ Not published yet. The latest published image and Harbor datasets are 0.1.1.
 
 ### Added
 
+- Waybill, a shared world for several agents (`docs/WAYBILL.md`). Several companies play one OpenTTD world
+  on one lockstep clock (log v3, coordinator, replay, `verify_multi`), each in a franchise region. A contract
+  exchange (`docs/WAYBILL-EXCHANGE.md`) settles tenders, supply contracts and licences by replay; licence fees
+  are quarterly obligations, collected automatically in the `enforced` arm and paid voluntarily in
+  `cheap_talk`. `railhead waybill-run` plays one game with one harness session for each company (sandboxed,
+  budgeted, resumable) and writes `result.json`; `rescore` reads old logs under exchange rules 2.
+  `railhead waybill-analyze` computes the pre-registered metrics (`docs/WAYBILL-ANALYSIS.md`; the
+  pre-registration in `docs/WAYBILL-PREREG.md` is a draft). `railhead waybill-cinema` renders video and
+  stills of a verified run from its replay. Three pilots are in `docs/WAYBILL-PILOT.md`; no full runs yet.
 - Action log version 2 and a stricter replay (`docs/VERIFICATION.md`). Every record, `meta` included, must
   sit at the replayed tick with the next `seq`; every wait must carry a checksum and stay inside the
   horizon; `meta` arguments must pass the daemon's schema. In a v2 log each `meta` record also enters the
   later wait checksums as a digest, so a promise cannot be added or changed after the play. The threat model
-  lists every attack with its status and its test. Five known gaps are strict `xfail` tests in
-  `tests/unit/test_redteam.py`: they fail on purpose until each gets a design decision.
+  lists every attack with its status and its test. Five known gaps were strict `xfail` tests in
+  `tests/unit/test_redteam.py`. Three are now closed (fork budget reset, oversized log, late abstain); two
+  remain `xfail` (cutting the log before a failed promise, and a rewind by cutting the log and restarting
+  the daemon): both need a log-head record that the agent cannot write (`docs/VERIFICATION.md` section 6).
 - `railhead stats`: differences between players across maps, with a bootstrap over maps and an exact sign
   test (`docs/SEEDGAMES.md`, 23 more verified games on ten maps).
 - `railhead anchor`: community script AIs as a ceiling on a task (`docs/ANCHORS.md`).
