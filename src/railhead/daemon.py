@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Any
 
 from railhead.actionlog import ActionLog, read_log
-from railhead.actions import META_SCHEMAS, check_until, meta_args_problem, validate
+from railhead.actions import INTERNAL_METAS, META_SCHEMAS, check_until, meta_args_problem, validate
 from railhead.bridge import BridgeError
 from railhead.client import Client, DaemonError, socket_path
 from railhead.replay import default_whitelist, replay
@@ -44,7 +44,7 @@ READ_METHODS = {
 }
 # Meta decisions: exact argument schemas (actions.META_SCHEMAS). Unknown keys are refused, and the
 # irreversible `submit` needs confirm=yes (a model once ended a 5-year game by probing `submit vtype=road`).
-META_METHODS = set(META_SCHEMAS)
+META_METHODS = set(META_SCHEMAS) - INTERNAL_METAS  # what an agent may send
 WAIT_KEYS = {"days", "ticks", "until"}
 
 
@@ -109,6 +109,9 @@ class Railheadd:
         self.run_dir.mkdir(parents=True, exist_ok=True)
         self.fork_days_used, self.forks_created = self._load_budget()
         self.world = self._boot()
+        # the log is the record: a deleted or edited run/forks.json cannot lower the budget used
+        used, created = self._budget_from_log()
+        self.fork_days_used, self.forks_created = max(self.fork_days_used, used), max(self.forks_created, created)
 
     # ------------------------------------------------------------------ fork budget (survives restarts)
     def _load_budget(self) -> tuple[int, int]:
@@ -118,11 +121,24 @@ class Railheadd:
         b = json.loads(path.read_text())
         return int(b["fork_days_used"]), int(b["forks_created"])
 
+    def _budget_from_log(self) -> tuple[int, int]:
+        """The last ``fork_budget`` meta record of the log, or (0, 0)."""
+        log = self.run_dir / "actions.jsonl"
+        used = created = 0
+        if log.exists():
+            for r in read_log(log):
+                if r.kind == "meta" and r.raw.get("m") == "fork_budget":
+                    a = r.raw.get("a") or {}
+                    used, created = int(a.get("used", 0)), int(a.get("created", 0))
+        return used, created
+
     def _save_budget(self) -> None:
         path = self.run_dir / "forks.json"
         tmp = path.with_suffix(".tmp")
         tmp.write_text(json.dumps({"fork_days_used": self.fork_days_used, "forks_created": self.forks_created}))
         os.replace(tmp, path)
+        if self.world is not None:  # and in the log, where a restart reads it again
+            self._logged(self.world.note, "fork_budget", used=self.fork_days_used, created=self.forks_created)
 
     # ------------------------------------------------------------------ boot / recovery
     def _boot(self) -> World:

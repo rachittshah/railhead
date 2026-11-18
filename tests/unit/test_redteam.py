@@ -189,17 +189,21 @@ def test_attack_symlinked_lock_cannot_make_railhead_down_truncate_a_file(tmp_pat
     assert victim.read_text() == "print('trusted code')\n"
 
 
-@pytest.mark.xfail(strict=True, reason="decision: the fork budget is a run-dir file, not part of the log. "
-                   "Deleting run/forks.json and sending {'op':'shutdown'} on the socket (no kill needed) resets "
-                   "it. Fix: log fork use as meta records (digested in v2) and rebuild the budget from the log.")
 def test_attack_deleting_the_fork_budget_file_does_not_reset_it(real_daemon):
+    """Decision: the daemon logs the fork budget as a ``fork_budget`` meta record (digested in v2) after each
+    change and rebuilds it from the log on boot; an agent cannot send that meta itself."""
     d = real_daemon()
     d.fork_days_used = 30  # what fork_wait charges (test_attack_restart_does_not_reset_the_fork_budget)
     d._save_budget()
+    with pytest.raises(daemon_mod.OpError):
+        d.handle({"op": "meta", "m": "fork_budget", "a": {"used": 0, "created": 0}})
     d.close()
     (d.run_dir / "forks.json").unlink()
     again = real_daemon()
     assert again.fork_days_used == 30
+    again.close()
+    out = _verify(again.tdir, again.run_dir / "actions.jsonl", again.run_dir.parent / "v", min_version=2)
+    assert out["rejected"] == 0 and out["valid"] == 1  # the verifier accepts the daemon's own meta record
 
 
 # ------------------------------------------------------------------ R4: hindsight without a private engine
