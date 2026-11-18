@@ -732,7 +732,7 @@ class Runner:
             "grace_s": opts.get("grace_s", 120.0), "poll_s": opts.get("poll_s", 1.0), "isolation": isolation,
             "absent_slots": [s for s in slots if s not in {x.slot for x in seats}],
             "seats": [asdict(s) for s in seats], "started": time.time(), "elapsed_s": 0.0, "ended": None,
-            "otel_port": None, "claude_auth": opts.get("claude_auth", "token"),
+            "otel_port": None, "claude_auth": opts.get("claude_auth", "token"), "traces": opts.get("traces", "on"),
             "pass_env": [x for x in (opts.get("pass_env") or "").split(",") if x],
         }
         run_dir.mkdir(parents=True, exist_ok=True)
@@ -795,10 +795,11 @@ class Runner:
         from railhead.otel import make_server
 
         srv = None
+        keep = None if self.m.get("traces", "on") == "on" else frozenset({"logs", "metrics"})
         if self.m.get("otel_port"):
             with contextlib.suppress(OSError):
-                srv = make_server(self.run_dir / "otel", port=int(self.m["otel_port"]))
-        srv = srv or make_server(self.run_dir / "otel", port=0)
+                srv = make_server(self.run_dir / "otel", port=int(self.m["otel_port"]), keep=keep)
+        srv = srv or make_server(self.run_dir / "otel", port=0, keep=keep)
         self.sink = srv
         self.m["otel_port"] = srv.server_address[1]
         self.otel = f"http://127.0.0.1:{self.m['otel_port']}"
@@ -841,10 +842,19 @@ class Runner:
         own = socks[seat.slot]
         text = brief(self.spec, self.m["turn_s"])
         session, _ = last_session(adir / "agent.log") if kind != "launch" else (None, False)
+        run_seat = seat
+        if seat.vendor in ("stub", "script"):  # the sandbox closes other directories: run a copy of the script
+            import dataclasses
+            import shutil
+
+            local = adir / "script.txt"
+            if not local.exists():
+                shutil.copyfile(seat.model, local)
+            run_seat = dataclasses.replace(seat, model=str(local))
         if kind == "launch":
-            cmd = command(seat, text, work, self.otel, max_turns=self.m.get("max_turns"))
+            cmd = command(run_seat, text, work, self.otel, max_turns=self.m.get("max_turns"))
         else:
-            cmd = command(seat, text, work, self.otel, session=session, resume_prompt=prompt_extra,
+            cmd = command(run_seat, text, work, self.otel, session=session, resume_prompt=prompt_extra,
                           max_turns=self.m.get("max_turns"))
         token = claude_oauth_token() if seat.vendor == "claude" and self.m.get("claude_auth") == "token" else None
         env = environment(seat, self.m["task_id"], adir, own, self.otel,
@@ -1030,14 +1040,39 @@ class Runner:
         return self.finish()
 
     def spent_usd(self) -> float:
-        """The dollars that the agents reported so far (OTLP; Codex reports none)."""
-        from railhead.behaviour import otel_usage
+        """The dollars that the agents reported so far (OTLP ``api_request`` events; Codex reports none).
+        Incremental: only the bytes added to logs.jsonl since the last call are read (a decade run's log
+        grows to hundreds of MB)."""
+        from railhead.otel import _attr_value
 
-        total = 0.0
-        for seat in self.seats:
-            u = otel_usage(self.run_dir / "otel", seat.label, self.m["task_id"])
-            total += float((u or {}).get("cost_usd") or 0.0)
-        return total
+        path = self.run_dir / "otel" / "logs.jsonl"
+        if not hasattr(self, "_spent"):
+            self._spent, self._spent_pos = 0.0, 0
+        if not path.exists():
+            return self._spent
+        labels = {s.label for s in self.seats}
+        with open(path, "rb") as fh:
+            fh.seek(self._spent_pos)
+            chunk = fh.read()
+        end = chunk.rfind(b"\n") + 1  # whole lines only
+        self._spent_pos += end
+        for line in chunk[:end].splitlines():
+            if b"cost_usd" not in line:
+                continue
+            try:
+                env = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            for rl in (env.get("body") or {}).get("resourceLogs", []):
+                res = {a["key"]: _attr_value(a["value"]) for a in rl.get("resource", {}).get("attributes", [])}
+                if res.get("player") not in labels:
+                    continue
+                for sl in rl.get("scopeLogs", []):
+                    for rec in sl.get("logRecords", []):
+                        at = {a["key"]: _attr_value(a["value"]) for a in rec.get("attributes", [])}
+                        if str(at.get("event.name") or "").endswith("api_request"):
+                            self._spent += float(at.get("cost_usd") or 0.0)
+        return self._spent
 
     def stop_agents(self) -> None:
         for seat in self.seats:
@@ -1216,7 +1251,7 @@ def _opts(argv: list[str]) -> tuple[list[str], dict]:
             "--nudges": ("nudges", int), "--max-resumes": ("max_resumes", int),
             "--max-backoff-s": ("max_backoff_s", float), "--grace-s": ("grace_s", float),
             "--isolation": ("isolation", str), "--poll": ("poll_s", float), "--pass-env": ("pass_env", str),
-            "--claude-auth": ("claude_auth", str), "--usd-cap": ("usd_cap", float)}
+            "--claude-auth": ("claude_auth", str), "--usd-cap": ("usd_cap", float), "--traces": ("traces", str)}
     pos, opts = [], {}
     it = iter(argv)
     for a in it:

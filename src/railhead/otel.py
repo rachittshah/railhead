@@ -22,7 +22,10 @@ from typing import Any
 SIGNALS = {"/v1/traces": "traces", "/v1/logs": "logs", "/v1/metrics": "metrics"}
 
 
-def make_server(out_dir: Path, port: int = 4318, host: str = "127.0.0.1") -> ThreadingHTTPServer:
+def make_server(out_dir: Path, port: int = 4318, host: str = "127.0.0.1",
+                keep: frozenset[str] | None = None) -> ThreadingHTTPServer:
+    """``keep``: the signals to write (default all); the others are acknowledged and dropped (a long run
+    with traces off keeps the disk use small: traces were 160 MB per agent-hour in the pilots)."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     lock = threading.Lock()
@@ -38,6 +41,12 @@ def make_server(out_dir: Path, port: int = 4318, host: str = "127.0.0.1") -> Thr
                 self.end_headers()
                 return
             body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
+            if keep is not None and signal not in keep:
+                self.send_response(200)
+                self.send_header("Content-Length", "2")
+                self.end_headers()
+                self.wfile.write(b"{}")
+                return
             if self.headers.get("Content-Encoding", "").lower() == "gzip":
                 body = gzip.decompress(body)
             ctype = self.headers.get("Content-Type", "")

@@ -530,3 +530,50 @@ def test_preregistered_metrics_repayment_rate_and_on_time_rate():
             t["obligations_timing_unpaid"]) == (1, 1, 1, 1)
     assert t["obligations_days_late"] == [50.0]
     assert t["obligations_repayment_rate"] == round(240 / 600, 4) and t["obligations_on_time_rate"] == 0.25
+
+
+def test_the_spend_meter_reads_only_new_lines(tmp_path):
+    run = tmp_path / "run"
+    (run / "otel").mkdir(parents=True)
+    r = wa.Runner.__new__(wa.Runner)
+    r.run_dir, r.seats = run, [wa.Seat(0, "claude", "default", "s0-claude")]
+    log = run / "otel" / "logs.jsonl"
+    log.write_text(_otlp_line("s0-claude", 1, 0.5) + "\n" + _otlp_line("other", 2, 9.0) + "\n")
+    assert r.spent_usd() == 0.5
+    with open(log, "a") as fh:
+        fh.write(_otlp_line("s0-claude", 3, 0.25) + "\n" + _otlp_line("s0-claude", 4, 1.0)[:40])  # a torn line
+    assert r.spent_usd() == 0.75
+    with open(log, "a") as fh:
+        fh.write(_otlp_line("s0-claude", 4, 1.0)[40:] + "\n")
+    assert r.spent_usd() == 1.75
+
+
+def test_the_sink_can_drop_traces(tmp_path):
+    import threading
+    import urllib.request
+
+    from railhead.otel import make_server
+
+    srv = make_server(tmp_path, port=0, keep=frozenset({"logs"}))
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    port = srv.server_address[1]
+    for sig in ("traces", "logs"):
+        req = urllib.request.Request(f"http://127.0.0.1:{port}/v1/{sig}", data=b"{}",
+                                     headers={"Content-Type": "application/json"})
+        assert urllib.request.urlopen(req, timeout=5).status == 200
+    srv.shutdown()
+    assert (tmp_path / "logs.jsonl").exists() and not (tmp_path / "traces.jsonl").exists()
+
+
+def test_the_multi_agent_verifier_rejects_an_oversized_log_before_replay(tmp_path, monkeypatch):
+    from railhead.multi import verify as mv
+
+    tdir = tmp_path / "t"
+    tdir.mkdir()
+    (tdir / "start.sav").write_bytes(b"save")
+    write_task(tdir, "waybill-test", COMPANIES, horizon_days=10)
+    log = tmp_path / "a.jsonl"
+    log.write_text("x" * 2000)
+    monkeypatch.setattr(mv, "MAX_LOG_BYTES", 1000)
+    out = mv.verify_multi(tdir, tdir / "start.sav", log, tmp_path / "w")
+    assert out["rejected"] == 1 and out["oversized"] == 1
