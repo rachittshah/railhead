@@ -257,10 +257,8 @@ def test_attack_abstain_after_the_horizon_does_not_pay(real_daemon, bid_task):
 
 
 # ------------------------------------------------------------------ R5: verifier cost
-@pytest.mark.xfail(strict=True, reason="decision: no size bound on the log. A Harbor verifier time-out writes no "
-                   "reward file (a dropout). Honest logs reach 186 KB (11 Arena 2 games); a cap of a few MB, or a "
-                   "time budget that ends in rejected=1, needs an owner decision.")
 def test_attack_oversized_log_is_rejected_before_replay(bid_task, engines, tmp_path):
+    """Decision: a log above MAX_LOG_BYTES (8 MiB; honest logs reach 186 KB) is rejected before replay."""
     log = honest_log(tmp_path / "a.jsonl")
     recs = _records(log)
     tick = recs[-1]["end_ticks"]
@@ -268,7 +266,7 @@ def test_attack_oversized_log_is_rejected_before_replay(bid_task, engines, tmp_p
              for i in range(120_000)]  # about 17 MB
     _write(log, recs + extra)
     out = _verify(bid_task, log, tmp_path)
-    assert out["rejected"] == 1 and len(engines.list[0].sent) < 1000
+    assert out["rejected"] == 1 and (not engines.list or len(engines.list[0].sent) < 1000)  # no engine started
 
 
 def test_attack_credit_failure_does_not_drop_the_reward(bid_task, engines, tmp_path, monkeypatch):

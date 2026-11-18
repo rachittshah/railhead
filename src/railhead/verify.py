@@ -122,6 +122,12 @@ def score(spec: TaskSpec, world, log: Path, start_date: int, start_ticks: int = 
     return out
 
 
+# A log above this size is rejected before replay (docs/VERIFICATION.md 5): the largest honest log is 186 KB
+# (Arena 2) and the largest oracle 10 KB, so 8 MiB leaves a margin of 40x while a replay of it stays far inside
+# the Harbor verifier time-out.
+MAX_LOG_BYTES = 8 * 1024 * 1024
+
+
 def verify(task_dir: Path, start_sav: Path, log: Path, workdir: Path, credit: bool = False,
            min_version: int = 1) -> dict:
     task_dir, workdir = Path(task_dir), Path(workdir)
@@ -133,6 +139,8 @@ def verify(task_dir: Path, start_sav: Path, log: Path, workdir: Path, credit: bo
     workdir.mkdir(parents=True, exist_ok=True)
     if not Path(log).is_file():  # a directory, device or FIFO in place of the log: log fault, not infra
         return base | {"rejected": 1}
+    if Path(log).stat().st_size > MAX_LOG_BYTES:  # before any copy or replay
+        return base | {"rejected": 1, "oversized": 1}
     snap = workdir / "actions.jsonl"
     shutil.copyfile(log, snap)
     log = snap
