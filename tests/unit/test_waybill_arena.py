@@ -127,7 +127,7 @@ def test_sandbox_profile_text(tmp_path):
                               [tmp_path / "b.sock"], [4318], home=tmp_path / "home")
     assert '(deny network-outbound (remote ip "localhost:*"))' in prof
     assert prof.index("localhost:*") < prof.index("localhost:4318")  # the later rule wins
-    assert "b.sock" in prof and ".claude/CLAUDE.md" in prof and ".codex/AGENTS.md" in prof
+    assert "b.sock" in prof and "home/.claude\"" in prof and "home/.claude.json" in prof and "home/.agents" in prof
 
 
 @pytest.mark.skipif(not wa.sandbox_available(), reason="macOS sandbox-exec only")
@@ -145,7 +145,8 @@ def test_the_sandbox_lets_an_agent_reach_only_its_own_socket_and_directory(tmp_p
     own, other = short / "a0.sock", short / "a1.sock"
     servers = [_serve(own), _serve(other)]
     try:
-        prof = wa.sandbox_profile(adir, run, task, own, [other], [], home=tmp_path / "home")
+        prof = wa.sandbox_profile(adir, run, task, own, [other], [], home=tmp_path / "home",
+                                  tmp_root=tmp_path / "claude-tmp")
         (adir / "p.sb").write_text(prof)
         code = ("import socket,sys\n"
                 "for p in sys.argv[1:3]:\n"
@@ -164,13 +165,59 @@ def test_the_sandbox_lets_an_agent_reach_only_its_own_socket_and_directory(tmp_p
                             str(own), str(other), str(adir / "mine.txt"), str(other_dir / "agent.log"),
                             str(task / "task.json")], check=False, capture_output=True, text=True, timeout=60)
         # own socket, other socket, own file, other agent's transcript, task.json, resolve own path, list agents/
-        assert r.stdout.split() == ["ok", "denied", "ok", "denied", "denied", "ok", "denied"], r
+        # (the parents of the agent directory show their names: Bun's realpath opens each of them)
+        assert r.stdout.split() == ["ok", "denied", "ok", "denied", "denied", "ok", "ok"], r
     finally:
         for s in servers:
             s.close()
         import shutil
 
         shutil.rmtree(short, ignore_errors=True)
+
+
+SESSION_PROBE = ("import os,sys\n"
+                 "for p in sys.argv[1:]:\n"
+                 "    try: (os.listdir(p) if os.path.isdir(p) else open(p).read()); print('ok')\n"
+                 "    except OSError: print('denied')\n")
+
+
+@pytest.mark.skipif(not wa.sandbox_available(), reason="macOS sandbox-exec only")
+def test_agent_a_cannot_list_or_read_the_sessions_of_agent_b_or_the_operator(tmp_path):
+    """Each agent keeps its Claude sessions in its own CLAUDE_CONFIG_DIR; the operator's ~/.claude, ~/.codex
+    (apart from auth.json) and the Claude temporary root are closed."""
+    run, home, ctmp = tmp_path / "run", tmp_path / "home", tmp_path / "claude-tmp"
+    a, b = run / "agents" / "s0-claude", run / "agents" / "s1-claude"
+    env_a = wa.environment(wa.Seat(0, "claude", "default", "s0-claude"), "t", a, Path("/x.sock"), "http://x",
+                           base={"PATH": "/usr/bin", "HOME": str(home)}, claude_token="tok")
+    assert env_a["CLAUDE_CONFIG_DIR"] == str(a / "claude-config") and env_a["CLAUDE_CODE_OAUTH_TOKEN"] == "tok"
+    for d in (a / "claude-config/projects/p", b / "claude-config/projects/q", home / ".claude/projects/r",
+              home / ".codex", ctmp / "slug"):
+        d.mkdir(parents=True)
+    (b / "claude-config/projects/q/s.jsonl").write_text("b's session")
+    (home / ".claude/history.jsonl").write_text("operator prompts")
+    (home / ".codex/auth.json").write_text("{}")
+    (home / ".codex/AGENTS.md").write_text("operator rules")
+    (a / "claude-config/projects/p/mine.jsonl").write_text("mine")
+    prof = wa.sandbox_profile(a, run, tmp_path / "task", tmp_path / "own.sock", [], [], home=home, tmp_root=ctmp)
+    (a / "p.sb").write_text(prof)
+    paths = [a / "claude-config/projects/p", a / "claude-config/projects/p/mine.jsonl", home / ".codex/auth.json",
+             b / "claude-config/projects", b / "claude-config/projects/q/s.jsonl", home / ".claude/projects",
+             home / ".claude/history.jsonl", home / ".codex/AGENTS.md", ctmp]
+    r = subprocess.run(["/usr/bin/sandbox-exec", "-f", str(a / "p.sb"), sys.executable, "-I", "-c", SESSION_PROBE,
+                        *map(str, paths)], check=False, capture_output=True, text=True, timeout=60)
+    assert r.stdout.split() == ["ok"] * 3 + ["denied"] * 6, r
+
+
+def test_the_agent_environment_is_an_allowlist():
+    src = {"PATH": "/usr/bin:/bin", "HOME": "/h", "USER": "u", "LANG": "C", "CLAUDE_CODE_SESSION_ID": "parent",
+           "CLAUDE_CODE_MESSAGING_TOKEN": "t", "OPENROUTER_API_KEY": "k", "AWS_SECRET_ACCESS_KEY": "s", "FOO": "1"}
+    base = wa.scrubbed_base(src, extra=("FOO",))
+    assert set(base) == {"PATH", "HOME", "USER", "LANG", "FOO"}
+    assert base["PATH"].endswith("/usr/bin:/bin:/usr/sbin:/sbin")
+    env = wa.environment(wa.Seat(0, "claude", "default", "s0-claude"), "t", Path("/tmp/wa-env/a"), Path("/s"),
+                         "http://x", base=base)
+    assert not {k for k in env if "SESSION_ID" in k or "MESSAGING" in k or k.endswith("_API_KEY")}
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in env and env["TMPDIR"] == "/tmp/wa-env/a/tmp"
 
 
 # ---------------------------------------------------------------------------------------------- metering
@@ -369,3 +416,62 @@ def test_resume_after_the_run_budget_starts_the_stopped_agents_again(task, tmp_p
     m = json.loads((run / "run.json").read_text())
     assert [x["kind"] for x in m["seats"][0]["launches"]] == ["launch", "resume"]
     assert res["run"]["ended"] == "horizon"
+
+
+def test_auth_errors_are_recognised():
+    assert wa.is_auth_error({"status": 401})
+    assert wa.is_auth_error({"message": "OAuth token has expired. Please run /login"})
+    assert not wa.is_auth_error({"message": "overloaded", "status": 529})
+
+
+def test_a_capped_or_logged_out_session_keeps_playing_and_short_sessions_give_up(task, tmp_path, monkeypatch):
+    monkeypatch.chdir(REPO)
+    a = _script(tmp_path / "a.txt", ["rh wait days=5", "@turncap", "rh wait days=5", "@autherr", "rh wait days=60"])
+    b = _script(tmp_path / "b.txt", ["@exit", "@exit", "@exit", "rh wait days=60"])
+    run = tmp_path / "run"
+    res = wa.Runner.create(task, run, [f"stub:{a}", f"stub:{b}"], poll_s=0.2, grace_s=5, isolation="env",
+                           max_backoff_s=0.2, coord_cmd=FAKE, verify_fn=_fake_verify).run()
+    m = json.loads((run / "run.json").read_text())
+    s0, s1 = m["seats"]
+    assert [x["kind"] for x in s0["launches"]] == ["launch", "nudge", "resume"] and s0["status"] == "done"
+    assert s1["status"] == "failed" and "3 sessions in a row" in s1["note"]
+    assert res["run"]["runner_submits"] == 1 and res["run"]["ended"] == "horizon"
+    rows = {r["slot"]: r for r in res["companies"]}
+    assert rows[0]["runner_submitted"] is False and rows[0]["continues"] == 1 and rows[0]["resumes"] == 1
+    assert rows[1]["runner_submitted"] is True
+
+
+def test_the_dollar_cap_ends_the_run(task, tmp_path, monkeypatch):
+    monkeypatch.chdir(REPO)
+    a = _script(tmp_path / "a.txt", ["rh info"] * 5 + ["@sleep 30", "rh wait days=60"])
+    run = tmp_path / "run"
+    r = wa.Runner.create(task, run, [f"stub:{a}"], poll_s=0.2, isolation="env", usd_cap=0.003, coord_cmd=FAKE,
+                         verify_fn=_fake_verify)
+    r.m["cost_check_s"] = 0
+    res = r.run()
+    assert res["run"]["ended"] == "usd_cap" and res["cost"]["usd_reported"] > 0.003
+
+
+def test_opencode_cost_per_game_year_comes_from_its_own_step_events(tmp_path):
+    adir = tmp_path / "agents" / "s2-opencode"
+    adir.mkdir(parents=True)
+    ev = [{"type": "step_finish", "timestamp": 15000, "part": {"cost": 0, "tokens": {"input": 100, "output": 5,
+                                                                                      "cache": {"read": 7}}}},
+          {"type": "step_finish", "timestamp": 35000, "part": {"cost": 0.5, "tokens": {"input": 50, "output": 1}}}]
+    (adir / "agent.log").write_text("\n".join(json.dumps(e) for e in ev) + "\n")
+    clock = [{"t": 10, "ticks": 0, "date": "1950-06-01"}, {"t": 30, "ticks": 9000, "date": "1951-01-01"}]
+    c = wa.seat_cost(wa.Seat(2, "opencode", "opencode/big-pickle", "s2-opencode"), tmp_path, "t", clock)
+    assert c["requests"] == 2 and c["input_tokens"] == 150 and c["cache_read_tokens"] == 7
+    assert c["by_year"]["1950"]["input_tokens"] == 100 and c["by_year"]["1951"]["cost_usd"] == 0.5
+
+
+def test_all_slots_refuses_a_company_without_a_player(task, tmp_path):
+    with pytest.raises(ValueError, match="never trades"):
+        wa.Runner.create(task, tmp_path / "run", ["stub:/x", "stub:/y"], all_slots=True)
+
+
+def test_an_opencode_profile_denies_only_the_engine_ports():
+    prof = wa.sandbox_profile(Path("/r/agents/a"), Path("/r"), Path("/t"), Path("/o.sock"), [], [4318],
+                              home=Path("/h"), deny_ports=[5001, 5002])
+    assert "localhost:*" not in prof and "localhost:4318" not in prof
+    assert '(deny network-outbound (remote ip "localhost:5001"))' in prof and "localhost:5002" in prof

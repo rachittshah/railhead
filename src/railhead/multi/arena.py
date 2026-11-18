@@ -13,10 +13,13 @@ player) and ``stub`` (a scripted player that writes a Claude-shaped transcript a
 OTLP, for tests). The model ``default`` lets the harness choose its own model.
 
 Options: ``--turn-s S`` (the per-turn wall-clock budget of the coordinator; default: the task's
-``limits.agent_turn_s``), ``--run-s S`` (the wall-clock budget of the run), ``--max-turns N`` (Claude only),
-``--nudges N`` (how often an agent that stops before the end is told to continue; default 1),
-``--max-resumes N`` (after provider errors; default 6), ``--max-backoff-s S``, ``--grace-s S`` (time for the
-agents to write their reports after the end; default 120), ``--isolation sandbox|env``, ``--poll S``.
+``limits.agent_turn_s``), ``--run-s S`` (the wall-clock budget of the run), ``--usd-cap D`` (end the run when
+the reported dollars pass D), ``--max-turns N`` (turns of one Claude session; a capped session continues),
+``--nudges N`` (continuations of an agent that stops before the end; default 50), ``--max-resumes N`` (after
+provider or login errors; default 20), ``--max-backoff-s S``, ``--grace-s S`` (time for the agents to write
+their reports after the end; default 120), ``--isolation sandbox|env``, ``--pass-env A,B`` (more variables
+for the agents), ``--claude-auth token|none``, ``--all-slots`` (refuse a company without a player),
+``--poll S``.
 
 Run directory::
 
@@ -37,6 +40,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import re
 import shlex
 import signal
 import subprocess
@@ -83,6 +87,14 @@ you think, but a turn that lasts longer than {turn_s} seconds of real time ends 
 - The game lasts {horizon} days from the start. `rh info` shows the days left.
 - You can build infrastructure only inside your franchise region (`rh info` and `rh market` show its \
 rectangles). Vehicles can go anywhere.
+- A station serves the industries in its catchment, and cargo is paid when it reaches a station whose \
+catchment accepts it. Thus a delivery from or to an industry that no station of yours can reach needs a \
+station of the company whose region it is in.
+- A supply contract makes the seller deliver a quantity of one cargo to one industry between two dates; only \
+the seller's own deliveries count. Every quarter the exchange opens tenders: each asks for a cargo from a \
+producer in one region to an industry in another region, and the lowest sealed bid wins. A tender winner \
+can sign supply contracts for the same cargo and industry; the deliveries of those sellers count toward \
+the tender.
 - Every form of transport is allowed: road, rail (couple wagons with `rh vehicle attach`), air and water.
 - The other companies can trade with you only through the exchange: supply contracts, tenders, \
 private messages and ledger payments (below).
@@ -119,6 +131,15 @@ NUDGE = ("The game is not over: {days} days are left, and the world waits for yo
          "`rh submit confirm=yes` and write your report.")
 
 
+AUTH_TEXT = re.compile(r"oauth|authenticat|unauthori[sz]ed|invalid.{0,20}(token|api key)|token.{0,20}expired|"
+                       r"/login|\b401\b", re.IGNORECASE)
+
+
+def is_auth_error(err: dict) -> bool:
+    """An error that a new login token fixes (an expired access token ends a Claude session this way)."""
+    return err.get("status") in (401, 403) or bool(AUTH_TEXT.search(str(err.get("message", ""))))
+
+
 def brief(spec: TaskSpec, turn_s: float) -> str:
     from railhead.cli import MARKET_HELP
 
@@ -142,6 +163,7 @@ class Seat:
     nudges: int = 0
     due: float | None = None  # backoff: when to resume
     pid: int | None = None
+    short_runs: int = 0  # consecutive sessions that ended within short_session_s
     launches: list[dict] = field(default_factory=list)
     note: str = ""
 
@@ -205,24 +227,94 @@ def command(seat: Seat, prompt: str, workdir: Path, otel: str, session: str | No
     return cmd
 
 
+# The variables an agent inherits from the runner. Everything else (the operator's tokens, the parent
+# Claude Code session, messaging sockets, API keys) stays out. ``--pass-env`` adds names.
+ENV_ALLOW = ("HOME", "USER", "LOGNAME", "SHELL", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "TZ")
+SYSTEM_PATH = ("/usr/local/bin", "/opt/homebrew/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin")
+
+
+def scrubbed_base(source: dict | None = None, extra: tuple[str, ...] = ()) -> dict:
+    """The allowlisted variables of ``source`` and a PATH of the system directories plus the directories of the
+    harness programs (claude, codex, opencode) as ``source`` finds them."""
+    import shutil
+
+    src = dict(os.environ if source is None else source)
+    base = {k: src[k] for k in (*ENV_ALLOW, *extra) if k in src}
+    dirs: list[str] = []
+    for prog in ("claude", "codex", "opencode"):
+        found = shutil.which(prog, path=src.get("PATH", ""))
+        if found:
+            dirs.append(str(Path(found).parent))
+    base["PATH"] = ":".join(dict.fromkeys([*dirs, *SYSTEM_PATH]))
+    return base
+
+
 def environment(seat: Seat, task_id: str, agent_dir: Path, socket: Path, otel: str,
-                base: dict | None = None) -> dict:
-    """railhead.arena_run's agent environment, bound to one coordinator socket. The agent gets no path of the
-    coordinator state, the task directory or the other agents."""
+                base: dict | None = None, claude_token: str | None = None) -> dict:
+    """railhead.arena_run's agent environment on a scrubbed base, bound to one coordinator socket. The agent
+    gets no path of the coordinator state, the task directory or the other agents, and keeps all its
+    harness state (config, sessions, temporary files) in its own directory."""
+    base = scrubbed_base() if base is None else dict(base)
     env = arena_run.agent_env(seat.player, task_id, agent_dir / "rh-state", agent_dir, otel, base=base)
     # CLAUDE_CODE_PLUGIN_DIRS loads the operator's own plugins even in --safe-mode
     for k in ("RAILHEAD_TASKS", "RAILHEAD_TASK", "RAILHEAD_SLOT", "CLAUDE_CODE_PLUGIN_DIRS"):
         env.pop(k, None)
     env["RAILHEAD_SOCKET"] = str(socket)
+    tmp = agent_dir / "tmp"
+    tmp.mkdir(parents=True, exist_ok=True)
+    env["TMPDIR"] = str(tmp)
+    # harness shells are zsh login shells: an empty ZDOTDIR keeps the operator's ~/.zshrc (and the keys it
+    # exports) out of the agent's shell
+    zdot = agent_dir / "zdotdir"
+    zdot.mkdir(parents=True, exist_ok=True)
+    env["ZDOTDIR"] = str(zdot)
+    if seat.vendor in ("claude", "stub"):  # a private config dir: sessions, history and settings stay here
+        env["CLAUDE_CONFIG_DIR"] = str(agent_dir / "claude-config")
+        env["CLAUDE_CODE_TMPDIR"] = env["CLAUDE_TMPDIR"] = str(tmp)
+        if claude_token:
+            env["CLAUDE_CODE_OAUTH_TOKEN"] = claude_token
     if seat.vendor == "codex":  # a private CODEX_HOME: no operator AGENTS.md, config, hooks or skills
         home = agent_dir / "codex-home"
         home.mkdir(parents=True, exist_ok=True)
-        src = Path((base or os.environ).get("CODEX_HOME") or Path.home() / ".codex") / "auth.json"
+        src = Path(base.get("CODEX_HOME") or Path(base.get("HOME") or Path.home()) / ".codex") / "auth.json"
         link = home / "auth.json"
-        if src.exists() and not link.exists():
+        if src.exists() and not link.is_symlink() and not link.exists():
             link.symlink_to(src)  # a link, not a copy: the run directory never holds the credentials
         env["CODEX_HOME"] = str(home)
+    if seat.vendor == "opencode":  # sessions and caches under the agent directory too
+        for k, sub in (("XDG_DATA_HOME", "data"), ("XDG_STATE_HOME", "state"), ("XDG_CACHE_HOME", "cache")):
+            env[k] = str(agent_dir / sub)
     return env
+
+
+def claude_oauth_token(refresh_below_s: float = 600.0) -> str | None:
+    """The operator's Claude login as a bearer token for an agent with its own CLAUDE_CONFIG_DIR.
+
+    ``CLAUDE_CODE_OAUTH_TOKEN`` in the runner's environment wins (for example a ``claude setup-token`` token).
+    Else, on macOS, the access token of the operator's login from the keychain. Only the access token goes to
+    the agents, never the refresh token: an agent cannot rotate the operator's login. When the access token
+    expires within ``refresh_below_s``, one short ``claude -p`` call with the operator's own configuration lets
+    Claude Code refresh it first. A session whose token expires ends with an auth error and is resumed with a
+    new token (Runner.decide)."""
+    if os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
+        return os.environ["CLAUDE_CODE_OAUTH_TOKEN"]
+    if sys.platform != "darwin":
+        return None
+
+    def read() -> dict:
+        r = subprocess.run(["security", "find-generic-password", "-s", "Claude Code-credentials", "-w"],
+                           capture_output=True, text=True, timeout=30, check=False)
+        try:
+            return json.loads(r.stdout).get("claudeAiOauth") or {}
+        except json.JSONDecodeError:
+            return {}
+
+    o = read()
+    if o and float(o.get("expiresAt", 0)) / 1000 - time.time() < refresh_below_s:
+        subprocess.run(["claude", "-p", "Reply OK.", "--safe-mode", "--max-turns", "1"], capture_output=True,
+                       timeout=180, check=False, stdin=subprocess.DEVNULL)
+        o = read()
+    return o.get("accessToken") or None
 
 
 def _sb(path: Path | str) -> str:
@@ -230,26 +322,45 @@ def _sb(path: Path | str) -> str:
 
 
 def sandbox_profile(agent_dir: Path, run_dir: Path, task_dir: Path, own_socket: Path, other_sockets: list[Path],
-                    allow_ports: list[int], home: Path | None = None) -> str:
-    """A macOS sandbox profile (sandbox-exec) for one agent. Everything is allowed, except: reading or
-    writing the run directory (the merged log, the other agents' transcripts, the OTLP data) and the task
-    directory (the market seed), apart from the agent's own directory; connecting to the control socket
-    and the other agents' sockets; TCP to localhost (the engine's game and admin ports) apart from the
-    OTLP sink; and reading the operator's personal agent instructions. The denials are of file contents
-    and directory listings (``file-read-data``), not of metadata: a harness must be able to resolve the
-    path of its own directory, which needs ``lstat`` on every parent."""
+                    allow_ports: list[int], home: Path | None = None, tmp_root: Path | None = None,
+                    deny_ports: list[int] | None = None) -> str:
+    """A macOS sandbox profile (sandbox-exec) for one agent. Everything is allowed, except:
+
+    - the run directory (the merged log, the other agents' transcripts and harness state, the OTLP data) and
+      the task directory (the market seed), apart from the agent's own directory;
+    - the operator's harness state: ``~/.claude`` and ``~/.claude.json`` (sessions, history, instructions;
+      each agent has its own CLAUDE_CONFIG_DIR), ``~/.codex`` apart from ``auth.json`` (each agent has its
+      own CODEX_HOME), ``~/.agents``, and the per-user Claude temporary root (``tmp_root``, other sessions'
+      tool output);
+    - the control socket and the other agents' sockets;
+    - TCP to localhost (the engine's game and admin ports) apart from the OTLP sink. With ``deny_ports``
+      (opencode, whose private server listens on a random localhost port), only those ports are refused.
+
+    The denials are of file contents and directory listings (``file-read-data``) and writes, not of
+    metadata: a harness must be able to resolve the path of its own directory, which needs ``lstat`` on
+    every parent. The allow rules name ``file-read-data`` because the more specific denial otherwise wins."""
     home = Path(home or Path.home())
+    tmp_root = Path(tmp_root) if tmp_root else Path(f"/private/tmp/claude-{os.getuid()}")
+    deny = [run_dir, task_dir, home / ".claude", home / ".codex", home / ".agents", tmp_root]
     lines = ["(version 1)", "(allow default)",
-             f"(deny file-read-data file-write* (subpath {_sb(run_dir)}) (subpath {_sb(task_dir)}))",
+             "(deny file-read-data file-write* " + " ".join(f"(subpath {_sb(d)})" for d in deny) + ")",
+             f"(deny file-read-data file-write* (literal {_sb(home / '.claude.json')}))",
+             f"(allow file-read* file-read-data file-write* (literal {_sb(home / '.codex' / 'auth.json')}))",
+             # directory nodes (their names, not the files in them): Bun's realpath opens each directory of a
+             # path (opencode): the operator's harness directories and every parent of the agent directory
+             "(allow file-read-data " + " ".join(f"(literal {_sb(d)})" for d in (
+                 home / ".claude", home / ".codex", home / ".agents",
+                 *Path(os.path.realpath(agent_dir)).parents)) + ")",
              f"(allow file-read* file-read-data file-write* (subpath {_sb(agent_dir)}))",
-             f"(allow file-read* file-read-data file-write* (literal {_sb(own_socket)}))",
-             (f"(deny file-read-data (literal {_sb(home / '.claude/CLAUDE.md')}) (subpath {_sb(home / '.claude/rules')})"
-             f" (subpath {_sb(home / '.agents')}) (literal {_sb(home / '.codex/AGENTS.md')}))")]
+             f"(allow file-read* file-read-data file-write* (literal {_sb(own_socket)}))"]
     for s in other_sockets:
         lines.append(f"(deny network-outbound (remote unix-socket (path-literal {_sb(s)})))")
         lines.append(f"(deny file-read-data file-write* (literal {_sb(s)}))")
-    lines.append('(deny network-outbound (remote ip "localhost:*"))')
-    lines += [f'(allow network-outbound (remote ip "localhost:{p}"))' for p in allow_ports]
+    if deny_ports is None:
+        lines.append('(deny network-outbound (remote ip "localhost:*"))')
+        lines += [f'(allow network-outbound (remote ip "localhost:{p}"))' for p in allow_ports]
+    else:
+        lines += [f'(deny network-outbound (remote ip "localhost:{p}"))' for p in deny_ports]
     return "\n".join(lines) + "\n"
 
 
@@ -295,6 +406,32 @@ def _transcript_usage(vendor: str, agent_log: Path) -> dict | None:
 USAGE_KEYS = ("requests", "input_tokens", "output_tokens", "cache_read_tokens", "cost_usd")
 
 
+def _opencode_steps(agent_log: Path) -> list[dict]:
+    """opencode ``step_finish`` events (one per model step): time, tokens and cost."""
+    out = []
+    if not agent_log.exists():
+        return out
+    for line in agent_log.read_text(encoding="utf-8", errors="replace").splitlines():
+        if not line.startswith("{") or '"step_finish"' not in line:
+            continue
+        try:
+            e = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        part = e.get("part") or {}
+        tok = part.get("tokens") or {}
+        out.append({"t": float(e.get("timestamp") or 0) / 1000, "requests": 1,
+                    "input_tokens": int(tok.get("input") or 0), "output_tokens": int(tok.get("output") or 0),
+                    "cache_read_tokens": int((tok.get("cache") or {}).get("read") or 0),
+                    "cost_usd": float(part.get("cost") or 0.0)})
+    return out
+
+
+def _sum(rows: list[dict]) -> dict:
+    return {k: (round(sum(r[k] for r in rows), 6) if k == "cost_usd" else sum(r[k] for r in rows))
+            for k in USAGE_KEYS}
+
+
 def seat_cost(seat: Seat, run_dir: Path, task_id: str, clock: list[dict]) -> dict:
     """Tokens and dollars of one agent, in total and per game year. Per year needs the OTLP data (each LLM
     request has a time); Codex reports no dollars (``cost_usd`` is then null)."""
@@ -310,6 +447,13 @@ def seat_cost(seat: Seat, run_dir: Path, task_id: str, clock: list[dict]) -> dic
             u = otel_usage(otel_dir, seat.label, task_id, windows=ws)
             if u:
                 out["by_year"][str(y)] = {k: u[k] for k in USAGE_KEYS}
+    elif seat.vendor == "opencode" and (steps := _opencode_steps(run_dir / "agents" / seat.label / "agent.log")):
+        out["source"] = "transcript"  # opencode's own events carry a time: split by game year too
+        out |= _sum(steps)
+        for y, ws in sorted(year_windows(clock).items()):
+            inside = [r for r in steps if any(w[0] <= r["t"] <= (w[1] or float("inf")) for w in ws)]
+            if inside:
+                out["by_year"][str(y)] = _sum(inside)
     else:
         t = _transcript_usage(seat.vendor, run_dir / "agents" / seat.label / "agent.log")
         if t:
@@ -382,6 +526,9 @@ def build_result(manifest: dict, scores: dict, live: dict | None, seats: list[Se
             "slot": c["slot"], "id": c["id"], "name": c["name"],
             "agent": s.label if s else None, "vendor": s.vendor if s else None, "model": s.model if s else None,
             "agent_status": s.status if s else "absent", "agent_note": s.note if s else "no player: retired at start",
+            "runner_submitted": (s.status in ("retired", "failed")) if s else True,
+            "sessions": len(s.launches) if s else 0, "resumes": s.resumes if s else 0,
+            "continues": s.nudges if s else 0,
             "net_worth": c.get("net_worth"), "net_worth_horizon": c.get("net_worth_horizon"),
             "ledger_balance": c.get("ledger_balance"), "score": c.get("score", c.get("net_worth")),
             "contracts": stats["by_company"].get(str(c["id"])) if stats else None,
@@ -401,7 +548,9 @@ def build_result(manifest: dict, scores: dict, live: dict | None, seats: list[Se
     return {
         "task_id": task_id, "arm": manifest.get("arm"), "track": manifest.get("track"),
         "horizon_days": manifest.get("horizon_days"),
-        "run": {k: manifest.get(k) for k in ("ended", "elapsed_s", "isolation", "turn_s", "run_s", "started")},
+        "run": {k: manifest.get(k) for k in ("ended", "elapsed_s", "isolation", "turn_s", "run_s", "started",
+                                             "max_turns", "usd_cap")}
+               | {"runner_submits": int(manifest.get("runner_submits") or 0)},
         "verify": {"clean": clean, "replay_equals_live": replay_eq,
                    **{k: scores.get(k) for k in ("valid", "rejected", "tamper", "divergences", "acts",
                                                  "failed_acts", "steps", "ticks_log_end", "end_ticks")}},
@@ -487,6 +636,9 @@ class Runner:
         spec = TaskSpec.load(Path(task_dir))
         slots = sorted(int(c["slot"]) for c in spec.objective["companies"])
         seats = parse_seats(specs, slots)
+        if opts.get("all_slots") and len(seats) < len(slots):
+            raise ValueError(f"--all-slots: {len(seats)} players for {len(slots)} companies; a company without a "
+                             "player never trades")
         turn_s = opts.get("turn_s") or float(spec.limits.get("agent_turn_s", 600.0))
         isolation = opts.get("isolation") or ("sandbox" if sandbox_available() else "env")
         if isolation == "sandbox" and not sandbox_available():
@@ -496,12 +648,13 @@ class Runner:
             "v": 1, "task_dir": str(Path(task_dir).resolve()), "task_id": spec.task_id,
             "arm": (obj.get("market") or {}).get("arm"), "track": obj.get("track"),
             "horizon_days": spec.horizon_days, "turn_s": turn_s, "run_s": opts.get("run_s"),
-            "max_turns": opts.get("max_turns"), "nudges": opts.get("nudges", 1),
-            "max_resumes": opts.get("max_resumes", 6), "max_backoff_s": opts.get("max_backoff_s"),
+            "max_turns": opts.get("max_turns"), "nudges": opts.get("nudges", 50),
+            "max_resumes": opts.get("max_resumes", 20), "usd_cap": opts.get("usd_cap"), "runner_submits": 0, "max_backoff_s": opts.get("max_backoff_s"),
             "grace_s": opts.get("grace_s", 120.0), "poll_s": opts.get("poll_s", 1.0), "isolation": isolation,
             "absent_slots": [s for s in slots if s not in {x.slot for x in seats}],
             "seats": [asdict(s) for s in seats], "started": time.time(), "elapsed_s": 0.0, "ended": None,
-            "otel_port": None,
+            "otel_port": None, "claude_auth": opts.get("claude_auth", "token"),
+            "pass_env": [x for x in (opts.get("pass_env") or "").split(",") if x],
         }
         run_dir.mkdir(parents=True, exist_ok=True)
         _write_json(run_dir / "run.json", manifest)
@@ -577,6 +730,19 @@ class Runner:
         out = {int(k): Path(v) for k, v in (doc.get("agents") or {}).items()}
         return out or {slot: agent_socket_path(self.coord_state, slot) for slot in self.cid}
 
+    def engine_ports(self) -> list[int]:
+        """The engine's admin and game ports now (from the coordinator's engine config)."""
+        cfg = self.coord_state / "world" / "openttd.cfg"
+        ports = []
+        if cfg.exists():
+            for line in cfg.read_text(errors="replace").splitlines():
+                k, _, v = line.partition("=")
+                if k.strip() in ("server_admin_port", "server_port") and v.strip().isdigit():
+                    ports.append(int(v.strip()))
+        if len(ports) < 2:
+            raise RuntimeError("the engine ports are unknown: no opencode agent without the localhost guard")
+        return ports
+
     def clock(self, st: dict) -> None:
         if st.get("ticks") != self.clock_last:
             self.clock_last = st.get("ticks")
@@ -601,10 +767,14 @@ class Runner:
         else:
             cmd = command(seat, text, work, self.otel, session=session, resume_prompt=prompt_extra,
                           max_turns=self.m.get("max_turns"))
-        env = environment(seat, self.m["task_id"], adir, own, self.otel)
+        token = claude_oauth_token() if seat.vendor == "claude" and self.m.get("claude_auth") == "token" else None
+        env = environment(seat, self.m["task_id"], adir, own, self.otel,
+                          base=scrubbed_base(extra=tuple(self.m.get("pass_env") or ())), claude_token=token)
         if self.m["isolation"] == "sandbox":
             others = [p for s, p in socks.items() if s != seat.slot] + [control_socket_path(self.coord_state)]
-            prof = sandbox_profile(adir, self.run_dir, self.task_dir, own, others, [int(self.m["otel_port"])])
+            deny = self.engine_ports() if seat.vendor == "opencode" else None
+            prof = sandbox_profile(adir, self.run_dir, self.task_dir, own, others, [int(self.m["otel_port"])],
+                                   deny_ports=deny)
             (adir / "sandbox.sb").write_text(prof)
             cmd = ["/usr/bin/sandbox-exec", "-f", str(adir / "sandbox.sb")] + cmd
         with open(adir / "agent.log", "ab") as fh:
@@ -646,31 +816,55 @@ class Runner:
         self.event("slot retired", slot=slot, why=why)
 
     def decide(self, seat: Seat, st: dict, game_over: bool) -> None:
-        """A seat whose process ended: done, resume after a provider error, nudge, or retire."""
+        """A seat whose process ended. The runner keeps every company played until the end:
+
+        - submitted, or the game is over: done;
+        - a provider error (outage, quota, stall) or an expired login: resume the same session after a wait
+          (an auth error waits 5 s and gets a new token);
+        - any other end before the game ends (a turn cap, the model stopped): continue the same session
+          with the days left (``nudges``, default 50);
+        - three short sessions in a row (each under ``short_session_s``) or no resumes or continuations left:
+          the runner submits for the company. This is rare; result.json counts it (``runner_submits``)."""
         cid = self.cid[seat.slot]
         submitted = cid in set(st.get("submitted") or [])
         if submitted or game_over:
             seat.status = "done"
             self.event("agent done", agent=seat.label, submitted=submitted)
             return
-        _, failed = last_session(self.agent_dir(seat) / "agent.log")
-        if failed and seat.resumes < int(self.m["max_resumes"]):
-            err = last_error(self.agent_dir(seat) / "agent.log")
-            wait_s = resume_wait(err, seat.resumes)
+        alog = self.agent_dir(seat) / "agent.log"
+        _, failed = last_session(alog)
+        err = last_error(alog)
+        auth = bool(err) and is_auth_error(err)
+        last = seat.launches[-1] if seat.launches else {}
+        short = time.time() - float(last.get("t", 0)) < float(self.m.get("short_session_s", 60))
+        seat.short_runs = seat.short_runs + 1 if short else 0
+        if seat.short_runs >= 3:
+            return self._give_up(seat, "failed", f"{seat.short_runs} sessions in a row ended within "
+                                 f"{self.m.get('short_session_s', 60)} s")
+        if (failed or auth) and seat.resumes < int(self.m["max_resumes"]):
+            wait_s = 5.0 if auth else resume_wait(err, seat.resumes)
             if self.m.get("max_backoff_s") is not None:
                 wait_s = min(wait_s, float(self.m["max_backoff_s"]))
             seat.status, seat.due = "backoff", time.time() + wait_s
             seat.resumes += 1
-            self.event("provider error", agent=seat.label, kind=error_kind(err) or "outage", resume_in_s=round(wait_s))
+            self.event("provider error", agent=seat.label, kind="auth" if auth else error_kind(err) or "outage",
+                       resume_in_s=round(wait_s))
             return
-        if not failed and seat.nudges < int(self.m["nudges"]):
+        if not (failed or auth) and seat.nudges < int(self.m["nudges"]):
             seat.nudges += 1
             days = -(-(int(st.get("horizon_tick") or 0) - int(st["ticks"])) // TICKS_PER_DAY)
+            reason = "turn cap" if "max_turns" in str(err.get("message", "")) else "stopped"
+            self.event("agent continues", agent=seat.label, reason=reason, days_left=max(days, 0))
             self.launch(seat, "nudge", NUDGE.format(days=max(days, 0)))
             return
-        seat.status = "failed" if failed else "retired"
-        seat.note = ("provider errors: resumes used up" if failed else
-                     f"the agent stopped without submitting {seat.nudges + 1} time(s)") + "; the runner submitted"
+        self._give_up(seat, "failed" if (failed or auth) else "retired",
+                      "provider errors: resumes used up" if (failed or auth) else
+                      f"the agent stopped {seat.nudges + 1} times without submitting")
+
+    def _give_up(self, seat: Seat, status: str, why: str) -> None:
+        seat.status, seat.note = status, why + "; the runner submitted for the company"
+        self.m["runner_submits"] = int(self.m.get("runner_submits") or 0) + 1
+        self.event("RUNNER SUBMITS", agent=seat.label, slot=seat.slot, why=why)
         self.retire(seat.slot, seat.note)
 
     # ---------------------------------------------------------------- the run
@@ -709,6 +903,7 @@ class Runner:
         over_at: float | None = None
         poll = float(self.m["poll_s"])
         restarts = 0
+        last_cost = 0.0
         last_save = 0.0
         while True:
             try:
@@ -742,18 +937,35 @@ class Runner:
                 self.m["ended"] = "run_budget"
                 self.event("run budget reached", elapsed_s=round(self.elapsed()))
                 break
+            if self.m.get("usd_cap") and time.time() - last_cost > float(self.m.get("cost_check_s", 30)):
+                last_cost = time.time()
+                spent = self.spent_usd()
+                if spent > float(self.m["usd_cap"]):
+                    self.m["ended"] = "usd_cap"
+                    self.event("dollar cap reached", usd=round(spent, 2), cap=self.m["usd_cap"])
+                    break
             if time.time() - last_save > 5:
                 self.save()
                 last_save = time.time()
             time.sleep(poll)
         return self.finish()
 
+    def spent_usd(self) -> float:
+        """The dollars that the agents reported so far (OTLP; Codex reports none)."""
+        from railhead.behaviour import otel_usage
+
+        total = 0.0
+        for seat in self.seats:
+            u = otel_usage(self.run_dir / "otel", seat.label, self.m["task_id"])
+            total += float((u or {}).get("cost_usd") or 0.0)
+        return total
+
     def stop_agents(self) -> None:
         for seat in self.seats:
             if self.seat_alive(seat):
                 _kill_group(seat.pid)
                 if seat.status in ("running", "backoff"):
-                    seat.status = "done" if self.m.get("ended") != "run_budget" else "stopped"
+                    seat.status = "stopped" if self.m.get("ended") in ("run_budget", "usd_cap") else "done"
 
     def finish(self) -> dict:
         self.stop_agents()
@@ -828,7 +1040,8 @@ def _otlp_request(tokens_in: int, tokens_out: int, cost: float) -> None:
 def play_stub(path: Path, workdir: Path | None = None) -> int:
     """A scripted agent with a Claude-shaped transcript (stream-json) and fake usage: each step is one
     'request' of 100 input and 20 output tokens and $0.001. Lines: ``rh ...`` (run), ``@sleep N``,
-    ``@crash`` (end with a provider error, once), ``@exit`` (stop without finishing, once),
+    ``@crash`` (end with a provider error, once), ``@exit`` (stop without finishing, once), ``@turncap``
+    (end as a Claude session at its turn cap), ``@autherr`` (end with an expired login),
     ``@connect PATH`` and ``@read PATH`` (try another socket or file; print ok or denied).
     Progress is kept in ``stub.progress``; a new start continues after the last done line."""
     workdir = Path(workdir or os.getcwd())
@@ -851,6 +1064,14 @@ def play_stub(path: Path, workdir: Path | None = None) -> int:
             return 1
         if step == "@exit":
             break
+        if step == "@turncap":  # a Claude session that reached --max-turns
+            emit({"type": "result", "subtype": "error_max_turns", "is_error": True, "terminal_reason": "max_turns",
+                  "total_cost_usd": 0.0, "usage": {}, "num_turns": n})
+            return 0
+        if step == "@autherr":  # an expired login token
+            emit({"type": "result", "is_error": True, "api_error_status": 401, "total_cost_usd": 0.0, "usage": {},
+                  "result": "Failed to authenticate. API Error: 401 OAuth token has expired", "num_turns": n})
+            return 1
         n += 1
         mid = str(uuid.uuid4())
         emit({"type": "assistant", "message": {"id": mid, "content": [{"type": "text", "text": step}],
@@ -892,7 +1113,8 @@ def _opts(argv: list[str]) -> tuple[list[str], dict]:
     conv = {"--turn-s": ("turn_s", float), "--run-s": ("run_s", float), "--max-turns": ("max_turns", int),
             "--nudges": ("nudges", int), "--max-resumes": ("max_resumes", int),
             "--max-backoff-s": ("max_backoff_s", float), "--grace-s": ("grace_s", float),
-            "--isolation": ("isolation", str), "--poll": ("poll_s", float)}
+            "--isolation": ("isolation", str), "--poll": ("poll_s", float), "--pass-env": ("pass_env", str),
+            "--claude-auth": ("claude_auth", str), "--usd-cap": ("usd_cap", float)}
     pos, opts = [], {}
     it = iter(argv)
     for a in it:
@@ -908,7 +1130,10 @@ def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv[:1] == ["--play-stub"]:
         return play_stub(Path(argv[1]))
-    pos, opts = _opts(argv)
+    all_slots = "--all-slots" in argv
+    pos, opts = _opts([a for a in argv if a != "--all-slots"])
+    if all_slots:
+        opts["all_slots"] = True
     if pos[:1] == ["run"] and len(pos) >= 4:
         run_dir = Path(pos[2])
         res = Runner.create(Path(pos[1]), run_dir, pos[3:], **opts).run()
