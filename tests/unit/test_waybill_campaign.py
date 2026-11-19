@@ -283,3 +283,67 @@ def test_the_campaign_writes_nothing_into_the_run_directories(tmp_path):
     c.step()
     after = {p: p.read_bytes() for p in (w.cfg["runs_dir"] / k).rglob("*") if p.is_file()}
     assert before == after and "second" not in (w.cfg["runs_dir"] / k / "result.json").read_text()
+
+
+# ---------------------------------------------------------------------------------------------- live runners
+def _holder(run_dir: Path, *extra: str) -> subprocess.Popen:
+    """A process that holds the runner lock of ``run_dir`` (as `waybill-run run|resume` does) and waits."""
+    import sys
+    import time
+
+    code = ("import sys, time; from pathlib import Path; from railhead.multi.arena import hold_runner_lock; "
+            "h = hold_runner_lock(Path(sys.argv[1])); print('held', flush=True); time.sleep(60)")
+    p = subprocess.Popen([sys.executable, "-c", code, str(run_dir), *extra], stdout=subprocess.PIPE, text=True)
+    assert p.stdout.readline().strip() == "held"
+    time.sleep(0.05)
+    return p
+
+
+def test_a_second_runner_on_the_same_run_directory_stops_and_a_killed_runner_frees_it(tmp_path):
+    p = _holder(tmp_path / "run")
+    try:
+        assert wa.runner_locked(tmp_path / "run")
+        with pytest.raises(RuntimeError, match="another runner"):
+            wa.hold_runner_lock(tmp_path / "run", wait_s=0.3)
+    finally:
+        p.kill()
+        p.wait(10)
+    assert not wa.runner_locked(tmp_path / "run")  # the kernel dropped the lock of the killed runner
+    wa.hold_runner_lock(tmp_path / "run", wait_s=0.3).close()
+    assert not wa.runner_locked(tmp_path / "none")
+
+
+def test_a_live_runner_counts_as_alive_even_when_ps_cuts_its_command_line(tmp_path, monkeypatch):
+    """CI on Linux: `ps` without -ww cut the runner's command line to 80 columns, the run directory was lost,
+    and a restarted campaign resumed two live games (a second runner on each: verify not clean)."""
+    run = tmp_path / ("r" * 60) / "waybill-short-s0002-r0-enforced-h45"
+    p = _holder(run)
+    try:
+        def cut_ps(cmd, **kw):
+            return subprocess.CompletedProcess(cmd, 0, "python -m railhead.multi.arena run /tmp/x"[:80], "")
+
+        monkeypatch.setattr(wc.subprocess, "run", cut_ps)
+        monkeypatch.setattr(wc, "command_line", lambda pid: cut_ps(["ps"]).stdout)
+        assert wc.runner_alive(p.pid, run)
+        assert wc.runner_alive(None, run)  # the lock decides, not the pid
+    finally:
+        p.kill()
+        p.wait(10)
+    assert not wc.runner_alive(p.pid, run)
+
+
+def test_the_command_line_of_a_process_is_never_cut(tmp_path, monkeypatch):
+    import sys
+
+    monkeypatch.setenv("COLUMNS", "80")  # Linux ps cuts its output to this width without -ww
+    long_dir = str(tmp_path / ("d" * 120) / "runs" / "waybill-short-s0002-r0-enforced-h45")
+    p = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)", "railhead.multi.arena", long_dir])
+    try:
+        import time
+
+        time.sleep(0.3)
+        assert long_dir in wc.command_line(p.pid)
+        assert wc.runner_alive(p.pid, Path(long_dir))  # an old runner without the lock: the full line decides
+    finally:
+        p.kill()
+        p.wait(10)

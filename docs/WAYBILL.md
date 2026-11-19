@@ -582,7 +582,7 @@ opencode: its own `step_finish` events have a time, tokens and dollars, thus ope
 
 ### 12.7 Resume
 
-`resume` continues a run after a crash of the runner or a restart of the computer.
+`resume` continues a run after a crash of the runner or a restart of the computer. It stops at the start if another runner still holds the lock of the run directory (`runner.lock`).
 
 1. It starts the OTLP sink again (on the same port if it is free).
 2. If the coordinator still replies, the runner uses it. Else it starts a new coordinator, which replays `coord/run/actions.jsonl` and makes the barrier again (section 4.6).
@@ -775,7 +775,7 @@ Relative paths are relative to the campaign file. Keep `tasks_dir` and `runs_dir
 Each step of `run` does these tasks:
 
 1. For each game with a `result.json`, it records the cost (`cost.usd_reported`), the end, and the exclusion reasons of prereg section 7 (`exclusion_reasons` of `railhead.multi.analysis`).
-2. A game with a `run.json` and a live runner continues. The campaign does not start a second runner for it.
+2. A game with a `run.json` and a live runner continues. The campaign does not start a second runner for it. A runner holds a lock on its run directory (`runner.lock`) until it stops. The kernel releases the lock also when the runner is killed. The campaign uses this lock to find a live runner, and a second runner on the same run directory stops at the start.
 3. A game with a `run.json`, no `result.json` and no runner gets `waybill-run resume`, on the login in its `run.json`. After `max_restarts` resumes, the game fails.
 4. If one arm of a seed is excluded or failed, both arms are replaced. The replacement is the next accepted seed after the last seed of the schedule (the campaign makes its tasks and skips a rejected seed). It keeps the rotation. The campaign does not start the other arm. If the other arm runs, it continues to the end and its status is `replaced`.
 5. The campaign starts the next game in the schedule order (both arms of a seed, then the next seed), when all these conditions are true:

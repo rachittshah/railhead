@@ -28,6 +28,23 @@ def _ports(run: Path) -> set[int]:
             if k.strip() in ("server_port", "server_admin_port")}
 
 
+def _diagnose(tmp_path: Path, doc: dict) -> str:
+    """Why a game is not done: its state entry, the end of its runner log and of its runner events."""
+    out = []
+    for k, g in (doc.get("games") or {}).items():
+        out.append(f"== {k}: " + json.dumps({x: g.get(x) for x in ("status", "exclusion", "ended", "restarts",
+                                                                     "start_failures", "pid")}))
+        if g.get("status") == "done":
+            continue
+        for f in (tmp_path / "runs" / "campaign" / "logs" / f"{k}.log", tmp_path / "runs" / k / "events.jsonl",
+                  tmp_path / "runs" / k / "coord.log"):
+            if f.exists():
+                out.append(f"-- {f.name}:\n" + f.read_text(errors="replace")[-2500:])
+    for f in ("campaign1.log",):
+        out.append(f"-- {f}:\n" + (tmp_path / f).read_text(errors="replace")[-2000:])
+    return "\n".join(out)
+
+
 def test_two_games_at_a_time_on_two_accounts_survive_a_campaign_restart(tmp_path):
     stub = tmp_path / "stub.txt"
     partner = tmp_path / "runs" / "waybill-short-s0002-r0-enforced-h45" / "run.json"
@@ -63,8 +80,10 @@ def test_two_games_at_a_time_on_two_accounts_survive_a_campaign_restart(tmp_path
     assert r.returncode == 0, r.stdout[-3000:] + r.stderr[-3000:]
     doc = json.loads(state.read_text())
     games = doc["games"]
-    assert len(games) == 4 and all(g["status"] == "done" for g in games.values()), games
+    assert len(games) == 4 and all(g["status"] == "done" for g in games.values()), \
+        _diagnose(tmp_path, doc) + "\n-- campaign2:\n" + r.stdout[-3000:]
     assert {g["account"] for g in games.values()} == {"one", "two"}
+    assert all(g["restarts"] == 0 for g in games.values()), _diagnose(tmp_path, doc)  # adopted, not resumed
     runs = {k: tmp_path / "runs" / k for k in games}
     spans = {}
     for k, run in runs.items():
