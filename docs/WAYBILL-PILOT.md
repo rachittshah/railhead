@@ -524,3 +524,18 @@ The fixes (exchange rules 2: FIFO allocation of tagged payments, late payments, 
 **(b) A counterfactual rescore under rules 2** (`railhead waybill-run rescore <run_dir>`, `Exchange.rescore`): the same company records, applied again under rules 2. `enforced`: 7 obligations (the two instalments of C13 fold into one), all on time, repayment 100%. `cheap_talk`: 27 obligations: 16 on time, 6 late (days late 44 to 240), 2 partial, 3 unpaid; on-time rate 59%; repayment 73.9%; 10 broken and 1 partial at the settle tick. This reading is **not** what the agents would have done under rules 2: under rules 1, s1 told s0 that a late tagged payment had gone to the next instalment and asked for a separate untagged payment, and s0 did that. Under FIFO, each later payment of s0 moves to an older instalment and the lateness cascades. A rerun is needed for v3 numbers under rules 2.
 
 The gate under the consistent rule does not change: (a) 14 signed, 6 breaches, 1 renegotiation.
+
+## 12. Preflight before the lock (2026-11-19)
+
+A check of the full pipeline on the locked code, before the pre-registration hash. Seed 2 was played before (pilots v2 and v3), so these games are not held out and are not in any result.
+
+- Setup: short track, seed 2, rotation 0, both arms, exchange rules 2; two Claude Opus 5.5 and two Codex gpt-6.1-terra seats; the runner flags of prereg section 9 (`--all-slots --turn-s 300 --max-turns 200 --grace-s 180 --traces off --usd-cap 60 --run-s 9000`). The `cheap_talk` arm used a second Claude login (`--claude-profile`) and `--sandbox-deny` for the paired arm.
+
+| Arm | Verifier | Replay equal to live | Ended | Steps | Cost (Claude) | Wall time |
+|---|---|---|---|---|---|---|
+| `enforced` | clean | yes | horizon | 202 | $12.78 | 42 min |
+| `cheap_talk` | clean | yes | horizon | 217 | $14.41 | 29 min |
+
+- `railhead waybill-deliveries` and `railhead waybill-analyze` ran on the pair: 0 exclusions, 1 paired seed (underpowered, as expected).
+- Failed actions: 4,757 of 5,397 (`enforced`) and 900 of 1,705 (`cheap_talk`). Of these, 98% and 89% are dry runs (`dry_run: true`) that probe tiles for a station site (`ERR_FLAT_LAND_REQUIRED`, `ERR_AREA_NOT_CLEAR`). This is agent behaviour, not a defect.
+- A Linux-only defect of the campaign (a restarted campaign resumed live games) was found by CI and fixed before the lock (CHANGELOG, Fixed).

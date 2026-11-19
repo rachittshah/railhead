@@ -1,0 +1,4 @@
+# Waybill pre-registration lock, 2026-11-19. Verify: sha256sum -c <(grep -v '^#' docs/data/waybill-prereg.sha256 | grep -v '^code')
+bea71025d24c5893a6a9783c880ef4ae071b06a68230c048d23c45cdeea54ef6  docs/WAYBILL-PREREG.md
+f7737be7e8cf2f938b600c51b9235119e25ee7b83456fcf59c1ad3995672a001  docs/data/waybill-schedule-short.json
+code 47b46f4211b240c0c8d189818373c68d1f83c15e  (origin/main: runner, campaign and analysis code at the lock)

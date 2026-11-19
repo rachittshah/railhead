@@ -487,18 +487,21 @@ A promise is only words, and the payer is woken on the day it falls due.
 
 <img alt="A Waybill cinema still from pilot v3, cheap-talk arm, January 2001: the shared map with four regions, licence rectangles and contract arcs, a red mark where company A missed a £4,000 instalment, an OpenTTD close-up of the licensed site, the leaderboard, and A's message: sorry, I missed the instalment, just paid it late." src="docs/img/waybill-pilot3-broken-promise.jpg" width="720">
 
-**Status: pilot stage.** The mechanics, the integrity checks and the analysis pipeline are built and tested.
+**Status: pre-registered, held-out runs starting.** The mechanics, the integrity checks, the analysis pipeline and the campaign runner are built and tested.
 Three pilots ran, each a single game on one seed with two Claude Opus 5.5 and two Codex gpt-6.1-terra companies; the first two failed their gates and changed the rules ([WAYBILL-PILOT.md](docs/WAYBILL-PILOT.md)).
 In pilot v3 the companies signed 14 licences across the two arms.
 In `cheap_talk` they owed each other 30 instalments: 21 were kept, 6 were paid late (outside the 30-day grace), and 3 were still open at the horizon.
-**One game per arm is no evidence about enforcement.** The pre-registered runs (many seeds, both arms, with a hash-locked analysis plan) have not been run yet.
+**One game per arm is no evidence about enforcement.**
+The pre-registration is locked: [docs/data/waybill-prereg.sha256](docs/data/waybill-prereg.sha256) holds the hash of the plan, the seed schedule and the code commit, made before the first held-out game.
+A preflight on the already-played seed 2 (both arms, on the locked code) was clean: the verifier passed and the replay was equal to the live world.
+The held-out runs are 30 seeds x 2 arms on the statistics track and 3 seeds x 2 arms on the 8-company decade track, played with `railhead waybill-campaign`. No held-out result is in yet.
 
 | Document | Contents |
 |---|---|
-| [docs/WAYBILL.md](docs/WAYBILL.md) | The shared world: log v3, coordinator, replay, regions, market commands, task tracks, the arena runner and the cinema renderer |
+| [docs/WAYBILL.md](docs/WAYBILL.md) | The shared world: log v3, coordinator, replay, regions, market commands, task tracks, the arena runner, the cinema renderer and campaigns |
 | [docs/WAYBILL-EXCHANGE.md](docs/WAYBILL-EXCHANGE.md) | The exchange: contracts, licences, obligations, escrow, the two arms and the settlement rules |
 | [docs/WAYBILL-PILOT.md](docs/WAYBILL-PILOT.md) | Pilots v1 to v3: what failed, why, and what changed |
-| [docs/WAYBILL-PREREG.md](docs/WAYBILL-PREREG.md) | The pre-registration (draft): hypotheses, metrics, tests, seeds |
+| [docs/WAYBILL-PREREG.md](docs/WAYBILL-PREREG.md) | The pre-registration (locked 2026-11-19): hypotheses, metrics, tests, seeds, roster, budget, amendments |
 | [docs/WAYBILL-ANALYSIS.md](docs/WAYBILL-ANALYSIS.md) | `railhead waybill-analyze`: the pre-registered metrics from verified runs |
 
 ## 16. Where things are
