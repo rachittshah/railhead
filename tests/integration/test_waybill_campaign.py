@@ -83,6 +83,7 @@ def test_two_games_at_a_time_on_two_accounts_survive_a_campaign_restart(tmp_path
     assert len(games) == 4 and all(g["status"] == "done" for g in games.values()), \
         _diagnose(tmp_path, doc) + "\n-- campaign2:\n" + r.stdout[-3000:]
     assert {g["account"] for g in games.values()} == {"one", "two"}
+    assert all(g["restarts"] == 0 for g in games.values()), _diagnose(tmp_path, doc)  # adopted, not resumed
     runs = {k: tmp_path / "runs" / k for k in games}
     spans = {}
     for k, run in runs.items():

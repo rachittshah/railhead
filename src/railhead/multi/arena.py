@@ -712,6 +712,47 @@ def _write_json(path: Path, obj) -> None:
     os.replace(tmp, path)
 
 
+RUNNER_LOCK = "runner.lock"
+
+
+def hold_runner_lock(run_dir: Path, wait_s: float = 5.0):
+    """Take the exclusive lock of a run directory for the life of this process (``run`` and ``resume``). A
+    second runner on the same run directory would adopt the same coordinator and agents and break the game,
+    so it stops here. The kernel releases the lock when the process ends, also on SIGKILL. A short wait
+    lets a probe of :func:`runner_locked` pass."""
+    import fcntl
+
+    run_dir = Path(run_dir)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    fh = open(run_dir / RUNNER_LOCK, "a")  # noqa: SIM115 - held until the process ends
+    end = time.time() + wait_s
+    while True:
+        try:
+            fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return fh
+        except OSError:
+            if time.time() >= end:
+                fh.close()
+                raise RuntimeError(f"another runner holds {run_dir / RUNNER_LOCK}") from None
+            time.sleep(0.1)
+
+
+def runner_locked(run_dir: Path) -> bool:
+    """A live runner holds the lock of ``run_dir`` (a shared probe: it never blocks the runner for long)."""
+    import fcntl
+
+    path = Path(run_dir) / RUNNER_LOCK
+    if not path.exists():
+        return False
+    with open(path, "a") as fh:
+        try:
+            fcntl.flock(fh, fcntl.LOCK_SH | fcntl.LOCK_NB)
+        except OSError:
+            return True
+        fcntl.flock(fh, fcntl.LOCK_UN)
+        return False
+
+
 def _alive(pid: int | None) -> bool:
     if not pid:
         return False
@@ -1356,9 +1397,11 @@ def main(argv: list[str] | None = None) -> int:
         opts["all_slots"] = True
     if pos[:1] == ["run"] and len(pos) >= 4:
         run_dir = Path(pos[2])
+        _lock = hold_runner_lock(run_dir)  # held until the process ends
         res = Runner.create(Path(pos[1]), run_dir, pos[3:], **opts).run()
     elif pos[:1] == ["resume"] and len(pos) == 2:
         run_dir = Path(pos[1])
+        _lock = hold_runner_lock(run_dir)  # held until the process ends
         r = Runner.load(run_dir)
         if "claude_profile" in opts:
             opts["claude_profile"] = normalise_claude_profile(opts["claude_profile"])

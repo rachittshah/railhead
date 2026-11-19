@@ -439,16 +439,31 @@ class Campaign:
 
 # ------------------------------------------------------------------------------------------- helpers
 def runner_alive(pid: int | None, run_dir: Path) -> bool:
-    """A runner of ``run_dir`` still runs as ``pid`` (the command line names the run directory: a reused pid
-    of another program does not count)."""
+    """A runner of ``run_dir`` still runs. The runner's lock of the run directory decides (the kernel drops it
+    when the runner ends). For a runner without the lock (an older version): ``pid`` runs and its full command
+    line names the run directory, so that a reused pid of another program does not count."""
+    if arena.runner_locked(run_dir):
+        return True
     if not pid:
         return False
     try:
         os.kill(int(pid), 0)
     except OSError:
         return False
-    r = subprocess.run(["ps", "-p", str(int(pid)), "-o", "command="], capture_output=True, text=True, check=False)
-    return "railhead.multi.arena" in r.stdout and str(run_dir) in r.stdout
+    cmd = command_line(int(pid))
+    return "railhead.multi.arena" in cmd and str(run_dir) in cmd
+
+
+def command_line(pid: int) -> str:
+    """The full command line of ``pid``. On Linux, ``ps`` cuts its output to COLUMNS (80 in CI) without
+    ``-ww``, and a cut line loses the run directory: /proc first, then ``ps -ww``."""
+    proc = Path(f"/proc/{pid}/cmdline")
+    with contextlib.suppress(OSError):
+        if proc.exists():
+            return proc.read_bytes().replace(b"\0", b" ").decode(errors="replace")
+    r = subprocess.run(["ps", "-ww", "-p", str(pid), "-o", "command="], capture_output=True, text=True,
+                       check=False)
+    return r.stdout
 
 
 def code_version() -> tuple[str | None, bool | None]:

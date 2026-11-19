@@ -6,6 +6,10 @@ Not published yet. The latest published image and Harbor datasets are 0.1.1.
 
 ### Fixed
 
+- `railhead waybill-campaign` could resume a game whose runner was still live after a restart of the
+  campaign: on Linux, `ps` cut the runner's command line to 80 columns and the run directory check failed.
+  The two runners broke the game (verify not clean), and the seed was replaced. A runner now holds a lock
+  on its run directory (`runner.lock`), the campaign checks the lock, and a second runner stops at the start.
 - One version. `railhead.__version__` is the single source: `pyproject.toml` reads it, the default image
   tag and the Harbor task version derive from it, and the image workflow passes it as the build argument
   `RAILHEAD_VERSION`. The image build stops if the two differ, and a `v*` tag must name the same version.
