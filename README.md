@@ -30,6 +30,8 @@ All eleven networks, growing over the decade, every frame from a replay ([60-sec
 
 <img alt="Timelapse: eleven transport networks grow on the same map from 1960 to 1971. The richest companies cover the map in long air routes; the poorest build a few short road lines." src="docs/img/arena2-timelapse.gif" width="720">
 
+**New: Waybill.** Several AI companies share one world and can trade only through binding contracts, played twice per seed, once with enforcement and once on trust. The plan is pre-registered and hash-locked; the held-out runs are starting. [Section 15](#15-waybill-one-world-several-companies-and-promises-that-cost-money).
+
 ---
 
 ## 1. Friday, 15:43
@@ -496,11 +498,24 @@ The pre-registration is locked: [docs/data/waybill-prereg.sha256](docs/data/wayb
 A preflight on the already-played seed 2 (both arms, on the locked code) was clean: the verifier passed and the replay was equal to the live world.
 The held-out runs are 30 seeds x 2 arms on the statistics track and 3 seeds x 2 arms on the 8-company decade track, played with `railhead waybill-campaign`. No held-out result is in yet.
 
+**Run it yourself.** One game, its checks, the analysis, and a full campaign (reference: [WAYBILL.md](docs/WAYBILL.md) sections 11 to 14):
+
+```bash
+python -m railhead.multi.gen track short 5 1 tasks/waybill            # both arms of the first accepted seed from 5
+railhead waybill-run run tasks/waybill/waybill-short-s0005-r0-enforced runs/s5-enforced \
+  claude:claude-opus-5-5 codex:gpt-6.1-terra claude:claude-opus-5-5 codex:gpt-6.1-terra --all-slots --usd-cap 60
+railhead waybill-run result runs/s5-enforced                           # verify again, write result.json
+railhead waybill-deliveries runs/s5-enforced runs/s5-cheap             # cargo per company, from a replay
+railhead waybill-analyze runs/s5-enforced runs/s5-cheap --out out/analysis
+railhead waybill-campaign plan campaign.json                           # all games of a schedule, an account pool, caps
+railhead waybill-cinema runs/s5-enforced runs/s5-cheap --out out/cinema # video and stills, every frame from a replay
+```
+
 | Document | Contents |
 |---|---|
 | [docs/WAYBILL.md](docs/WAYBILL.md) | The shared world: log v3, coordinator, replay, regions, market commands, task tracks, the arena runner, the cinema renderer and campaigns |
 | [docs/WAYBILL-EXCHANGE.md](docs/WAYBILL-EXCHANGE.md) | The exchange: contracts, licences, obligations, escrow, the two arms and the settlement rules |
-| [docs/WAYBILL-PILOT.md](docs/WAYBILL-PILOT.md) | Pilots v1 to v3: what failed, why, and what changed |
+| [docs/WAYBILL-PILOT.md](docs/WAYBILL-PILOT.md) | Pilots v1 to v3 and the preflight before the lock: what failed, why, and what changed |
 | [docs/WAYBILL-PREREG.md](docs/WAYBILL-PREREG.md) | The pre-registration (locked 2026-11-19): hypotheses, metrics, tests, seeds, roster, budget, amendments |
 | [docs/WAYBILL-ANALYSIS.md](docs/WAYBILL-ANALYSIS.md) | `railhead waybill-analyze`: the pre-registered metrics from verified runs |
 
