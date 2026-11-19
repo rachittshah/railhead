@@ -20,7 +20,8 @@ the reported dollars pass D), ``--max-turns N`` (turns of one Claude session; a 
 provider or login errors; default 20), ``--max-backoff-s S``, ``--grace-s S`` (time for the agents to write
 their reports after the end; default 120), ``--isolation sandbox|env``, ``--pass-env A,B`` (more variables
 for the agents), ``--claude-auth token|none``, ``--all-slots`` (refuse a company without a player),
-``--poll S``.
+``--poll S``, ``--claude-profile DIR`` (the CLAUDE_CONFIG_DIR of the Claude login that the Claude agents use;
+default: the default login), ``--sandbox-deny A,B`` (more directories that the sandbox refuses).
 
 Run directory::
 
@@ -295,33 +296,86 @@ def environment(seat: Seat, task_id: str, agent_dir: Path, socket: Path, otel: s
     return env
 
 
-def claude_oauth_token(refresh_below_s: float = 600.0) -> str | None:
+DEFAULT_PROFILES = ("", "default")
+KEYCHAIN_SERVICE = "Claude Code-credentials"
+
+
+def claude_profile_dir(profile: str | None) -> str | None:
+    """The normalised config directory of a Claude login profile, or None for the default login (no
+    ``CLAUDE_CONFIG_DIR``). ``default``, an empty value and ``~/.claude`` name the default login. The path is
+    made absolute without resolving links: Claude Code names the keychain item after the string itself."""
+    if profile is None or profile in DEFAULT_PROFILES:
+        return None
+    path = os.path.abspath(os.path.expanduser(profile))
+    if path == os.path.abspath(os.path.expanduser("~/.claude")):
+        return None
+    return path
+
+
+def normalise_claude_profile(profile: str | None) -> str | None:
+    """The value that run.json keeps for ``--claude-profile``: None (no option: the old behaviour, the
+    environment token wins), ``default`` (the default login, explicitly) or the normalised directory."""
+    if profile is None:
+        return None
+    return claude_profile_dir(profile) or "default"
+
+
+def claude_keychain_service(profile: str | None) -> str:
+    """The macOS keychain item of a Claude login: ``Claude Code-credentials`` for the default login, else
+    the same name plus ``-`` and the first 8 hex digits of the SHA-256 of the config directory path."""
+    import hashlib
+
+    path = claude_profile_dir(profile)
+    if path is None:
+        return KEYCHAIN_SERVICE
+    return f"{KEYCHAIN_SERVICE}-{hashlib.sha256(path.encode()).hexdigest()[:8]}"
+
+
+def claude_profile_env(profile: str | None, source: dict | None = None) -> dict:
+    """The environment of a ``claude`` command that must use the login of ``profile``: no
+    ``CLAUDE_CODE_OAUTH_TOKEN``, and ``CLAUDE_CONFIG_DIR`` set to the profile (removed for the default)."""
+    env = dict(os.environ if source is None else source)
+    env.pop("CLAUDE_CODE_OAUTH_TOKEN", None)
+    path = claude_profile_dir(profile)
+    if path is None:
+        env.pop("CLAUDE_CONFIG_DIR", None)
+    else:
+        env["CLAUDE_CONFIG_DIR"] = path
+    return env
+
+
+def read_claude_login(profile: str | None = None) -> dict:
+    """The ``claudeAiOauth`` record of a login from the macOS keychain ({} when there is none)."""
+    if sys.platform != "darwin":
+        return {}
+    r = subprocess.run(["security", "find-generic-password", "-s", claude_keychain_service(profile), "-w"],
+                       capture_output=True, text=True, timeout=30, check=False)
+    try:
+        return json.loads(r.stdout).get("claudeAiOauth") or {}
+    except (json.JSONDecodeError, AttributeError):
+        return {}
+
+
+def claude_oauth_token(refresh_below_s: float = 600.0, profile: str | None = None) -> str | None:
     """The operator's Claude login as a bearer token for an agent with its own CLAUDE_CONFIG_DIR.
 
-    ``CLAUDE_CODE_OAUTH_TOKEN`` in the runner's environment wins (for example a ``claude setup-token`` token).
-    Else, on macOS, the access token of the operator's login from the keychain. Only the access token goes to
-    the agents, never the refresh token: an agent cannot rotate the operator's login. When the access token
-    expires within ``refresh_below_s``, one short ``claude -p`` call with the operator's own configuration lets
-    Claude Code refresh it first. A session whose token expires ends with an auth error and is resumed with a
-    new token (Runner.decide)."""
-    if os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
+    Without ``profile``: ``CLAUDE_CODE_OAUTH_TOKEN`` in the runner's environment wins (for example a ``claude
+    setup-token`` token); else, on macOS, the access token of the default login from the keychain. With
+    ``profile`` (``default`` or the CLAUDE_CONFIG_DIR of another login, ``--claude-profile``): always the keychain
+    item of that login; the environment token is ignored, so that a run never uses another account than its profile.
+    Only the access token goes to the agents, never the refresh token: an agent cannot rotate the operator's
+    login. When the access token expires within ``refresh_below_s``, one short ``claude -p`` call with the
+    profile's own configuration lets Claude Code refresh it first. A session whose token expires ends with an
+    auth error and is resumed with a new token (Runner.decide)."""
+    if profile is None and os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
         return os.environ["CLAUDE_CODE_OAUTH_TOKEN"]
     if sys.platform != "darwin":
         return None
-
-    def read() -> dict:
-        r = subprocess.run(["security", "find-generic-password", "-s", "Claude Code-credentials", "-w"],
-                           capture_output=True, text=True, timeout=30, check=False)
-        try:
-            return json.loads(r.stdout).get("claudeAiOauth") or {}
-        except json.JSONDecodeError:
-            return {}
-
-    o = read()
+    o = read_claude_login(profile)
     if o and float(o.get("expiresAt", 0)) / 1000 - time.time() < refresh_below_s:
         subprocess.run(["claude", "-p", "Reply OK.", "--safe-mode", "--max-turns", "1"], capture_output=True,
-                       timeout=180, check=False, stdin=subprocess.DEVNULL)
-        o = read()
+                       timeout=180, check=False, stdin=subprocess.DEVNULL, env=claude_profile_env(profile))
+        o = read_claude_login(profile)
     return o.get("accessToken") or None
 
 
@@ -331,7 +385,7 @@ def _sb(path: Path | str) -> str:
 
 def sandbox_profile(agent_dir: Path, run_dir: Path, task_dir: Path, own_socket: Path, other_sockets: list[Path],
                     allow_ports: list[int], home: Path | None = None, tmp_root: Path | None = None,
-                    deny_ports: list[int] | None = None) -> str:
+                    deny_ports: list[int] | None = None, deny_dirs: list[Path] | None = None) -> str:
     """A macOS sandbox profile (sandbox-exec) for one agent. Everything is allowed, except:
 
     - the run directory (the merged log, the other agents' transcripts and harness state, the OTLP data) and
@@ -341,6 +395,7 @@ def sandbox_profile(agent_dir: Path, run_dir: Path, task_dir: Path, own_socket: 
       own CODEX_HOME), ``~/.agents``, and the per-user Claude temporary root (``tmp_root``, other sessions'
       tool output);
     - the control socket and the other agents' sockets;
+    - ``deny_dirs``: more directories (the config directory of a ``--claude-profile`` login);
     - TCP to localhost (the engine's game and admin ports) apart from the OTLP sink. With ``deny_ports``
       (opencode, whose private server listens on a random localhost port), only those ports are refused.
 
@@ -349,7 +404,7 @@ def sandbox_profile(agent_dir: Path, run_dir: Path, task_dir: Path, own_socket: 
     every parent. The allow rules name ``file-read-data`` because the more specific denial otherwise wins."""
     home = Path(home or Path.home())
     tmp_root = Path(tmp_root) if tmp_root else Path(f"/private/tmp/claude-{os.getuid()}")
-    deny = [run_dir, task_dir, home / ".claude", home / ".codex", home / ".agents", tmp_root]
+    deny = [run_dir, task_dir, home / ".claude", home / ".codex", home / ".agents", tmp_root, *(deny_dirs or [])]
     lines = ["(version 1)", "(allow default)",
              "(deny file-read-data file-write* " + " ".join(f"(subpath {_sb(d)})" for d in deny) + ")",
              f"(deny file-read-data file-write* (literal {_sb(home / '.claude.json')}))",
@@ -683,6 +738,51 @@ def _kill_group(pid: int | None, grace: float = 5.0) -> None:
         os.killpg(pid, signal.SIGKILL)
 
 
+class SpendMeter:
+    """The dollars of a run's agents from its OTLP log (``api_request`` events). Incremental: each read takes
+    only the whole lines added since the last read (a decade run's log grows to hundreds of MB). An event of
+    another game (the same labels, on a reused sink port) is skipped by its ``arena.task``."""
+
+    def __init__(self, path: Path, labels: set[str], task_id: str | None = None) -> None:
+        self.path, self.labels, self.task = Path(path), set(labels), task_id
+        self.usd, self.pos = 0.0, 0
+
+    @classmethod
+    def for_run(cls, run_dir: Path) -> SpendMeter:
+        m = _read_json(Path(run_dir) / "run.json")
+        if not m:
+            raise FileNotFoundError(f"no run.json in {run_dir}")
+        return cls(Path(run_dir) / "otel" / "logs.jsonl", {s["label"] for s in m.get("seats") or []}, m.get("task_id"))
+
+    def read(self) -> float:
+        from railhead.otel import _attr_value
+
+        if not self.path.exists():
+            return self.usd
+        with open(self.path, "rb") as fh:
+            fh.seek(self.pos)
+            chunk = fh.read()
+        end = chunk.rfind(b"\n") + 1  # whole lines only
+        self.pos += end
+        for line in chunk[:end].splitlines():
+            if b"cost_usd" not in line:
+                continue
+            try:
+                env = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            for rl in (env.get("body") or {}).get("resourceLogs", []):
+                res = {a["key"]: _attr_value(a["value"]) for a in rl.get("resource", {}).get("attributes", [])}
+                if res.get("player") not in self.labels or res.get("arena.task", self.task) != self.task:
+                    continue
+                for sl in rl.get("scopeLogs", []):
+                    for rec in sl.get("logRecords", []):
+                        at = {a["key"]: _attr_value(a["value"]) for a in rec.get("attributes", [])}
+                        if str(at.get("event.name") or "").endswith("api_request"):
+                            self.usd += float(at.get("cost_usd") or 0.0)
+        return self.usd
+
+
 class Runner:
     """One Waybill game: a coordinator subprocess, an OTLP sink thread, and one harness process per seat."""
 
@@ -733,6 +833,9 @@ class Runner:
             "absent_slots": [s for s in slots if s not in {x.slot for x in seats}],
             "seats": [asdict(s) for s in seats], "started": time.time(), "elapsed_s": 0.0, "ended": None,
             "otel_port": None, "claude_auth": opts.get("claude_auth", "token"), "traces": opts.get("traces", "on"),
+            "claude_profile": normalise_claude_profile(opts.get("claude_profile")),
+            "sandbox_deny": [os.path.abspath(os.path.expanduser(x))
+                             for x in (opts.get("sandbox_deny") or "").split(",") if x],
             "pass_env": [x for x in (opts.get("pass_env") or "").split(",") if x],
         }
         run_dir.mkdir(parents=True, exist_ok=True)
@@ -856,14 +959,15 @@ class Runner:
         else:
             cmd = command(run_seat, text, work, self.otel, session=session, resume_prompt=prompt_extra,
                           max_turns=self.m.get("max_turns"))
-        token = claude_oauth_token() if seat.vendor == "claude" and self.m.get("claude_auth") == "token" else None
+        token = (claude_oauth_token(profile=self.m.get("claude_profile"))
+                 if seat.vendor == "claude" and self.m.get("claude_auth") == "token" else None)
         env = environment(seat, self.m["task_id"], adir, own, self.otel,
                           base=scrubbed_base(extra=tuple(self.m.get("pass_env") or ())), claude_token=token)
         if self.m["isolation"] == "sandbox":
             others = [p for s, p in socks.items() if s != seat.slot] + [control_socket_path(self.coord_state)]
             deny = self.engine_ports() if seat.vendor == "opencode" else None
             prof = sandbox_profile(adir, self.run_dir, self.task_dir, own, others, [int(self.m["otel_port"])],
-                                   deny_ports=deny)
+                                   deny_ports=deny, deny_dirs=self.deny_dirs())
             (adir / "sandbox.sb").write_text(prof)
             cmd = ["/usr/bin/sandbox-exec", "-f", str(adir / "sandbox.sb")] + cmd
         with open(adir / "agent.log", "ab") as fh:
@@ -878,6 +982,12 @@ class Runner:
         seat.launches.append({"t": time.time(), "kind": kind, "pid": proc.pid, "session": session})
         self.save()  # a restart must know this pid, or it would start a second session for the slot
         self.event("agent " + kind, agent=seat.label, slot=seat.slot, pid=proc.pid, session=session)
+
+    def deny_dirs(self) -> list[Path]:
+        """More directories that the sandbox refuses: the config directory of the run's Claude login and
+        ``--sandbox-deny`` (a campaign gives its runs and tasks roots: the other games, the paired arm)."""
+        dirs = [claude_profile_dir(self.m.get("claude_profile")), *(self.m.get("sandbox_deny") or [])]
+        return [Path(d) for d in dirs if d]
 
     def seat_alive(self, seat: Seat) -> bool:
         p = self.procs.get(seat.label)
@@ -1040,39 +1150,11 @@ class Runner:
         return self.finish()
 
     def spent_usd(self) -> float:
-        """The dollars that the agents reported so far (OTLP ``api_request`` events; Codex reports none).
-        Incremental: only the bytes added to logs.jsonl since the last call are read (a decade run's log
-        grows to hundreds of MB)."""
-        from railhead.otel import _attr_value
-
-        path = self.run_dir / "otel" / "logs.jsonl"
-        if not hasattr(self, "_spent"):
-            self._spent, self._spent_pos = 0.0, 0
-        if not path.exists():
-            return self._spent
-        labels = {s.label for s in self.seats}
-        with open(path, "rb") as fh:
-            fh.seek(self._spent_pos)
-            chunk = fh.read()
-        end = chunk.rfind(b"\n") + 1  # whole lines only
-        self._spent_pos += end
-        for line in chunk[:end].splitlines():
-            if b"cost_usd" not in line:
-                continue
-            try:
-                env = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            for rl in (env.get("body") or {}).get("resourceLogs", []):
-                res = {a["key"]: _attr_value(a["value"]) for a in rl.get("resource", {}).get("attributes", [])}
-                if res.get("player") not in labels:
-                    continue
-                for sl in rl.get("scopeLogs", []):
-                    for rec in sl.get("logRecords", []):
-                        at = {a["key"]: _attr_value(a["value"]) for a in rec.get("attributes", [])}
-                        if str(at.get("event.name") or "").endswith("api_request"):
-                            self._spent += float(at.get("cost_usd") or 0.0)
-        return self._spent
+        """The dollars that the agents reported so far (OTLP ``api_request`` events; Codex reports none)."""
+        if not hasattr(self, "_meter"):
+            self._meter = SpendMeter(self.run_dir / "otel" / "logs.jsonl", {s.label for s in self.seats},
+                                     getattr(self, "m", {}).get("task_id"))
+        return self._meter.read()
 
     def stop_agents(self) -> None:
         for seat in self.seats:
@@ -1251,7 +1333,8 @@ def _opts(argv: list[str]) -> tuple[list[str], dict]:
             "--nudges": ("nudges", int), "--max-resumes": ("max_resumes", int),
             "--max-backoff-s": ("max_backoff_s", float), "--grace-s": ("grace_s", float),
             "--isolation": ("isolation", str), "--poll": ("poll_s", float), "--pass-env": ("pass_env", str),
-            "--claude-auth": ("claude_auth", str), "--usd-cap": ("usd_cap", float), "--traces": ("traces", str)}
+            "--claude-auth": ("claude_auth", str), "--usd-cap": ("usd_cap", float), "--traces": ("traces", str),
+            "--claude-profile": ("claude_profile", str), "--sandbox-deny": ("sandbox_deny", str)}
     pos, opts = [], {}
     it = iter(argv)
     for a in it:
@@ -1277,6 +1360,8 @@ def main(argv: list[str] | None = None) -> int:
     elif pos[:1] == ["resume"] and len(pos) == 2:
         run_dir = Path(pos[1])
         r = Runner.load(run_dir)
+        if "claude_profile" in opts:
+            opts["claude_profile"] = normalise_claude_profile(opts["claude_profile"])
         r.m.update(opts)  # e.g. a larger --run-s
         res = r.run(resume=True)
     elif pos[:1] == ["rescore"] and len(pos) == 2:  # obligation outcomes under exchange rules 2

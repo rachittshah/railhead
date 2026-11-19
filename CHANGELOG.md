@@ -31,6 +31,13 @@ Not published yet. The latest published image and Harbor datasets are 0.1.1.
   cargo monitors on every company and cross-region need for the H3 cargo and H4 market-share measures.
   `railhead waybill-cinema` renders video and
   stills of a verified run from its replay. Three pilots are in `docs/WAYBILL-PILOT.md`; no full runs yet.
+- `railhead waybill-campaign plan|run|status`: all games of a Waybill schedule, several at a time, each
+  game's Claude seats on one login of an account pool with a dollar cap for each account and a global cap
+  (`docs/WAYBILL.md` section 14). It adopts and resumes games, applies the prereg exclusion rules, replaces
+  both arms of an excluded seed with the next accepted seed, and records the cost, the code commit and the
+  account of each game in its own state file (never in `result.json`). `waybill-run` takes
+  `--claude-profile DIR` (the login of a `CLAUDE_CONFIG_DIR`, kept in `run.json` for every resume) and
+  `--sandbox-deny A,B`. The dollar-cap meter skips events of another game on a reused OTLP port.
 - Action log version 2 and a stricter replay (`docs/VERIFICATION.md`). Every record, `meta` included, must
   sit at the replayed tick with the next `seq`; every wait must carry a checksum and stay inside the
   horizon; `meta` arguments must pass the daemon's schema. In a v2 log each `meta` record also enters the
