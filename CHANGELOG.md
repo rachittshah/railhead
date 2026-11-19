@@ -31,10 +31,10 @@ Not published yet. The latest published image and Harbor datasets are 0.1.1.
   `cheap_talk`. `railhead waybill-run` plays one game with one harness session for each company (sandboxed,
   budgeted, resumable) and writes `result.json`; `rescore` reads old logs under exchange rules 2.
   `railhead waybill-analyze` computes the pre-registered metrics (`docs/WAYBILL-ANALYSIS.md`; the
-  pre-registration in `docs/WAYBILL-PREREG.md` is a draft); `railhead waybill-deliveries` replays a run with
+  pre-registration in `docs/WAYBILL-PREREG.md` is locked, hash in `docs/data/waybill-prereg.sha256`); `railhead waybill-deliveries` replays a run with
   cargo monitors on every company and cross-region need for the H3 cargo and H4 market-share measures.
   `railhead waybill-cinema` renders video and
-  stills of a verified run from its replay. Three pilots are in `docs/WAYBILL-PILOT.md`; no full runs yet.
+  stills of a verified run from its replay. Three pilots and the preflight are in `docs/WAYBILL-PILOT.md`; no held-out results yet.
 - `railhead waybill-campaign plan|run|status`: all games of a Waybill schedule, several at a time, each
   game's Claude seats on one login of an account pool with a dollar cap for each account and a global cap
   (`docs/WAYBILL.md` section 14). It adopts and resumes games, applies the prereg exclusion rules, replaces
