@@ -495,6 +495,8 @@ The runner retires a slot that has no player: it sends `submit` for that company
 | `--all-slots` | Off | Refuse a run with a company that has no player |
 | `--pass-env A,B` | None | More environment variables for the agents |
 | `--claude-auth token\|none` | `token` | How a Claude agent logs in (section 12.4) |
+| `--claude-profile DIR` | The default login | The `CLAUDE_CONFIG_DIR` of the Claude login that the Claude agents use (section 12.4). `default` is the default login. |
+| `--sandbox-deny A,B` | None | More directories that the sandbox refuses (section 14 gives the runs and tasks roots of a campaign) |
 | `--max-backoff-s S` | No limit | The longest wait before a resume |
 | `--grace-s S` | 120 | The time that the agents get to write their reports after the end of the game |
 | `--isolation sandbox\|env` | `sandbox` on macOS, else `env` | Section 12.4 |
@@ -548,6 +550,7 @@ When the run budget ends, the runner stops all agents and continues at step 8. `
 `run.json` and `result.json` record the isolation mode.
 
 Claude login: an agent with its own config directory has no login. The runner gives it `CLAUDE_CODE_OAUTH_TOKEN`: the value from the runner's environment (for example a `claude setup-token` token), else the access token of the operator's login from the macOS keychain. The refresh token never goes to an agent, thus an agent cannot rotate the operator's login. An access token expires after some time: the session then ends with a login error and continues with a new token. When the token in the keychain expires in less than 10 minutes, the runner first runs one short `claude -p` with the operator's configuration, so that Claude Code refreshes it.
+`--claude-profile DIR` selects a different login: the runner then reads the keychain item of that profile and ignores `CLAUDE_CODE_OAUTH_TOKEN`. The name of the item is `Claude Code-credentials-` and the first 8 hex digits of the SHA-256 of the absolute path of `DIR`. The default login has the item `Claude Code-credentials`. `run.json` keeps the profile, thus each resume and each new token use the same login. The refresh call runs with `CLAUDE_CONFIG_DIR` set to the profile (not set for the default login). The sandbox also refuses the profile directory. `result.json` does not record the profile.
 With a fresh config directory, the default model of Claude Code can be different from the operator's default model. `result.json` records `default`; the transcript (`init` event) gives the real model.
 Codex: the agent writes through the link to the operator's `auth.json` when it refreshes its token.
 
@@ -556,6 +559,7 @@ What stays open:
 - All agents run as the same user. Without the sandbox, an agent can read the run directory and connect to any socket if it finds the paths.
 - In the sandbox, an agent can still read the files of the operator's home directory that the profile does not name, and the environment of other processes (`ps -E`), which includes the Claude access token of the other Claude agents (the same login).
 - The socket path is not a credential, because the sandbox refuses the other sockets.
+- Without `--sandbox-deny`, an agent can read the run directories and task directories of other games on the same computer. A campaign (section 14) gives its runs root and tasks root to `--sandbox-deny`.
 - An agent can read the Railhead source code (the `rh` command needs it).
 
 ### 12.5 Budgets
@@ -726,3 +730,89 @@ This step needs a display. It cannot run in CI.
 - A company's anchor (the start of its arcs) is the centre of its region, not its headquarters.
 - The money between two samples is interpolated linearly. The networks change only at samples (at most one grid step late).
 - A caption quote is the nearest safe message between the two companies, up to 60 game days before the moment (120 days after it for a broken promise). It can be later than the moment it captions.
+
+## 14. Campaigns
+
+`railhead waybill-campaign` plays all games of a schedule (`docs/data/waybill-schedule-short.json`): both arms of each seed. It runs several games at the same time. Each game gets one Claude login from a pool of accounts.
+
+```
+railhead waybill-campaign plan <campaign.json>              # the games, the accounts, the projected spend; changes nothing
+railhead waybill-campaign run <campaign.json>               # start, adopt and resume games until the end or a cap
+railhead waybill-campaign status <campaign.json> [--usage]  # the state; --usage also asks each account for its usage
+```
+
+### 14.1 The campaign file
+
+Relative paths are relative to the campaign file. Keep `tasks_dir` and `runs_dir` out of the repository.
+
+```json
+{"schedule": "docs/data/waybill-schedule-short.json", "tasks_dir": "../wb/tasks", "runs_dir": "../wb/runs",
+ "concurrency": 3, "usd_cap": 900, "reserve_usd": 20,
+ "accounts": [{"name": "main", "profile": "default", "usd_cap": 250},
+              {"name": "second", "profile": "~/.claude-second", "usd_cap": 400},
+              {"name": "third", "profile": "~/.claude-third", "usd_cap": 300}],
+ "runner": ["--all-slots", "--turn-s", "300", "--max-turns", "200", "--grace-s", "180", "--traces", "off",
+            "--usd-cap", "60", "--run-s", "9000"]}
+```
+
+| Key | Default | Description |
+|---|---|---|
+| `schedule` | Necessary | The seat schedule (`railhead.multi.gen schedule`). Seat s plays company slot s. The rotation of the task gives the region type of each slot. |
+| `tasks_dir`, `runs_dir` | Necessary | The task directories (the campaign makes a missing task with `gen_track`) and the run directories (one for each game, named by the task id) |
+| `accounts` | Necessary | `name`, `profile` (`default` or a `CLAUDE_CONFIG_DIR`), `usd_cap` (the dollars that this campaign can use on the account), `max_games` (games at the same time, default 1) |
+| `concurrency` | 1 | The maximum number of games at the same time |
+| `usd_cap` | No limit | The dollars of the full campaign |
+| `reserve_usd` | 20 | The dollars that the campaign keeps for each game that runs, until its `result.json` gives the real cost |
+| `runner` | None | The options of `waybill-run run`. The campaign adds `--claude-profile` and `--sandbox-deny`. |
+| `arms`, `games`, `horizon_days` | Both arms, all seeds, the track horizon | `games` N plays the first N seeds. `horizon_days` makes short tasks for a smoke test (the task id ends in `-h<days>`). |
+| `players` | None | Replaces a roster entry, for example with a `stub:` player in a test |
+| `stagger_s`, `poll_s` | 30, 10 | The minimum time between two game starts, and the interval of the loop |
+| `max_restarts`, `max_replacements` | 3, 10 | The resumes of a game that has no `result.json`, and the replacement seeds of the campaign |
+| `game_usd_estimate` | 14.4 | The dollars of one game in the projection of `plan` (2 Claude seats x 2 game years x $3.6) |
+
+### 14.2 The loop
+
+Each step of `run` does these tasks:
+
+1. For each game with a `result.json`, it records the cost (`cost.usd_reported`), the end, and the exclusion reasons of prereg section 7 (`exclusion_reasons` of `railhead.multi.analysis`).
+2. A game with a `run.json` and a live runner continues. The campaign does not start a second runner for it.
+3. A game with a `run.json`, no `result.json` and no runner gets `waybill-run resume`, on the login in its `run.json`. After `max_restarts` resumes, the game fails.
+4. If one arm of a seed is excluded or failed, both arms are replaced. The replacement is the next accepted seed after the last seed of the schedule (the campaign makes its tasks and skips a rejected seed). It keeps the rotation. The campaign does not start the other arm. If the other arm runs, it continues to the end and its status is `replaced`.
+5. The campaign starts the next game in the schedule order (both arms of a seed, then the next seed), when all these conditions are true:
+   - Less than `concurrency` games run, and `stagger_s` seconds went by since the last start.
+   - The global cap has space for this game and for the other arm of the seed, if it did not start.
+   - An account has a free game slot and at least `reserve_usd` of headroom. The campaign selects the account with the most headroom.
+
+The headroom of an account is its `usd_cap` minus the cost of its finished games, minus the larger of the reserve and the cost so far of each game that runs on it. The cost so far comes from the OTLP log of the run.
+When no account has headroom, or the global cap is full, the campaign starts no more games. It lets the games that run continue to their end, because a stopped game is an exclusion (prereg section 7). Then it stops.
+The runners run in their own sessions. If the campaign process stops, the games continue. A new `run` adopts them. A lock file lets only one campaign process use a state file.
+
+### 14.3 The state file
+
+`<runs_dir>/campaign/state.json` keeps, for each game: the status, the account name, the runner pid, the commit of the code (`code_sha`, and `code_dirty` if tracked files changed), the cost, the end, the exclusion reasons, and the weekly `used_percent` of the Codex login (from the session files of the Codex agents). It also keeps the seeds, the replacements and the rejected seeds. The runner logs are in `<runs_dir>/campaign/logs/`.
+The state file has account names only. It has no e-mail address and no token. The campaign writes nothing into a run directory, thus `result.json` does not record the account.
+If the state file is lost, `run` makes it again from the run directories. The login of each game is in its `run.json`.
+
+### 14.4 Accounts and concurrency
+
+`plan` gives a read-only check of each login: a keychain item exists, its rate-limit tier, whether extra usage is on, and whether two names are the same Claude account. It shows no token.
+`status --usage` asks the usage endpoint of each account (`/api/oauth/usage`). The endpoint often refuses requests (rate limit), thus the campaign uses its data only as advice. The campaign never starts or stops a game from it.
+
+Concurrency test (2026-11-19, M4 Max, 36 GB): four stub games on the engine started at the same moment. All four were clean with `replay_equals_live`, each on its own engine ports and OTLP port. The integration test `tests/integration/test_waybill_campaign.py` runs a campaign of two games at a time, stops the campaign process, and starts it again.
+
+| Process (one game) | Memory (RSS) |
+|---|---|
+| Runner | 30 MB |
+| Coordinator | 27 MB |
+| Engine (stub game, 256 x 256) | 38 to 40 MB |
+| Claude Code process (measured on this computer) | 450 MB average, 640 MB maximum |
+| Codex process | Not measured. Projection: 100 to 200 MB. |
+
+A statistics game (2 Claude seats and 2 Codex seats) is thus about 1.5 to 2 GB, so memory permits more than 10 games. Memory is not the limit. The limits are these:
+
+- One game uses about $14.4 of Claude dollars in 30 to 50 minutes (pilots: 15 to 25 minutes for each game year), thus $17 to $29 for each hour. A Max 5x login gives about $120 in 5 hours ($24 for each hour). Thus one game at a time on each login (`max_games` 1) is near the 5-hour limit, and two games pass it.
+- A login at its limit stops its sessions. The runner resumes them later, but the coordinator gives the company an automatic `wait days=7` for each turn that passes 300 seconds.
+- All Codex seats use one login. Pilot v3 did not change its weekly `used_percent`, but four games at the same time is four times the rate. The state file records the value after each game.
+
+Thus use `concurrency` 3 with three accounts and `max_games` 1. Do not use more than one game for each login.
+

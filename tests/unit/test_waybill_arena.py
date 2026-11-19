@@ -577,3 +577,129 @@ def test_the_multi_agent_verifier_rejects_an_oversized_log_before_replay(tmp_pat
     monkeypatch.setattr(mv, "MAX_LOG_BYTES", 1000)
     out = mv.verify_multi(tdir, tdir / "start.sav", log, tmp_path / "w")
     assert out["rejected"] == 1 and out["oversized"] == 1
+
+
+# ---------------------------------------------------------------------------------------------- Claude login profiles
+class _Keychain:
+    """A fake ``security`` and ``claude``: one login record per keychain service; ``claude -p`` refreshes the
+    record of the CLAUDE_CONFIG_DIR that it runs with."""
+
+    def __init__(self, logins: dict[str, dict]) -> None:
+        self.logins, self.calls = logins, []
+
+    def run(self, cmd, **kw):
+        self.calls.append((list(cmd), dict(kw.get("env") or {})))
+        if cmd[0] == "security":
+            o = self.logins.get(cmd[cmd.index("-s") + 1])
+            return subprocess.CompletedProcess(cmd, 0 if o else 44, json.dumps({"claudeAiOauth": o}) if o else "", "")
+        if cmd[0] == "claude":
+            svc = wa.claude_keychain_service(kw["env"].get("CLAUDE_CONFIG_DIR"))
+            self.logins[svc] = {"accessToken": self.logins[svc]["accessToken"] + "-new", "expiresAt": 9e12}
+            return subprocess.CompletedProcess(cmd, 0, "OK", "")
+        raise AssertionError(cmd)
+
+
+def test_a_profile_names_its_keychain_item_by_the_hash_of_its_path(monkeypatch):
+    import hashlib
+
+    monkeypatch.setenv("HOME", "/home/op")
+    path = "/home/op/.claude-second"
+    want = "Claude Code-credentials-" + hashlib.sha256(path.encode()).hexdigest()[:8]
+    assert wa.claude_keychain_service("~/.claude-second") == want
+    assert wa.claude_keychain_service("/home/op/.claude-second/") == want  # one path string, however written
+    for default in (None, "", "default", "~/.claude", "/home/op/.claude"):
+        assert wa.claude_keychain_service(default) == "Claude Code-credentials"
+    assert wa.normalise_claude_profile(None) is None
+    assert wa.normalise_claude_profile("~/.claude") == "default"
+    assert wa.normalise_claude_profile("~/.claude-second") == path
+
+
+def test_the_token_comes_from_the_profile_and_a_profile_ignores_the_environment_token(monkeypatch):
+    monkeypatch.setattr(wa.sys, "platform", "darwin")
+    second = "/home/op/.claude-second"
+    kc = _Keychain({"Claude Code-credentials": {"accessToken": "main", "expiresAt": 9e12},
+                    wa.claude_keychain_service(second): {"accessToken": "second", "expiresAt": 9e12}})
+    monkeypatch.setattr(wa.subprocess, "run", kc.run)
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "from-env")
+    assert wa.claude_oauth_token() == "from-env"  # no profile: the old behaviour
+    assert wa.claude_oauth_token(profile=second) == "second"
+    assert wa.claude_oauth_token(profile="default") == "main"
+    assert [c[0][0] for c in kc.calls] == ["security", "security"]  # nothing expired: no refresh
+
+
+def test_an_expiring_profile_token_is_refreshed_with_that_profiles_config(monkeypatch):
+    monkeypatch.setattr(wa.sys, "platform", "darwin")
+    second = "/home/op/.claude-second"
+    kc = _Keychain({"Claude Code-credentials": {"accessToken": "main", "expiresAt": 0},
+                    wa.claude_keychain_service(second): {"accessToken": "second", "expiresAt": 0}})
+    monkeypatch.setattr(wa.subprocess, "run", kc.run)
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "from-env")
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", "/home/op/.claude-third")  # e.g. the runner's own shell
+    assert wa.claude_oauth_token(profile=second) == "second-new"
+    refresh = [env for cmd, env in kc.calls if cmd[0] == "claude"]
+    assert refresh[0]["CLAUDE_CONFIG_DIR"] == second and "CLAUDE_CODE_OAUTH_TOKEN" not in refresh[0]
+    assert wa.claude_oauth_token(profile="default") == "main-new"
+    refresh = [env for cmd, env in kc.calls if cmd[0] == "claude"]
+    assert "CLAUDE_CONFIG_DIR" not in refresh[1] and "CLAUDE_CODE_OAUTH_TOKEN" not in refresh[1]
+
+
+def test_the_run_keeps_its_profile_on_launch_and_resume_and_never_in_the_result(task, tmp_path, monkeypatch):
+    monkeypatch.chdir(REPO)
+    asked = []
+
+    def token(refresh_below_s=600.0, profile=None):
+        asked.append(profile)
+        return "tok"
+
+    monkeypatch.setattr(wa, "claude_oauth_token", token)
+    run = tmp_path / "run"
+    r = wa.Runner.create(task, run, ["claude:claude-opus-5-5"], claude_profile=str(tmp_path / "prof"),
+                         isolation="env", coord_cmd=[sys.executable, "-m", "tests.unit.waybill_fake_coord"],
+                         verify_fn=_fake_verify)
+    assert json.loads((run / "run.json").read_text())["claude_profile"] == str(tmp_path / "prof")
+    launched = []
+    monkeypatch.setattr(wa.subprocess, "Popen", lambda cmd, **kw: launched.append(kw["env"]) or _FakeProc())
+    monkeypatch.setattr(wa.Runner, "sockets", lambda self: {0: tmp_path / "a.sock"})
+    seat = r.seats[0]
+    r.launch(seat, "launch")
+    again = wa.Runner.load(run)  # a resume reads the profile back from run.json
+    again.launch(again.seats[0], "resume", wa.RESUME)
+    assert asked == [str(tmp_path / "prof")] * 2
+    assert all(env["CLAUDE_CODE_OAUTH_TOKEN"] == "tok" for env in launched)
+    prof = wa.sandbox_profile(tmp_path / "ag", run, task, tmp_path / "a.sock", [], [1],
+                              deny_dirs=[tmp_path / "prof"])
+    assert json.dumps(os.path.realpath(tmp_path / "prof")) in prof.splitlines()[2]
+    res = wa.build_result(again.m, {"valid": 1, "companies": []}, None, again.seats, [], run)
+    assert "prof" not in json.dumps(res)
+
+
+class _FakeProc:
+    pid = 999999
+
+    def poll(self):
+        return 0
+
+
+def test_the_spend_meter_skips_another_games_agents_with_the_same_label(tmp_path):
+    run = tmp_path / "run"
+    (run / "otel").mkdir(parents=True)
+    r = wa.Runner.__new__(wa.Runner)
+    r.run_dir, r.seats, r.m = run, [wa.Seat(0, "claude", "default", "s0-claude")], {"task_id": "mine"}
+
+    def line(task, cost):
+        doc = json.loads(_otlp_line("s0-claude", 1, cost))
+        doc["body"]["resourceLogs"][0]["resource"]["attributes"].append(
+            {"key": "arena.task", "value": {"stringValue": task}})
+        return json.dumps(doc)
+
+    (run / "otel" / "logs.jsonl").write_text(line("mine", 0.5) + "\n" + line("other", 9.0) + "\n")
+    assert r.spent_usd() == 0.5
+
+
+def test_the_sandbox_also_refuses_the_profile_and_the_extra_directories(task, tmp_path):
+    r = wa.Runner.create(task, tmp_path / "run", ["stub:/x"], claude_profile=str(tmp_path / "prof"),
+                         sandbox_deny=f"{tmp_path / 'runs'},{tmp_path / 'tasks'}", isolation="env")
+    m = json.loads((tmp_path / "run" / "run.json").read_text())
+    assert m["sandbox_deny"] == [str(tmp_path / "runs"), str(tmp_path / "tasks")]
+    assert r.deny_dirs() == [tmp_path / "prof", tmp_path / "runs", tmp_path / "tasks"]
+    assert wa.Runner.create(task, tmp_path / "run2", ["stub:/x"], isolation="env").deny_dirs() == []
