@@ -79,7 +79,7 @@ Decided before any outcome is seen. A game (one seed, one arm) is excluded and r
 - the runner submitted for more than one company of the game (`run.runner_submits` > 1: an infrastructure failure, not a decision);
 - the game ended before the horizon for an infrastructure reason (`run.ended` is `run_budget`, `usd_cap` or `coordinator_failed`).
 
-A replacement game uses the next accepted seed and keeps the rotation index of the schedule; if a replacement is needed, both arms of that seed are replaced (pairing). Resumed sessions (provider errors, expired logins, continuations) are kept. No game is excluded for its outcome.
+A replacement game uses the next accepted seed and keeps the rotation index of the schedule; if a replacement is needed, both arms of that seed are replaced (pairing). Replacement seeds are given in the order in which the exclusions are found (`waybill-campaign`); with several games at the same time, that order depends on which game ends first. When one arm is excluded, a partner arm that did not start is not played; a partner arm that is running ends normally, is marked `replaced`, and is not analysed. Resumed sessions (provider errors, expired logins, continuations) are kept. No game is excluded for its outcome.
 
 ## 8. World, tasks and schedule
 
