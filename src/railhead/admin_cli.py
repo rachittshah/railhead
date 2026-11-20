@@ -12,6 +12,7 @@
     railhead waybill-campaign plan|run|status <campaign.json>   all games of a Waybill schedule, on a pool of Claude logins (docs/WAYBILL.md 14)
     railhead waybill-analyze <run_dir>... --out DIR   pre-registered metrics of verified Waybill runs (docs/WAYBILL-ANALYSIS.md)
     railhead waybill-deliveries <run_dir>... [--task DIR]   cargo per company and cross-region need, from a replay (H3/H4 measures)
+    railhead waybill-bend verify <run_dir|log|records.jsonl>... [--binary B] | corpus --out DIR [--kind K] [--seed N] [--count K]   Bend exchange core vs Python (docs/WAYBILL-BEND.md)
     railhead arena <dir> [--json]  scoreboard of several players on one task (growth curves)
     railhead ab plan|run|status|collect|report <plan.json>   A/B experiment between checkouts (docs/AB.md)
     railhead stats <export.json|map_dir>... [--tasks DIR] [--finished-only] [--out FILE]   paired differences across maps, with intervals (docs/SEEDGAMES.md)
@@ -147,6 +148,10 @@ def main(argv: list[str] | None = None) -> int:
             from railhead.multi.deliveries import main as deliveries_main
 
             return deliveries_main(argv[1:])
+        if cmd == "waybill-bend":
+            from railhead.exchange.bend import main as bend_main
+
+            return bend_main(argv[1:])
         if cmd == "waybill-campaign":
             from railhead.multi.campaign import main as waybill_campaign_main
 
