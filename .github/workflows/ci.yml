@@ -72,6 +72,41 @@ jobs:
       - name: Unit + integration tests (Linux determinism)
         run: RAILHEAD_OPENTTD="$GITHUB_WORKSPACE/$ENGINE_DIR/openttd" .venv/bin/pytest -q -x
 
+  # The Bend 2 exchange core (bend/exchange): proofs rechecked by the proven kernel, then the native binary
+  # replayed against the Python exchange on a seeded corpus (byte-equal output required). No engine needed.
+  bend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      BEND_NO_TELEMETRY: "1"
+      RAILHEAD_BEND: ${{ github.workspace }}/.bend/bin/bend
+      BEND_HOME: ${{ github.workspace }}/.bend
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Bend 2 and Lean (sha-checked)
+        run: sh bend/install-bend.sh --lean
+      - name: Laws (bend PROOF.bend --verdict)
+        working-directory: bend/exchange
+        run: |
+          out=$("$RAILHEAD_BEND" PROOF.bend --verdict 2>&1); echo "$out"
+          echo "$out" | tail -1 | grep -qx "ALL PROOFS CHECK"
+      - uses: astral-sh/setup-uv@v6
+      - name: Install
+        run: uv venv --python 3.12 .venv && uv pip install -e ".[dev]"
+      - name: Build waybill-ex
+        run: .venv/bin/python -c "from railhead.exchange.bend import build; print(build())"
+      # A skipped Bend test here means the compiler or binary was not found: fail rather than pass vacuously.
+      - name: Differential tests (Bend vs Python)
+        run: |
+          set -o pipefail
+          .venv/bin/pytest -q -rs tests/unit/test_bend_int.py tests/unit/test_bend_json.py tests/unit/test_bend_ledger.py \
+            tests/unit/test_bend_rules.py tests/unit/test_exchange_bend.py tests/unit/test_bend_exchange.py | tee pytest.out
+          ! grep -q "SKIPPED" pytest.out
+      - name: Corpus sweep (seed 1)
+        run: |
+          .venv/bin/railhead waybill-bend corpus --out /tmp/corpus --kind all --seed 1 --count 1000
+          .venv/bin/railhead waybill-bend verify /tmp/corpus/*.jsonl
+
   # Every oracle log in the catalog was recorded on macOS; replay all of them on Linux amd64.
   # Six shards run in parallel so the full catalog fits the timeout.
   recheck:
