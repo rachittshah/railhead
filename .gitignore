@@ -19,3 +19,6 @@ harbor/
 thoughts/
 out/
 experiments/*/out/
+
+# Bend 2 build output (waybill-ex binary, generated C/JS)
+bend/build/
