@@ -550,6 +550,7 @@ If company A says it paid and company B says it did not, there has to be a recor
 - **The system's own records are recomputed.** After each step the coordinator writes the records of the new tick: expiries, tender awards, settlements, the tenders of a new quarter. The replay builds its own exchange from the sealed configuration, runs the same driver, and rejects the log unless every logged system record equals the one it makes. A forged delivery count or a forged tender is rejected.
 - **Deliveries come from the engine.** A contract's cargo is counted by engine cargo monitors added at signing, read with the same rule live and in replay.
 - **The money is integers.** Every ledger operation is one balanced transfer, the sum of all balances is always zero, and the only randomness is a SHA-256 draw over the seed.
+- **The exchange is written twice.** A second implementation of the exchange rules, in Bend 2, must give a byte-identical result for every log; its ledger is machine-proven to conserve money ([WAYBILL-BEND.md](docs/WAYBILL-BEND.md)).
 - **The verdict comes after the players leave.** The verifier runs the market to the horizon, so contracts settle even after every company has submitted, and then runs the run-off year.
 
 So the 6 broken instalments of pilot v3 are not something a model reported or a dashboard counted: they are what the replay of the log computes, every time.
@@ -618,6 +619,7 @@ railhead waybill-deliveries runs/s5-enforced runs/s5-cheap             # cargo p
 railhead waybill-analyze runs/s5-enforced runs/s5-cheap --out out/analysis
 railhead waybill-campaign plan campaign.json                           # all games of a schedule, an account pool, caps
 railhead waybill-cinema runs/s5-enforced runs/s5-cheap --out out/cinema # video and stills, every frame from a replay
+railhead waybill-bend verify runs/s5-enforced runs/s5-cheap            # the Bend 2 exchange must agree byte for byte
 ```
 
 Anyone can check the lock: `sha256sum -c <(grep -v '^#' docs/data/waybill-prereg.sha256 | grep -v '^code')`.
@@ -629,6 +631,7 @@ Anyone can check the lock: `sha256sum -c <(grep -v '^#' docs/data/waybill-prereg
 | [docs/WAYBILL-PILOT.md](docs/WAYBILL-PILOT.md) | Pilots v1 to v3 and the preflight before the lock: what failed, why, and what changed |
 | [docs/WAYBILL-PREREG.md](docs/WAYBILL-PREREG.md) | The pre-registration (locked 2026-11-19): hypotheses, metrics, tests, seeds, roster, budget, amendments |
 | [docs/WAYBILL-ANALYSIS.md](docs/WAYBILL-ANALYSIS.md) | `railhead waybill-analyze`: the pre-registered metrics from verified runs |
+| [docs/WAYBILL-BEND.md](docs/WAYBILL-BEND.md) | The exchange in Bend 2: the second implementation, how it is checked against Python, and its proven laws |
 
 ---
 
@@ -800,6 +803,7 @@ The full procedures and cautions are in [docs/USAGE.md](docs/USAGE.md).
 | `src/railhead/gen/` | The task generators |
 | `src/railhead/oracle/` | The scripted oracle player |
 | `src/railhead/multi/`, `src/railhead/exchange/` | Waybill: the shared world, coordinator, regions, market, arena runner and analysis; the contract exchange |
+| `bend/exchange/` | The Waybill exchange in Bend 2, its laws and proofs; `bend/install-bend.sh` installs the pinned compiler |
 | `src/railhead/cinema/` | The Waybill cinema renderer (sampling from a replay, frames, engine close-ups) |
 | `docker/` | The Dockerfile of the environment image and its start scripts |
 | `docs/data/` | The arena results and growth curves that the charts are drawn from |

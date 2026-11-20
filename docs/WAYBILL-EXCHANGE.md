@@ -6,6 +6,10 @@ coordinator gives it ticks, delivery counts and industry snapshots.
 
 All arithmetic uses integers. The only randomness is a SHA-256 draw over the seed and labels.
 
+The replay rules are implemented a second time in Bend 2 (`bend/exchange/`). For any list of records the two
+implementations give the same final state or the same error code, byte for byte, and the Bend ledger is
+proven to conserve money. See [WAYBILL-BEND.md](WAYBILL-BEND.md).
+
 ## Modules
 
 | Module | Contents |

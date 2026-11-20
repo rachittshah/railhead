@@ -24,6 +24,13 @@ Not published yet. The latest published image and Harbor datasets are 0.1.1.
 
 ### Added
 
+- The Waybill exchange in Bend 2 (`bend/exchange/`, `docs/WAYBILL-BEND.md`): a second, independent implementation
+  of the exchange replay core (ledger, contracts, settlement, tenders' awards, obligations, every record op). For any
+  log it must give the same final state or the same error code as the Python exchange, byte for byte;
+  `railhead waybill-bend verify` checks logs and `railhead waybill-bend corpus` writes a seeded test corpus. 19 laws
+  are proven and checked by Bend's proven kernel, among them ledger conservation. A CI job installs the pinned
+  compiler (`bend/install-bend.sh`, sha-checked), checks the proofs and runs the differential tests. The
+  pre-registered campaign still runs the Python exchange.
 - Waybill, a shared world for several agents (`docs/WAYBILL.md`). Several companies play one OpenTTD world
   on one lockstep clock (log v3, coordinator, replay, `verify_multi`), each in a franchise region. A contract
   exchange (`docs/WAYBILL-EXCHANGE.md`) settles tenders, supply contracts and licences by replay; licence fees

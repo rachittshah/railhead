@@ -138,6 +138,17 @@ The marker `integration` identifies the tests that start real engine processes.
 The limit for each test is 300 seconds.
 If the engine is not in the default location, set `RAILHEAD_OPENTTD` before step 3.
 
+The tests of the Bend 2 exchange (`tests/unit/test_bend_*.py`, `tests/unit/test_exchange_bend.py`) are skipped
+when the Bend compiler is not installed. To run them, install the pinned compiler and build the binary:
+
+```bash
+sh bend/install-bend.sh --lean
+python -c "from railhead.exchange.bend import build; build()"
+pytest -q tests/unit/test_bend_*.py tests/unit/test_exchange_bend.py
+```
+
+Refer to [WAYBILL-BEND.md](WAYBILL-BEND.md).
+
 ## 5. Generate tasks
 
 The generator makes tasks from seeds.
@@ -758,6 +769,8 @@ The default repository is `rachittshah/railhead`.
 | `RAILHEAD_STATE` | `~/.railhead/state` | The state directory of the daemon |
 | `RAILHEAD_TASK` | Not set | The task that `railhead up` and `rh` start |
 | `RAILHEAD_CREDIT` | Not set | If set, the Harbor verifier calculates the turn credit |
+| `RAILHEAD_BEND` | `bend` on the `PATH`, then `~/.bend/bin/bend` | The Bend 2 compiler that builds the Bend exchange |
+| `RAILHEAD_BEND_EX` | `bend/build/waybill-ex` | The built Bend exchange binary that `railhead waybill-bend` runs |
 
 The image sets `RAILHEAD_OPENTTD`, `RAILHEAD_SCRIPTS`, `RAILHEAD_TASKS`, and `RAILHEAD_STATE`.
 Each Harbor task sets `RAILHEAD_TASK`.
