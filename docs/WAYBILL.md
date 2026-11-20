@@ -243,6 +243,16 @@ python -m railhead.multi.verify <task_dir> <start.sav> <actions.jsonl> <out_dir>
 
 The command writes `<out_dir>/scores.json`.
 
+The exchange records of a log (`ex`) can also be checked against the second implementation of the exchange, in
+Bend 2 ([WAYBILL-BEND.md](WAYBILL-BEND.md)). Both implementations replay the records without the engine, and
+their final states must be byte-equal:
+
+```
+railhead waybill-bend verify <run_dir | actions.jsonl>...
+```
+
+It prints `match <n records>` or the first difference for each log, and exits 1 on any difference.
+
 ## 6. Tests
 
 | Test | Contents |

@@ -1,4 +1,4 @@
-# main.bend: the waybill-ex CLI (docs/WAYBILL-BEND.md section 9).
+# main.bend: the waybill-ex CLI (docs/WAYBILL-BEND.md section 2).
 #
 #   waybill-ex <records.jsonl>
 #

@@ -57,13 +57,25 @@ so numbers arrive in Python's own text: ints exact, floats in `repr` form).
 "Correct" means byte equality with the Python reference. The oracle is in `src/railhead/exchange/bend.py`
 and `src/railhead/exchange/corpus.py`; the corpus is seeded and deterministic.
 
-| Input | Source | Cases checked | Differences |
+The corpus has four kinds of input:
+
+- **sessions**: random companies drive the real command API: both arms, rules 1 and 2, credit limits, start
+  balances, public and addressed offers, supply and licences, counters, amendments, expiries, tenders,
+  settlements, obligations, tagged and untagged payments, unicode messages, integers up to about 2^70;
+- **mutations**: each session mutated (dropped, extra or renamed fields, wrong `seq`, reversed tick, int to
+  float or bool or string, unknown ids, wrong awards and outcomes, overpayments, huge and negative ints) and
+  truncated after the mutation;
+- **edge**: 266 records the API cannot make (missing optional fields, odd `settle.parts`, floats and bools at
+  Python's `==` sites, NaN and Infinity, falsy `rules`, licences of 2^48 and 2^80 instalments);
+- **captured**: every record sequence the existing exchange unit tests apply, accepted and rejected (12,036).
+
+| Check | Command | Cases | Differences |
 |---|---|---|---|
-| Real logs | the `ex` records of each recorded campaign game (data stays outside the repo) | 14 of 14 games | 0 |
-| Sessions | random companies drive the real command API: both arms, rules 1 and 2, credit limits, start balances, public and addressed offers, supply and licences, counters, amendments, expiries, tenders, settlements, obligations, tagged and untagged payments, unicode messages, integers up to about 2^70 | 13,300 | 0 |
-| Mutations | each session mutated once (dropped, extra or renamed fields, wrong `seq`, reversed tick, int to float or bool or string, unknown ids, wrong awards and outcomes, overpayments, huge and negative ints) and truncated after the mutation | 23,300 | 0 |
-| Edge cases | records the API cannot make: missing optional fields, odd `settle.parts`, floats and bools at Python's `==` sites, NaN and Infinity, falsy `rules` | 266 per run | 0 |
-| Captured | every record sequence the existing exchange unit tests apply, accepted and rejected | 12,036 (all of them) | 0 |
+| Real logs | `railhead waybill-bend verify <run dir>...` on every finished campaign game (data stays outside the repo) | 14 games | 0 |
+| Corpus, seed 11 | `railhead waybill-bend corpus --kind all --seed 11 --count 4000`, then `verify` | 12,266 | 0 |
+| Corpus, seed 12 | the same with `--seed 12` | 12,266 | 0 |
+| Corpus, seed 7 | the same with `--seed 7 --count 3000` | 9,266 | 0 |
+| Unit tests | `pytest tests/unit/test_bend_exchange.py` (adds mutations that keep the log going, Python `==` sites, huge integers, long licences) | 29 tests | 0 |
 | JS build | the same program compiled to JavaScript, on a sample | 1,866 cases and 34 logs | 0 |
 
 Each layer also has its own tests against Python: `int.bend` (about 6,000 operations up to 2^200, every sign
@@ -120,9 +132,11 @@ The binary is found by `RAILHEAD_BEND_EX`, else `bend/build/waybill-ex`; `bend` 
 
 ## 6. Limits
 
-- **Very long licences.** The fee schedule has one instalment per quarter, and both implementations build
-  the list. Python builds a list of Python ints; Bend counts the quarters with a unary `Nat`. A licence of
-  millions of quarters runs either one out of memory, at different sizes. Game licences have a few quarters.
+- **Very long licences.** The fee schedule has one instalment per quarter, and Python builds the whole list
+  before it looks at the fee. From 2^60 instalments Python fails at once on every 64-bit machine; from 2^48 no
+  machine can hold the list. Bend answers `internal` from 2^48 instalments, where Python can only fail.
+  Between about 2^28 and 2^48 the Python result depends on the machine's memory (an error, or the process is
+  killed), and Bend runs for a very long time. A game licence has a few quarters.
 - **Integer size.** Neither side limits it. CPython refuses by default to turn an int of more than 4,300
   digits into text; that is an interpreter guard, not an exchange rule, so the oracle lifts it while it
   writes and compares JSON (a computed obligation of 10^4400 is a test case).
@@ -132,4 +146,4 @@ The binary is found by `RAILHEAD_BEND_EX`, else `bend/build/waybill-ex`; `bend` 
 - **The compiler is young.** Bend 2 was released in September 2026; the port is pinned to 2.0.40 and the
   native and JavaScript builds are both checked against Python.
 
-No input that both implementations can process gives different output.
+No input that both implementations can process in memory gives a different output.

@@ -14,7 +14,7 @@
 #       railhead.exchange.bend.reference_result: {"ok": state} or {"error": code, "seq": i}
 #       (i = index of the failing record; "invariant" at seq = number of records)
 #
-# Python semantics kept on purpose (docs/WAYBILL-BEND.md sections 3, 8, 9):
+# Python semantics kept on purpose (docs/WAYBILL-BEND.md section 3):
 #   - check order is Python's, statement by statement; one check block that raises a
 #     single code (validate_terms, TenderConfig, a tender_open tender) is one Bool;
 #   - `==` sites follow C.py_eq_* (seq, contract_id, tender_id, award, settle outcome,
@@ -1096,11 +1096,25 @@ def accept_escrow(enf: Bool, +ex: Ex, +c: C.Contract, +terms: J.Json, +tick: I.I
         +e2 : Ex <- move(e1, seller, L.bond_account(cid), C.terms_int(terms, "bond"), "bond", cid, tick)
         return (e2, C.c_set_esc_bond(C.c_set_esc_price(c, C.terms_int(terms, "price")), C.terms_int(terms, "bond")))
 
+# Python's due_ticks(ws, deadline) builds list(range(ws + Q, deadline, Q)) + [deadline]
+# (Q = INSTALMENT_TICKS) before anything uses it. That list has
+# n = max(0, ceil((deadline - ws - Q) / Q)) + 1 = max(0, floor((deadline - ws - 1) / Q)) + 1
+# slots. No 64-bit machine can allocate 2^48 list slots (2^51 bytes), so for
+# n >= 2^48 Python can only fail there (MemoryError / OverflowError; from 2^60 it
+# fails at once) and the reference reports "internal". Bend answers the same at
+# the same point of the check order, instead of building a unary Nat past 2^48
+# (which aborts the runtime). Smaller schedules are computed as Python does.
+def schedule_fits(+ws: I.Int, +deadline: I.Int) -> Result<&2, &2, String, Unit>:
+  +n = I.add(I.max(I.zero(), I.floordiv(I.sub(I.sub(deadline, ws), I.one()), R.INSTALMENT_TICKS())), I.one())
+  C.need(I.is_lt(n, C.pow(I.from_u32(2), I.from_u32(48))), "internal")
+
 def accept_money(licence: Bool, +ex: Ex, +c: C.Contract, +terms: J.Json, +tick: I.Int) -> Result<&2, &2, String, +Sigma<Ex, _ => C.Contract>>:
   match licence:
     case True{}:
-      +sched = R.instalments(C.terms_int(terms, "fee"), C.terms_int(terms, "window_start"), C.terms_int(terms, "deadline"), last_due(ex))
-      Done{(oblige_all(sched, ex, C.c_id(c), C.str_of(C.fld("grantee", terms)), C.str_of(C.fld("grantor", terms)), tick), c)}
+      do Result<&2, &2, String, +Sigma<Ex, _ => C.Contract>>:
+        Unit <- schedule_fits(C.terms_int(terms, "window_start"), C.terms_int(terms, "deadline"))
+        +sched : List<&2, R.Due> = R.instalments(C.terms_int(terms, "fee"), C.terms_int(terms, "window_start"), C.terms_int(terms, "deadline"), last_due(ex))
+        return (oblige_all(sched, ex, C.c_id(c), C.str_of(C.fld("grantee", terms)), C.str_of(C.fld("grantor", terms)), tick), c)
     case False{}:
       accept_escrow(enforced(ex), ex, c, terms, tick)
 
@@ -1196,6 +1210,7 @@ def amend_licence(+ex: Ex, +c: C.Contract, +new: J.Json, +tick: I.Int, +co: Stri
     +rf : +Sigma<List<&2, Obl>, _ => I.Int> = replace_obls(contract_obls(ex, cid), tick, I.zero())
     +e1 : Ex = put_obls(ex, fst(List<&2, Obl>, I.Int, rf))
     +rest : I.Int = I.max(I.zero(), I.sub(C.terms_int(new, "fee"), snd(List<&2, Obl>, I.Int, rf)))
+    Unit <- schedule_fits(C.terms_int(new, "window_start"), C.terms_int(new, "deadline"))
     +dues : List<&2, I.Int> = ints_after(R.due_ticks(C.terms_int(new, "window_start"), C.terms_int(new, "deadline")), tick)
     +sched : List<&2, R.Due> = R.clip_schedule(R.split(rest, dues), last_due(e1), I.max(I.add(tick, I.one()), C.terms_int(new, "window_start")))
     +e2 : Ex = oblige_all(sched, e1, cid, C.str_of(C.fld("grantee", new)), C.str_of(C.fld("grantor", new)), tick)

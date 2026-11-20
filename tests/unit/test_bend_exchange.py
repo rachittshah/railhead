@@ -207,3 +207,33 @@ def test_integers_beyond_python_str_limit(binary, digits):
     recs = _huge_penalty_log(digits)
     assert reference(recs).startswith('{"ok":')
     _check_all(binary, [recs])
+
+
+# ============================================================================================== long licences
+Q = 90 * 74  # INSTALMENT_TICKS
+
+
+def _licence(deadline, amend_deadline=None, fee=100):
+    """A licence a->b accepted (instalments from due_ticks), optionally amended by both to a new deadline."""
+    t = {"grantor": "a", "grantee": "b", "rect": [0, 0, 1, 1], "window_start": 10, "deadline": deadline, "fee": fee}
+    recs = [_init(), _rec("offer", 1, 0, "a", contract_id="C1", kind="licence", terms=t, to="b", expires_tick=5),
+            _rec("accept", 2, 1, "b", contract_id="C1")]
+    if amend_deadline is not None:
+        t2 = dict(t, deadline=amend_deadline)
+        recs += [_rec("amend", 3, 2, "a", contract_id="C1", terms=t2), _rec("amend", 4, 3, "b", contract_id="C1", terms=t2)]
+    return recs
+
+
+@pytest.mark.parametrize("recs,want", [
+    (_licence(10 + Q * 1000), "ok"),                       # 1000 instalments: computed on both sides
+    (_licence(10 + Q * 2 ** 48), "internal"),              # 2^48 list slots: Python cannot allocate them
+    (_licence(10 + Q * 2 ** 48, fee=0), "internal"),       # due_ticks runs before split looks at the fee
+    (_licence(2 ** 80), "internal"),                       # past 2^60: Python fails at once
+    (_licence(10 + Q * 3, 10 + Q * 1000), "ok"),           # amend: the new schedule
+    (_licence(10 + Q * 3, 10 + Q * 2 ** 48), "internal"),  # amend: after the replaced-obligations loop
+    (_licence(10 + Q * 3, 2 ** 80), "internal"),
+])
+def test_long_licence_schedules(binary, recs, want):
+    expected = reference(recs)
+    assert (expected.startswith('{"ok"') if want == "ok" else '"internal"' in expected), expected[:80]
+    _check_all(binary, [recs])

@@ -786,11 +786,18 @@ def run_capture(out_dir: Path, tests: tuple[str, ...] = CAPTURE_TESTS, timeout: 
     files = sorted(str(p.relative_to(REPO)) for pat in tests for p in REPO.glob(pat)
                    if p.name != "test_exchange_bend.py")  # not this oracle's own tests (it would recurse)
     env = {**os.environ, "RAILHEAD_EX_CAPTURE": str(Path(out_dir).resolve())}
-    proc = subprocess.run([sys.executable, "-m", "pytest", "-q", "-x", "--no-header", *files], cwd=REPO, env=env,
+    proc = subprocess.run([sys.executable, "-m", "pytest", "-q", "--no-header", *files], cwd=REPO, env=env,
                           capture_output=True, text=True, timeout=timeout, check=False)
     out = Path(out_dir) / CAPTURE_FILE
-    if proc.returncode != 0 or not out.is_file():
+    # Exit 1 = some tests failed. The capture is a corpus source, not a test run: a failing test (often one
+    # unrelated to the exchange, e.g. an arena test that needs the macOS sandbox) only loses its own cases.
+    # Any other non-zero exit (interrupted, internal error, usage, nothing collected) is a broken capture.
+    if proc.returncode not in (0, 1) or not out.is_file() or out.stat().st_size == 0:
         raise RuntimeError(f"capture run failed ({proc.returncode}): {proc.stdout[-2000:]}{proc.stderr[-2000:]}")
+    if proc.returncode == 1:
+        failed = [ln for ln in proc.stdout.splitlines() if ln.startswith("FAILED ")]
+        print(f"capture: {len(failed)} test(s) failed; their cases are missing:\n" + "\n".join(failed[:10]),
+              file=sys.stderr)
     return out
 
 

@@ -1,7 +1,7 @@
 """Differential-testing bridge between the Python exchange (the reference) and the Bend 2 port.
 
 The Bend binary ``waybill-ex <records.jsonl>`` and :func:`reference` print the same single line for the same
-records (docs/WAYBILL-BEND.md, section 9). Both lines are canonical JSON
+records (docs/WAYBILL-BEND.md, section 2). Both lines are canonical JSON
 (``json.dumps(x, sort_keys=True, separators=(",", ":"))``, ``ensure_ascii=True``) and are compared as bytes.
 
 Output contract of :func:`reference` (Bend must match it exactly):
