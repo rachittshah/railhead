@@ -1,0 +1,21 @@
+{
+  "fps": 30,
+  "qp": 22,
+  "scenes": [
+    "scenes/01-title.html",
+    "scenes/02-timelapse.html",
+    "scenes/03-verdicts.html",
+    "scenes/04-replay.html",
+    "scenes/05-world.html",
+    "scenes/06-deal.html",
+    "scenes/07-apology.html",
+    "scenes/08-end.html"
+  ],
+  "audio": [
+    {
+      "file": "audio/score.wav",
+      "start": 0,
+      "volume": 0.9
+    }
+  ]
+}

@@ -33,6 +33,7 @@ jobs:
           mkdir -p _site/assets/img _site/assets/video _site/assets/data
           cp docs/img/waybill-pilot3-broken-promise.jpg _site/assets/img/
           cp docs/video/arena2-timelapse-dark.mp4 _site/assets/video/
+          cp docs/video/railhead-launch.mp4 _site/assets/video/   # linked from the README, not the page
           cp docs/data/arena2.json docs/data/seedgames.json docs/data/seedgames-stats.json _site/assets/data/
           # every assets/ file the page names must be in the artifact
           missing=0

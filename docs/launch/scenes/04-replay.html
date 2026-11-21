@@ -1,0 +1,69 @@
+<!doctype html><html><head><meta charset="utf-8"><title>04 replay</title>
+<link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=general-sans@400,500,600,400i&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap">
+</head><body style="margin:0;background:#141513"><canvas id="c"></canvas>
+<script src="lib.js"></script>
+<script>
+// We can't fudge the score: every game is replayed from the start. The eleven net-worth curves of Arena 2 (docs/data/arena2.json, one sample per
+// wait) sit faint; a replay cursor sweeps 1960 to 1970 and each wait it passes is checked off. 308 waits, every one
+// with a checksum (docs/VERIFICATION.md), 0 divergences (arena2.json results[].divergences).
+const B = { head: 0.05, axes0: 0.4, axes1: 1.0, sweep0: 0.9, sweep1: 2.8, out0: 3.85, out1: 4.2 };
+window.EVENTS = [{ name: 'head', t: B.head }, { name: 'sweep', t: B.sweep0 }, { name: 'done', t: B.sweep1 }];
+const CX0 = 120, CX1 = 1300, CY0 = 400, CY1 = 900, YMIN = -2, YMAX = 45;
+const T0 = Date.UTC(1960, 0, 1), T1 = Date.UTC(1970, 1, 1);
+let curves = [], total = 0;
+const X = d => lerp(CX0, CX1, (d - T0) / (T1 - T0));
+const Y = v => lerp(CY1, CY0, (v / 1e6 - YMIN) / (YMAX - YMIN));
+const ORDER = ['claude-opus-5-5', 'gpt-6-astra', 'gpt-6-sol'];
+
+scene(SCENES[3], t => {
+  fill(C.ballast);
+  const out = inOutSine(prog(t, B.out0, B.out1));
+  ctx.globalAlpha = 1 - out;
+  words('We can\u2019t fudge the score.', 120, 180, { size: 84, weight: 500 }, t, B.head);
+  words('We replay every game from the start to check it.', 122, 262, { size: 44, weight: 400, color: C.gravel, stagger: 0.05 }, t, B.head + 0.5);
+
+  const ax = inOutSine(prog(t, B.axes0, B.axes1));
+  ctx.globalAlpha = ax * (1 - out);
+  for (const v of [0, 10, 20, 30, 40]) {
+    line(CX0, Math.round(Y(v * 1e6)), CX1, Math.round(Y(v * 1e6)), v === 0 ? C.hairline2 : C.hairline, 2);
+  }
+  for (const yr of [1960, 1965, 1970]) text(String(yr), X(Date.UTC(yr, 0, 1)), CY1 + 46, { size: 28, mono: true, color: C.dim, align: 'center' });
+
+  const sw = inOutSine(prog(t, B.sweep0, B.sweep1)), xc = lerp(CX0, CX1, sw);
+  // faint: the curves as logged; bright: the part the replay has reproduced
+  const draw = (c, col, w) => { ctx.strokeStyle = col; ctx.lineWidth = w; ctx.lineJoin = 'round'; ctx.beginPath(); c.pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.stroke(); };
+  for (const c of curves) draw(c, C.hairline2, 2);
+  ctx.save(); ctx.beginPath(); ctx.rect(CX0 - 10, 0, xc - CX0 + 10, H); ctx.clip();
+  for (const c of curves) draw(c, c.color, c.hero ? 3.5 : 2.5);
+  ctx.restore();
+  // a mark at every wait the cursor has passed
+  let n = 0;
+  for (const c of curves) for (const p of c.pts) {
+    if (p.x > xc) continue; n++;
+    const flash = sw >= 1 ? 0 : 1 - clamp((xc - p.x) / 60);
+    dot(p.x, p.y, 3 + 4 * flash, flash > 0.01 ? mix(C.copper, C.chalk, 0) : c.color);
+  }
+  const top = curves.find(c => c.player === 'claude-opus-5-5'), lp = top && top.pts[top.pts.length - 1];
+  if (lp && xc >= lp.x) words('richest', lp.x + 20, lp.y + 10, { size: 30, mono: true, color: C.opus }, t, B.sweep1 - 0.1);
+  if (sw > 0 && sw < 1) {
+    line(Math.round(xc), CY0 - 30, Math.round(xc), CY1, C.copper, 2);
+  }
+  ctx.globalAlpha = 1 - out;
+  // the tally
+  const RX = 1560, ta = inOutSine(prog(t, B.sweep0 - 0.3, B.sweep0 + 0.2)) * (1 - out);
+  ctx.globalAlpha = ta;
+  text(String(n), RX - 6, 520, { size: 132, mono: true, weight: 500, color: n === total ? C.copper : C.chalk, track: -0.02 });
+  text('checks', RX, 574, { size: 40, color: C.gravel, weight: 400 });
+  words('All matched.', RX, 680, { size: 48, weight: 500, color: C.chalk }, t, B.sweep1);
+  ctx.globalAlpha = 1;
+  rail(3, t);
+}, async () => {
+  const d = await (await fetch('../data/arena2.json')).json();
+  curves = Object.entries(d.curves).map(([p, s]) => ({
+    player: p, color: MODEL[p] || C.gravel, hero: ORDER.includes(p),
+    pts: s.map(r => ({ x: X(Date.parse(r.date + 'T00:00:00Z')), y: Y(r.net_worth) })),
+  })).sort((a, b) => a.hero - b.hero);
+  total = curves.reduce((a, c) => a + c.pts.length, 0);
+});
+</script></body></html>

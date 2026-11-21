@@ -1,0 +1,44 @@
+<!doctype html><html><head><meta charset="utf-8"><title>07 apology</title>
+<link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=general-sans@400,500,600,400i&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap">
+</head><body style="margin:0;background:#141513"><canvas id="c"></canvas>
+<script src="lib.js"></script>
+<script>
+// The Waybill cinema still (docs/img/waybill-pilot3-broken-promise.jpg): its map, pushed in slowly toward the red
+// mark where company A missed the instalment, and A's message set large (README, "Waybill" column at the top).
+const B = { in0: 0, in1: 0.5, ring: 0.35, label: 0.45, quote: 0.6, out0: 4.25, out1: 4.6 };
+window.EVENTS = [{ name: 'in', t: B.in0 }, { name: 'ring', t: B.ring }, { name: 'quote', t: B.quote }];
+const SRC = { x: 32, y: 44, s: 992 }, MARK = { x: 721, y: 430 };   // the map area and the red mark, in still pixels
+const D = { x: 96, y: 60, s: 920 };
+let still;
+scene(SCENES[6], t => {
+  fill(C.ballast);
+  const out = inOutSine(prog(t, B.out0, B.out1)), a = inOutSine(prog(t, B.in0, B.in1)) * (1 - out);
+  // push in around the mark: a source window that shrinks toward it
+  const z = lerp(1, 1.18, inOutSine(t / SCENES[6]));
+  const ws = SRC.s / z, wx = lerp(SRC.x, MARK.x - ws / 2, (z - 1) / 0.18 * 0.55), wy = lerp(SRC.y, MARK.y - ws / 2, (z - 1) / 0.18 * 0.55);
+  const cx = clamp(wx, SRC.x, SRC.x + SRC.s - ws), cy = clamp(wy, SRC.y, SRC.y + SRC.s - ws);
+  ctx.globalAlpha = a;
+  ctx.drawImage(still, cx, cy, ws, ws, D.x, D.y, D.s, D.s);
+  // cover the still's small caption strip under the OpenTTD close-up (x 548-1016, y 318-342), in the map's own colour
+  { const k = D.s / ws, lx = D.x + (548 - cx) * k, ly = D.y + (318 - cy) * k;
+    ctx.save(); ctx.beginPath(); ctx.rect(D.x, D.y, D.s, D.s); ctx.clip();
+    ctx.fillStyle = 'rgb(11,14,21)'; ctx.fillRect(lx, ly, (1016 - 548) * k, 24 * k); ctx.restore(); }
+  ctx.strokeStyle = C.hairline2; ctx.lineWidth = 2; ctx.strokeRect(D.x, D.y, D.s, D.s);
+  // one ring around the mark
+  const r = prog(t, B.ring, B.ring + 1.1);
+  if (r > 0 && r < 1) {
+    const mx = D.x + (MARK.x - cx) / ws * D.s, my = D.y + (MARK.y - cy) / ws * D.s;
+    ctx.globalAlpha = a * (1 - r); ctx.strokeStyle = C.open; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(mx, my, 20 + 90 * outCubic(r), 0, Math.PI * 2); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  const QX = 1130;
+  words('An AI that missed a payment wrote:', QX, 330, { size: 32, weight: 400, color: C.gravel, stagger: 0.04 }, t, B.label, out);
+  const q = wrap('“sorry, I missed the instalment … just paid it (4000) late.”', 680, { size: 62, italic: true, weight: 400 });
+  block(q, QX + 28, 440, 78, { size: 62, italic: true, weight: 400, stagger: 0.045, track: -0.02 }, t, B.quote, out);
+  const ra = outCubic(prog(t, B.quote, B.quote + 0.5)) * (1 - out);
+  ctx.globalAlpha = ra; ctx.fillStyle = C.signal; ctx.fillRect(QX, 384, 4, q.length * 78 + 10); ctx.globalAlpha = 1;
+  rail(6, t);
+}, async () => { still = await loadImage('../img/waybill-pilot3-broken-promise.jpg'); });
+</script></body></html>
