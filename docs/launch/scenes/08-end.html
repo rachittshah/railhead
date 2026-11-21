@@ -1,0 +1,20 @@
+<!doctype html><html><head><meta charset="utf-8"><title>08 end</title>
+<link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=general-sans@400,500,600,400i&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap">
+</head><body style="margin:0;background:#141513"><canvas id="c"></canvas>
+<script src="lib.js"></script>
+<script>
+// The question, then the end card, centred and still.
+const B = { q: 0.05, qout0: 2.35, qout1: 2.75, title: 2.7, sub: 3.05, url: 3.3 };
+window.EVENTS = [{ name: 'question', t: B.q }, { name: 'title', t: B.title }, { name: 'url', t: B.url }];
+scene(SCENES[7], t => {
+  fill(C.ballast);
+  const qo = prog(t, B.qout0, B.qout1);
+  words('So: will an AI keep its word?', W / 2, 560, { size: 104, weight: 500, align: 'center', stagger: 0.05, dur: 0.5 }, t, B.q, qo);
+  words('Railhead + Waybill', W / 2, 520, { size: 140, weight: 500, align: 'center', stagger: 0.1, dur: 0.8 }, t, B.title);
+  words('Two experiments in OpenTTD, a transport tycoon game.', W / 2, 610, { size: 36, weight: 400, color: C.gravel, align: 'center', stagger: 0.03 }, t, B.sub);
+  words('rachittshah.github.io/railhead', W / 2, 740, { size: 44, mono: true, color: C.signal, align: 'center', stagger: 0 }, t, B.url);
+  words('github.com/rachittshah/railhead', W / 2, 800, { size: 30, mono: true, color: C.gravel, align: 'center', stagger: 0 }, t, B.url + 0.2);
+  rail(7, t);
+});
+</script></body></html>

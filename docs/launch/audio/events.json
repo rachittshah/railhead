@@ -1,0 +1,170 @@
+[
+ {
+  "scene": "scenes/01-title.html",
+  "events": [
+   {
+    "name": "rail",
+    "t": 0.1
+   },
+   {
+    "name": "title",
+    "t": 0.1
+   },
+   {
+    "name": "sub",
+    "t": 0.45
+   },
+   {
+    "name": "drop",
+    "t": 2.85
+   }
+  ]
+ },
+ {
+  "scene": "scenes/02-timelapse.html",
+  "events": [
+   {
+    "name": "open",
+    "t": 0
+   },
+   {
+    "name": "l1",
+    "t": 0.6
+   },
+   {
+    "name": "l2",
+    "t": 1.5
+   },
+   {
+    "name": "l3",
+    "t": 2.4
+   },
+   {
+    "name": "land",
+    "t": 4.9
+   }
+  ]
+ },
+ {
+  "scene": "scenes/03-verdicts.html",
+  "events": [
+   {
+    "name": "lift",
+    "t": 0.15
+   },
+   {
+    "name": "verdict0",
+    "t": 1
+   },
+   {
+    "name": "verdict1",
+    "t": 1.45
+   },
+   {
+    "name": "verdict2",
+    "t": 1.9
+   },
+   {
+    "name": "verdict3",
+    "t": 2.35
+   },
+   {
+    "name": "out",
+    "t": 5.1
+   }
+  ]
+ },
+ {
+  "scene": "scenes/04-replay.html",
+  "events": [
+   {
+    "name": "head",
+    "t": 0.05
+   },
+   {
+    "name": "sweep",
+    "t": 0.9
+   },
+   {
+    "name": "done",
+    "t": 2.8
+   }
+  ]
+ },
+ {
+  "scene": "scenes/05-world.html",
+  "events": [
+   {
+    "name": "junction",
+    "t": 0
+   },
+   {
+    "name": "line",
+    "t": 0.1
+   },
+   {
+    "name": "arcs",
+    "t": 1.4
+   }
+  ]
+ },
+ {
+  "scene": "scenes/06-deal.html",
+  "events": [
+   {
+    "name": "l1",
+    "t": 0.05
+   },
+   {
+    "name": "form",
+    "t": 0.1
+   },
+   {
+    "name": "stamp0",
+    "t": 1.7
+   },
+   {
+    "name": "stamp1",
+    "t": 2.35
+   },
+   {
+    "name": "stamp2",
+    "t": 3
+   }
+  ]
+ },
+ {
+  "scene": "scenes/07-apology.html",
+  "events": [
+   {
+    "name": "in",
+    "t": 0
+   },
+   {
+    "name": "ring",
+    "t": 0.35
+   },
+   {
+    "name": "quote",
+    "t": 0.6
+   }
+  ]
+ },
+ {
+  "scene": "scenes/08-end.html",
+  "events": [
+   {
+    "name": "question",
+    "t": 0.05
+   },
+   {
+    "name": "title",
+    "t": 2.7
+   },
+   {
+    "name": "url",
+    "t": 3.3
+   }
+  ]
+ }
+]

@@ -1,0 +1,49 @@
+<!doctype html><html><head><meta charset="utf-8"><title>05 world</title>
+<link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=general-sans@400,500,600,400i&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap">
+</head><body style="margin:0;background:#141513"><canvas id="c"></canvas>
+<script src="lib.js"></script>
+<script>
+// The turn to Waybill: the rail's accent turns from copper to signal. Four companies share one map, each with its own
+// region (README chapter 11); deals cross the borders as arcs, drawn the way the Waybill cinema draws contracts.
+const B = { l1: 0.1, grid0: 0.15, grid1: 1.1, dots: 0.9, arcs0: 1.4, arcs1: 2.7, out0: 2.9, out1: 3.2 };
+window.EVENTS = [{ name: 'junction', t: 0 }, { name: 'line', t: B.l1 }, { name: 'arcs', t: B.arcs0 }];
+const M = { x: 1180, y: 250, s: 560 };
+const REG = [['A', 0, 0], ['B', 1, 0], ['C', 0, 1], ['D', 1, 1]];
+const HOME = { A: [0.27, 0.3], B: [0.74, 0.24], C: [0.3, 0.76], D: [0.72, 0.7] };
+const ARCS = [['A', 'B', 0.18], ['C', 'D', -0.2], ['A', 'D', 0.12], ['B', 'C', 0.16]];
+const P = ([u, v]) => [M.x + u * M.s, M.y + v * M.s];
+scene(SCENES[4], t => {
+  fill(C.ballast);
+  const out = prog(t, B.out0, B.out1);
+  ctx.globalAlpha = 1;
+  words('Then we made four AIs', 116, 500, { size: 92, weight: 500, stagger: 0.07 }, t, B.l1, out);
+  words('share one world.', 116, 600, { size: 92, weight: 500, stagger: 0.07 }, t, B.l1 + 0.35, out);
+  ctx.save(); ctx.globalAlpha = 1 - inOutSine(out);
+  const g = inOutCubic(prog(t, B.grid0, B.grid1));
+  ctx.fillStyle = C.sleeper; ctx.globalAlpha *= g; ctx.fillRect(M.x, M.y, M.s, M.s); ctx.globalAlpha = 1 - inOutSine(out);
+  ctx.strokeStyle = C.hairline2; ctx.lineWidth = 2; ctx.globalAlpha = g * (1 - inOutSine(out)); ctx.strokeRect(M.x, M.y, M.s, M.s); ctx.globalAlpha = 1 - inOutSine(out);
+  ctx.setLineDash([10, 8]);
+  line(M.x + M.s / 2, M.y, M.x + M.s / 2, M.y + M.s * g, C.signal, 2);
+  line(M.x, M.y + M.s / 2, M.x + M.s * g, M.y + M.s / 2, C.signal, 2);
+  ctx.setLineDash([]);
+  REG.forEach(([n, i, j], k) => {
+    const a = outCubic(prog(t, B.dots + k * 0.08, B.dots + 0.4 + k * 0.08));
+    ctx.globalAlpha = a * (1 - inOutSine(out));
+    text(n, M.x + i * M.s / 2 + 22, M.y + j * M.s / 2 + 46, { size: 32, mono: true, weight: 500, color: C.gravel });
+    const [x, y] = P(HOME[n]); dot(x, y, 9 * a, C.chalk);
+  });
+  ctx.globalAlpha = 1 - inOutSine(out);
+  ARCS.forEach(([a, b, bend], k) => {
+    const d = inOutCubic(prog(t, B.arcs0 + k * 0.18, B.arcs0 + k * 0.18 + 0.85));
+    if (d <= 0) return;
+    const [x1, y1] = P(HOME[a]), [x2, y2] = P(HOME[b]);
+    const mx = (x1 + x2) / 2 - (y2 - y1) * bend * 2, my = (y1 + y2) / 2 + (x2 - x1) * bend * 2;
+    ctx.strokeStyle = C.signal; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x1, y1);
+    for (let i = 1; i <= 40 * d; i++) { const u = i / 40, w = 1 - u; ctx.lineTo(w * w * x1 + 2 * w * u * mx + u * u * x2, w * w * y1 + 2 * w * u * my + u * u * y2); }
+    ctx.stroke();
+  });
+  ctx.restore();
+  rail(4, t);
+});
+</script></body></html>

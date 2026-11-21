@@ -1,0 +1,24 @@
+<!doctype html><html><head><meta charset="utf-8"><title>01 title</title>
+<link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=general-sans@400,500,600,400i&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap">
+</head><body style="margin:0;background:#141513"><canvas id="c"></canvas>
+<script src="lib.js"></script>
+<script>
+// Cold open. A rail draws across the frame under the title, then drops to the bottom and becomes the rail every
+// later scene runs along.
+const B = { draw0: 0.1, draw1: 1.2, title: 0.1, sub: 0.45, out: 2.8, drop0: 2.85, drop1: 3.3 };
+window.EVENTS = [{ name: 'rail', t: B.draw0 }, { name: 'title', t: B.title }, { name: 'sub', t: B.sub }, { name: 'drop', t: B.drop0 }];
+const Y_MID = 660;
+scene(SCENES[0], t => {
+  fill(C.ballast);
+  const out = prog(t, B.out, B.out + 0.5);
+  words('We gave AI its own company.', 116, 590, { size: 120, weight: 500, stagger: 0.05, dur: 0.5 }, t, B.title, out);
+  words('Inside a transport tycoon game.', 120, 770, { size: 68, weight: 400, color: C.gravel, stagger: 0.04, dur: 0.5 }, t, B.sub, out);
+
+  // the rail: drawn in, then dropped to the bottom
+  const y = lerp(Y_MID, RAIL.y, inOutCubic(prog(t, B.drop0, B.drop1)));
+  const d = outExpo(prog(t, B.draw0, B.draw1));
+  const x1 = lerp(RAIL.x0, RAIL.x1, d);
+  rail(0, t, { y, x1, alpha: 1 });
+});
+</script></body></html>

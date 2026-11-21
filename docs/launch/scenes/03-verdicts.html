@@ -1,0 +1,61 @@
+<!doctype html><html><head><meta charset="utf-8"><title>03 verdicts</title>
+<link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=general-sans@400,500,600,400i&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap">
+</head><body style="margin:0;background:#141513"><canvas id="c"></canvas>
+<script src="lib.js"></script>
+<script src="shared.js"></script>
+<script>
+// Starts on scene 2's last frame (the timelapse end frame, docs/img/arena2-timelapse-end-dark.png). The other maps
+// fade; five lift out into a row, with the README's one-line verdicts in plain words.
+const B = { fade0: 0.1, fade1: 0.8, move0: 0.15, move1: 1.15, cap: 1.0, capStep: 0.45, out0: 5.1, out1: 5.6 };
+const GROUPS = [
+  { tiles: [1], tag: 'richest', verdict: 'One built an airline.', color: C.opus },
+  { tiles: [7, 8], verdict: 'Two built trucking firms.' },
+  { tiles: [6], verdict: 'One left after three years, and still beat them both.' },
+  { tiles: [11], verdict: 'One would have done better doing nothing.' },
+];
+window.EVENTS = [{ name: 'lift', t: B.move0 }, ...GROUPS.map((g, i) => ({ name: 'verdict' + i, t: B.cap + i * B.capStep })), { name: 'out', t: B.out0 }];
+const SZ = 300, GAP_IN = 16, GAP = 60, TOP = 236;
+// target x of every tile, groups laid out left to right and centred
+const targets = {}; let gx = 0;
+GROUPS.forEach((g, gi) => { g.x = gx; g.tiles.forEach((n, i) => { targets[n] = gx + i * (SZ + GAP_IN); }); g.w = g.tiles.length * SZ + (g.tiles.length - 1) * GAP_IN; gx += g.w + GAP; });
+const X0 = (W - (gx - GAP)) / 2;
+let end;
+const src = tileSrc;
+
+scene(SCENES[2], t => {
+  fill(C.ballast);
+  const out = inOutSine(prog(t, B.out0, B.out1)), lift = -24 * out;
+  // the rest of the timelapse frame fades away
+  const baseA = 1 - inOutSine(prog(t, B.fade0, B.fade1));
+  if (baseA > 0) { ctx.globalAlpha = baseA; drawTiles(end, [], false); ctx.globalAlpha = 1; }
+  brief(t, 99, { l1: -9, l2: -9, l3: -9 }, prog(t, 0, 0.6));
+  // the five maps move into the row
+  let k = 0;
+  for (const g of GROUPS) for (const n of g.tiles) {
+    const s = src(n), [px, py] = tilePos(n), ps = GRID.sz;
+    const m = inOutCubic(prog(t, B.move0 + k * 0.05, B.move1 + k * 0.05)); k++;
+    const x = lerp(px, X0 + targets[n], m), y = lerp(py, TOP, m) + lift, sz = lerp(ps, SZ, m);
+    ctx.globalAlpha = 1 - out;
+    ctx.drawImage(end, s.x, s.y, TILE.size, TILE.size, x, y, sz, sz);
+    ctx.strokeStyle = C.hairline2; ctx.lineWidth = 2 * m; if (m > 0) ctx.strokeRect(x - 1, y - 1, sz + 2, sz + 2);
+    ctx.globalAlpha = 1;
+  }
+  // captions
+  GROUPS.forEach((g, i) => {
+    const t0 = B.cap + i * B.capStep, x = X0 + g.x, y0 = TOP + SZ + 64 + lift;
+    ctx.save(); ctx.globalAlpha = 1 - out;
+    const lines = wrap(g.verdict, g.w, { size: 42, weight: 500 });
+    block(lines, x, y0 + 20, 50, { size: 42, weight: 500, stagger: 0.05 }, t, t0);
+    if (g.tag) words(g.tag, x, TOP - 24 + lift, { size: 28, mono: true, color: g.color }, t, t0 + 0.3);
+    ctx.restore();
+  });
+  rail(2, t);
+}, async () => {
+  // bake the caption patch into a copy of the end frame, so fades never let the caption show through
+  const img = await loadImage('../img/arena2-timelapse-end-dark.png'); await loadPatch();
+  end = document.createElement('canvas'); end.width = img.width; end.height = img.height;
+  const g = end.getContext('2d'); g.drawImage(img, 0, 0);
+  const s = tileSrc(PATCH.n); g.drawImage(patchImg, s.x + PATCH.x, s.y + PATCH.y);
+});
+</script></body></html>

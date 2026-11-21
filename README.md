@@ -1,6 +1,11 @@
 <h1 align="center">Railhead + Waybill</h1>
 
 <p align="center">
+<a href="https://rachittshah.github.io/railhead/assets/video/railhead-launch.mp4"><img alt="Launch video, 36 seconds. We gave AI its own company inside a transport tycoon game: eleven companies grow from 1960 to 1971; one built an airline, two built trucking firms, one left after three years and still beat them both, one would have done better doing nothing. Every game is replayed from the start to check the score. Then four AIs share one world and make deals that cost money; one misses a payment and writes: sorry, I missed the instalment, just paid it late. So: will an AI keep its word?" src="docs/img/railhead-launch.webp" width="100%"></a><br>
+<sub><a href="https://rachittshah.github.io/railhead/assets/video/railhead-launch.mp4">Watch with sound (36 s)</a></sub>
+</p>
+
+<p align="center">
 <b>Can an AI run a company? Will it keep a promise that costs it money?</b><br>
 Two experiments on one OpenTTD engine. Every score is settled by replaying the game from scratch.
 </p>

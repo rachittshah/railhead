@@ -1,0 +1,37 @@
+<!doctype html><html><head><meta charset="utf-8"><title>02 timelapse</title>
+<link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=general-sans@400,500,600,400i&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap">
+</head><body style="margin:0;background:#141513"><canvas id="c"></canvas>
+<script src="lib.js"></script>
+<script src="shared.js"></script>
+<script>
+// Hero footage: the replay timelapse (docs/video/arena2-timelapse-dark.mp4), cropped to its eleven route maps and
+// speed-ramped from January 1960 to January 1971. The plate opens upward from the rail. The last frame is the
+// timelapse's end frame, which scene 3 starts from.
+const B = { open0: 0.0, open1: 0.7, ramp0: 0.35, ramp1: 4.9, l1: 0.6, l2: 1.5, l3: 2.4 };
+window.EVENTS = [{ name: 'open', t: B.open0 }, { name: 'l1', t: B.l1 }, { name: 'l2', t: B.l2 }, { name: 'l3', t: B.l3 }, { name: 'land', t: B.ramp1 }];
+let clip;
+// clip seconds: 1 s hold on Jan 1960, 55 s linear in ticks to Jan 1971, 4 s hold (site/DESIGN.md, timelapse.schedule)
+function clipTime(t) {
+  const k = prog(t, B.ramp0, B.ramp1);
+  return 1 + 55 * (0.65 * inOutCubic(k) + 0.35 * k) + (k >= 1 ? 2 : 0);
+}
+scene(SCENES[1], async t => {
+  fill(C.ballast);
+  const open = outExpo(prog(t, B.open0, B.open1));
+  const ct = clipTime(t);
+  const f = await clip.frame(ct);
+  ctx.save();
+  const gb = GRID.y + 3 * GRID.sz + 2 * GRID.gap, top = lerp(gb, GRID.y, open);
+  ctx.beginPath(); ctx.rect(GRID.x, top, 4 * GRID.sz + 3 * GRID.gap, gb - top); ctx.clip();
+  drawTiles(f.toCanvasImageSource(), [], ct >= PATCH.from);
+  ctx.restore();
+  brief(t, ct, B, 0);
+  rail(1, t);
+}, async () => {
+  const { openFootage } = await import('/__motlab/footage.js');
+  clip = await openFootage('../video/arena2-timelapse-dark.mp4');
+  await loadPatch();
+});
+
+</script></body></html>
